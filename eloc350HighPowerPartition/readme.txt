@@ -1,6 +1,6 @@
 this is for the eloc main high power bluetooth partition. This can be used standalone as in old elocs 
 if the bluetooth record is set to "on". If bluetooth record is set to "off" the eloc will 
-reboot and record in the sep-idf low power partition.
+reboot and record in the esp-idf low power partition.
 If "update" is needed, the update partition must also be uploaded to the eloc. This automates updating from sd card. 
  
 

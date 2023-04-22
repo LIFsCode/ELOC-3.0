@@ -5,14 +5,15 @@
  *      Author: Thomas M. (ArcticSnowSky)
  */
 
-#include "sdkconfig.h"
-#if defined(CONFIG_BT_ENABLED) && defined(CONFIG_BLUEDROID_ENABLED)
-
 //#include <map>
 
+#include <string>
 #include "BTAdvertisedDevice.h"
 //#include "BTScan.h"
 
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat"
 
 BTAdvertisedDeviceSet::BTAdvertisedDeviceSet() {
 	m_cod		       = 0;
@@ -75,4 +76,4 @@ void BTAdvertisedDeviceSet::setRSSI(int8_t rssi) {
 	m_haveRSSI = true;
 }
 
-#endif /* CONFIG_BT_ENABLED */
+#pragma GCC diagnostic pop

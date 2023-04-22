@@ -28,6 +28,8 @@
 
 #include "esp_sleep.h"
 #include "rtc_wdt.h"
+
+#include "BluetoothSerial.h"
 //#include "soc/efuse_reg.h"
 static const char *TAG = "main";
 

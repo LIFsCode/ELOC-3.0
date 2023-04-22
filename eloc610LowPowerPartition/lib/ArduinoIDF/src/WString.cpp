@@ -21,10 +21,11 @@
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#include "Arduino.h"
 #include "WString.h"
 #include "stdlib_noniso.h"
 #include "esp32-hal-log.h"
+
+#define TAG "String"
 
 /*********************************************/
 /*  Constructors                             */

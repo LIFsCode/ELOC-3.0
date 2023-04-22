@@ -5,17 +5,14 @@
  *      Author: Thomas M. (ArcticSnowSky)
  */
 
-#include "sdkconfig.h"
-#if defined(CONFIG_BT_ENABLED) && defined(CONFIG_BLUEDROID_ENABLED)
-
-
 #include <esp_err.h>
+#include "esp32-hal-log.h"
 
 #include "BTAdvertisedDevice.h"
 #include "BTScan.h"
 //#include "GeneralUtils.h"
-#include "esp32-hal-log.h"
 
+#define TAG "BTScan"
 
 class BTAdvertisedDevice;
 
@@ -91,5 +88,3 @@ bool BTScanResultsSet::add(BTAdvertisedDeviceSet advertisedDevice, bool unique) 
 	} else
 		return false;
 }
-
-#endif

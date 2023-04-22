@@ -25,7 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
-#include "Arduino.h"
+#include <stdarg.h>
 
 #include "Print.h"
 extern "C" {

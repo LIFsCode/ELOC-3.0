@@ -30,7 +30,7 @@ extern "C"
 #define ARDUHAL_LOG_LEVEL_VERBOSE    (5)
 
 #ifndef CONFIG_ARDUHAL_LOG_DEFAULT_LEVEL
-#define CONFIG_ARDUHAL_LOG_DEFAULT_LEVEL ARDUHAL_LOG_LEVEL_NONE
+#define CONFIG_ARDUHAL_LOG_DEFAULT_LEVEL ARDUHAL_LOG_LEVEL_VERBOSE
 #endif
 
 #ifndef CORE_DEBUG_LEVEL
@@ -86,6 +86,8 @@ extern "C"
 const char * pathToFileName(const char * path);
 int log_printf(const char *fmt, ...);
 void log_print_buf(const uint8_t *b, size_t len);
+
+#define USE_ESP_IDF_LOG
 
 #define ARDUHAL_SHORT_LOG_FORMAT(letter, format)  ARDUHAL_LOG_COLOR_ ## letter format ARDUHAL_LOG_RESET_COLOR "\r\n"
 #define ARDUHAL_LOG_FORMAT(letter, format)  ARDUHAL_LOG_COLOR_ ## letter "[%6u][" #letter "][%s:%u] %s(): " format ARDUHAL_LOG_RESET_COLOR "\r\n", (unsigned long) (esp_timer_get_time() / 1000ULL), pathToFileName(__FILE__), __LINE__, __FUNCTION__

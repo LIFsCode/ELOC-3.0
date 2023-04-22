@@ -6,8 +6,6 @@
  *  Ported  on: Feb 5, 2021
  *      Author: Thomas M. (ArcticSnowSky)
  */
-#include "sdkconfig.h"
-#if defined(CONFIG_BT_ENABLED) && defined(CONFIG_BLUEDROID_ENABLED)
 
 #include "BTAddress.h"
 #include <string>
@@ -16,9 +14,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <malloc.h>
-#ifdef ARDUINO_ARCH_ESP32
 #include "esp32-hal-log.h"
-#endif
 
 
 /**
@@ -109,4 +105,3 @@ String BTAddress::toString(bool capital) const {
 	free(res);
 	return ret;
 } // toString
-#endif

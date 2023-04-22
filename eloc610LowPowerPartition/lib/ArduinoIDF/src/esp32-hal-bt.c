@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "esp32-hal-bt.h"
+#define TAG "hal-bt"
 
 #ifdef CONFIG_BT_ENABLED
 

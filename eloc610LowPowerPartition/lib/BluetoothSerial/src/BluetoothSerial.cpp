@@ -18,14 +18,13 @@
 #include <cstdlib>
 #include <cstring>
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+#include "freertos/event_groups.h"
 #include "freertos/task.h"
 
 
-#if defined(CONFIG_BT_ENABLED) && defined(CONFIG_BLUEDROID_ENABLED)
-
-#ifdef ARDUINO_ARCH_ESP32
 #include "esp32-hal-log.h"
-#endif
 
 #include "BluetoothSerial.h"
 
@@ -36,7 +35,19 @@
 #include "esp_spp_api.h"
 #include <esp_log.h>
 
+#include "esp32-hal-bt.h"
 #include "esp32-hal-log.h"
+
+#define TAG "BTSerial"
+#define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
+
+
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat"
+
+
+
 
 const char * _spp_server_name = "ESP32SPP";
 
@@ -59,6 +70,9 @@ static BluetoothSerialDataCb custom_data_callback = NULL;
 static esp_bd_addr_t current_bd_addr;
 static ConfirmRequestCb confirm_request_callback = NULL;
 static AuthCompleteCb auth_complete_callback = NULL;
+
+static const esp_spp_mode_t esp_spp_mode = ESP_SPP_MODE_CB;
+static const bool esp_spp_enable_l2cap_ertm = true;
 
 #define INQ_LEN 0x10
 #define INQ_NUM_RSPS 20
@@ -257,6 +271,7 @@ static void _spp_tx_task(void * arg){
 
 static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
 {
+    ESP_LOGI("SPP", "esp_spp_cb event %d", event);
     switch (event)
     {
     case ESP_SPP_INIT_EVT:
@@ -418,6 +433,7 @@ void BluetoothSerial::onData(BluetoothSerialDataCb cb){
 
 static void esp_bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
 {
+    ESP_LOGI("SPP", "esp_bt_gap_cb event %d", event);
     switch(event){
         case ESP_BT_GAP_DISC_RES_EVT: {
             log_i("ESP_BT_GAP_DISC_RES_EVT properties=%d", param->disc_res.num_prop);
@@ -435,7 +451,7 @@ static void esp_bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *pa
                             log_i("ESP_BT_GAP_DISC_RES_EVT : EIR : %s : %d", peer_bdname, peer_bdname_len);
                             if (strlen(_remote_name) == peer_bdname_len
                                 && strncmp(peer_bdname, _remote_name, peer_bdname_len) == 0) {
-                                log_v("ESP_BT_GAP_DISC_RES_EVT : SPP_START_DISCOVERY_EIR : %s", peer_bdname, peer_bdname_len);
+                                log_v("ESP_BT_GAP_DISC_RES_EVT : SPP_START_DISCOVERY_EIR : %s", peer_bdname);
                                 _isRemoteAddressSet = true;
                                 memcpy(_peer_bd_addr, param->disc_res.bda, ESP_BD_ADDR_LEN);
                                 esp_bt_gap_cancel_discovery();
@@ -671,8 +687,14 @@ static bool _init_bt(const char *deviceName)
         return false;
     }
 
-    if (esp_spp_init(ESP_SPP_MODE_CB) != ESP_OK){
-        log_e("spp init failed");
+    esp_spp_cfg_t bt_spp_cfg = {
+        .mode = esp_spp_mode,
+        .enable_l2cap_ertm = esp_spp_enable_l2cap_ertm,
+        .tx_buffer_size = 0, /* Only used for ESP_SPP_MODE_VFS mode */
+    };
+    esp_err_t ret;
+    if ((ret = esp_spp_enhanced_init(&bt_spp_cfg)) != ESP_OK) {
+        ESP_LOGE(TAG, "%s spp init failed: %s\n", __func__, esp_err_to_name(ret));
         return false;
     }
 
@@ -1172,7 +1194,7 @@ std::map<int, std::string> BluetoothSerial::getChannels(const BTAddress &remoteA
         log_e("esp_spp_start_discovery failed");
     } else {
         if(! waitForSDPRecord(READY_TIMEOUT)) {
-            log_e("getChannels failed timeout");
+            log_e("bla: getChannels failed timeout");
         }
         log_d("esp_spp_start_discovery wait for BT_SDP_COMPLETED done (%dms)", READY_TIMEOUT);
     }
@@ -1208,4 +1230,5 @@ BTAddress BluetoothSerial::getBtAddressObject() {
 String BluetoothSerial::getBtAddressString() {
     return getBtAddressObject().toString(true);
 }
-#endif
+
+#pragma GCC diagnostic pop

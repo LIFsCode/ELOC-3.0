@@ -9,11 +9,8 @@
 
 #ifndef COMPONENTS_CPP_UTILS_BTADDRESS_H_
 #define COMPONENTS_CPP_UTILS_BTADDRESS_H_
-#include "sdkconfig.h"
-#if defined(CONFIG_BT_ENABLED) && defined(CONFIG_BLUEDROID_ENABLED)
 #include <esp_gap_bt_api.h> // ESP32 BT
-#include <Arduino.h>
-
+#include "WString.h"
 
 /**
  * @brief A %BT device address.
@@ -35,5 +32,4 @@ private:
 	esp_bd_addr_t m_address;
 };
 
-#endif /* CONFIG_BT_ENABLED */
 #endif /* COMPONENTS_CPP_UTILS_BTADDRESS_H_ */

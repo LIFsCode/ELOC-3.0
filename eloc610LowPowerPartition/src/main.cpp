@@ -29,7 +29,9 @@
 #include "esp_sleep.h"
 #include "rtc_wdt.h"
 
+#include "nvs_flash.h"
 #include "BluetoothSerial.h"
+String device_name = "ESP32-BT-Slave-IDF";
 //#include "soc/efuse_reg.h"
 static const char *TAG = "main";
 
@@ -89,6 +91,26 @@ extern "C"
   void app_main(void);
 }
 
+esp_err_t setupNVS() {
+    esp_err_t err = nvs_flash_init();
+    if(err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND){
+        const esp_partition_t* partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_NVS, NULL);
+        if (partition != NULL) {
+            err = esp_partition_erase_range(partition, 0, partition->size);
+            if(!err){
+                err = nvs_flash_init();
+            } else {
+                ESP_LOG_LEVEL(ESP_LOG_ERROR, TAG, "Failed to format the broken NVS partition!");
+            }
+        } else {
+            ESP_LOG_LEVEL(ESP_LOG_ERROR, TAG, "Could not find NVS partition");
+        }
+    }
+    if(err) {
+        ESP_LOG_LEVEL(ESP_LOG_ERROR, TAG, "Failed to initialize NVS! Error: %u", err);
+    }
+    return err;
+}
 
 
 void resetPeripherals() {
@@ -674,6 +696,21 @@ gpio_set_level(BATTERY_LED, 0);
 //delay(30000);
 
 printMemory();
+
+    setupNVS();
+    static BluetoothSerial SerialBT;
+
+    if (SerialBT.available()) {
+        printf("BL Available");
+    }
+    SerialBT.begin(device_name); //Bluetooth device name
+    printf("The device with name \"%s\" is started.\nNow you can pair it with Bluetooth!\n", device_name.c_str());
+
+    printf("Minimum free heap size: %lu bytes\n", esp_get_minimum_free_heap_size());
+
+    if (SerialBT.isReady()) {
+        ESP_LOGI(TAG, "Bluetooth is ready");
+    }
 
   
   new SPIFFS("/spiffs");

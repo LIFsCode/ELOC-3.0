@@ -712,6 +712,9 @@ printMemory();
         ESP_LOGI(TAG, "Bluetooth is ready");
     }
 
+    SerialBT.end();
+    ESP_LOGI(TAG, "Bluetooth is disabled again");
+
   
   new SPIFFS("/spiffs");
   char line[128]="";

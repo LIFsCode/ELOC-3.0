@@ -34,6 +34,8 @@
 #include "ManualWakeup.hpp"
 #include "ElocSystem.hpp"
 
+#include "Battery.hpp"
+
 
 static const char *TAG = "ManualWakeup";
 
@@ -77,6 +79,9 @@ void wakeup_task (void *pvParameters)
             if (click_src.active)
                ESP_LOGI(TAG, "LIS3DH %s\n", 
                       click_src.s_click ? "single click" : "double click");
+
+            float voltage = Battery::GetInstance().getVoltage();
+            ESP_LOGI(TAG, "Bat Voltage %.3f\n", voltage);
         }
     }
 }

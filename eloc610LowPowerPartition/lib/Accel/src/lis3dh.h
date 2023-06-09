@@ -121,6 +121,16 @@ public:
 
 // lis3dh_sensor_t* lis3dh_init_sensor (uint8_t bus, uint8_t addr, uint8_t cs);
 
+    void lis3dh_print_error();
+
+/**
+ * @brief   Set full sensor config (mode, scale)
+ *
+ * @param   cfg     sensor config
+ * @return          true on success, false on error
+ */
+bool lis3dh_set_config (lis3dh_config_t& cfg);
+
 
 /**
  * @brief   Set sensor mode

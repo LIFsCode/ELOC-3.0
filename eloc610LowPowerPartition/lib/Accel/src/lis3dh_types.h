@@ -93,6 +93,15 @@ typedef enum {
 
 } lis3dh_scale_t;
 
+typedef struct {
+    lis3dh_scale_t scale;
+    lis3dh_odr_mode_t data_rate;
+    lis3dh_resolution_t resolution;
+    bool xEn;
+    bool yEn;
+    bool zEn;
+}lis3dh_config_t;
+
 
 /**
  * @brief   FIFO mode

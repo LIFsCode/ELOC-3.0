@@ -339,6 +339,20 @@ esp_err_t LIS3DH::lis3dh_init_sensor() {
     return ESP_OK;
 }
 
+bool LIS3DH::lis3dh_set_config(lis3dh_config_t& cfg) 
+{
+    if (!mInitDone) return false;
+
+    if (!lis3dh_set_scale(cfg.scale)) 
+        return false;
+
+    if (!lis3dh_set_mode(cfg.data_rate, cfg.resolution, cfg.xEn, cfg.yEn, cfg.zEn)) 
+        return false;
+
+    return true;
+
+}
+
 bool LIS3DH::lis3dh_set_mode (lis3dh_odr_mode_t odr, lis3dh_resolution_t res,
                               bool x, bool y, bool z)
 {

@@ -50,23 +50,36 @@ const micInfo_t& getMicInfo();
 
 void setMicBitShift();
 
+typedef struct {
+    uint32_t sampleRate; // TODO: this should finally be moved to Mic Info for consistency
+    bool useAPLL;
+    int  secondsPerFile;
+    bool listenOnly;
+    int  cpuMaxFrequencyMHZ;    // SPI this fails for anyting below 80   //
+    int  cpuMinFrequencyMHZ;
+    bool cpuEnableLightSleep; //only for AUTOMATIC light leep.
+    bool bluetoothEnableAtStart;
+    bool bluetoothEnableOnTapping;
+    bool testI2SClockInput;
+}elocConfig_T;
+
+const elocConfig_T& getConfig();
+
+extern uint32_t gSampleRate; // TODO: this should finally be moved to Mic Info for consistency
+extern int  gSecondsPerFile;
+
+
+typedef struct {
+
+}elocDeviceInfo_T;
+
 //BUGME: encapsulate these in a struct & implement a getter
-extern uint32_t gSampleRate;
-extern int gSecondsPerFile;
 extern String gLocation;
 extern String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
 extern String gLocationCode;
 extern String gLocationAccuracy;
 extern long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
-extern int gbitShift;
 extern bool gTimingFix;
-extern bool gListenOnly;
-extern bool gUseAPLL;
-extern int gMaxFrequencyMHZ;    // SPI this fails for anyting below 80   //
-extern int gMinFrequencyMHZ;
-extern bool gEnableLightSleep; //only for AUTOMATIC light leep.
-extern bool gEnableBluetoothAtStart;
-extern bool TestI2SClockInput;
 
 String readNodeName();
 

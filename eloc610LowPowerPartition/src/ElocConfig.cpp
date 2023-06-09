@@ -112,6 +112,23 @@ String gLocationAccuracy="99";
 long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
 
 
+elocConfig_T gElocConfig {
+    .sampleRate = I2S_DEFAULT_SAMPLE_RATE,
+    .useAPLL = true,
+    .secondsPerFile = 60,
+    .listenOnly = false,
+    // Power management
+    .cpuMaxFrequencyMHZ = 80,    // minimum 80
+    .cpuMinFrequencyMHZ = 10,
+    .cpuEnableLightSleep = true,
+    .bluetoothEnableAtStart = false,
+    .bluetoothEnableOnTapping = true,
+    .testI2SClockInput = false
+};
+const elocConfig_T& getConfig() {
+    return gElocConfig;
+}
+
 /**************************************************************************************************/
 
 String readNodeName() {
@@ -141,15 +158,7 @@ String readNodeName() {
 extern bool gMountedSDCard;
 
 //BUGME: encapsulate these in a struct & implement a getter
-int gbitShift;
-bool TestI2SClockInput=false;
 bool gTimingFix=false;
-bool gListenOnly=false;
-bool gUseAPLL=true;
-int gMaxFrequencyMHZ=80;    // SPI this fails for anyting below 80   //
-int gMinFrequencyMHZ=10;
-bool gEnableLightSleep=true; //only for AUTOMATIC light leep.
-bool gEnableBluetoothAtStart=false; //only for AUTOMATIC light leep.
 
 void readConfig() {
 
@@ -176,21 +185,21 @@ void readConfig() {
                 position = strstr(line, "MaxFrequencyMHZ:");
                 if (position != NULL) {
                     position = strstr(line, ":");
-                    gMaxFrequencyMHZ = atoi(position + 1);
-                    ESP_LOGI(TAG, "Max Frequency MHZ override %d", gMaxFrequencyMHZ);
+                    gElocConfig.cpuMaxFrequencyMHZ = atoi(position + 1);
+                    ESP_LOGI(TAG, "Max Frequency MHZ override %d", gElocConfig.cpuMaxFrequencyMHZ);
                 }
                 position = strstr(line, "MinFrequencyMHZ:");
                 if (position != NULL) {
                     position = strstr(line, ":");
-                    gMinFrequencyMHZ = atoi(position + 1);
-                    ESP_LOGI(TAG, "Min Frequency MHZ override %d", gMinFrequencyMHZ);
+                    gElocConfig.cpuMinFrequencyMHZ = atoi(position + 1);
+                    ESP_LOGI(TAG, "Min Frequency MHZ override %d", gElocConfig.cpuMinFrequencyMHZ);
                 }
 
                 position = strstr(line, "gain:");
                 if (position != NULL) {
                     position = strstr(line, ":");
-                    gbitShift = atoi(position + 1);
-                    ESP_LOGI(TAG, "gain override: %d", gbitShift);
+                    gMicInfo.MicBitShift = String(position + 1);
+                    ESP_LOGI(TAG, "gain override: %d", (int)gMicInfo.MicBitShift.toInt());
                 }
 
                 position = strstr(line, "SecondsPerFile:");
@@ -202,27 +211,27 @@ void readConfig() {
 
                 position = strstr(line, "UseAPLL:no");
                 if (position != NULL) {
-                    gUseAPLL = false;
+                    gElocConfig.useAPLL = false;
                 }
                 position = strstr(line, "UseAPLL:yes");
                 if (position != NULL) {
-                    gUseAPLL = true;
+                    gElocConfig.useAPLL = true;
                 }
                 position = strstr(line, "TryLightSleep?:yes");
                 if (position != NULL) {
-                    gEnableLightSleep = true;
+                    gElocConfig.cpuEnableLightSleep = true;
                 }
                 position = strstr(line, "TryLightSleep?:no");
                 if (position != NULL) {
-                    gEnableLightSleep = false;
+                    gElocConfig.cpuEnableLightSleep = false;
                 }
                 position = strstr(line, "ListenOnly?:no");
                 if (position != NULL) {
-                    gListenOnly = false;
+                    gElocConfig.listenOnly = false;
                 }
                 position = strstr(line, "ListenOnly?:yes");
                 if (position != NULL) {
-                    gListenOnly = true;
+                    gElocConfig.listenOnly = true;
                 }
                 position = strstr(line, "TimingFix:no");
                 if (position != NULL) {
@@ -232,20 +241,20 @@ void readConfig() {
                 if (position != NULL) {
                     gTimingFix = true;
                 }
-                position = strstr(line, "TestI2SClockInput:no");
+                position = strstr(line, "gElocConfig.testI2SClockInput:no");
                 if (position != NULL) {
-                    TestI2SClockInput = false;
+                    gElocConfig.testI2SClockInput = false;
                 }
-                position = strstr(line, "TestI2SClockInput:yes");
+                position = strstr(line, "gElocConfig.testI2SClockInput:yes");
                 if (position != NULL) {
-                    TestI2SClockInput = true;
+                    gElocConfig.testI2SClockInput = true;
                 }
             }
-            ESP_LOGI(TAG, "Use APLL override: %d", gUseAPLL);
-            ESP_LOGI(TAG, "Enable light Sleep override: %d", gEnableLightSleep);
-            ESP_LOGI(TAG, "Listen Only override: %d", gListenOnly);
+            ESP_LOGI(TAG, "Use APLL override: %d", gElocConfig.useAPLL);
+            ESP_LOGI(TAG, "Enable light Sleep override: %d", gElocConfig.cpuEnableLightSleep);
+            ESP_LOGI(TAG, "Listen Only override: %d", gElocConfig.listenOnly);
             ESP_LOGI(TAG, "Timing fix override: %d", gTimingFix);
-            ESP_LOGI(TAG, "Test i2sClockInput: %d", TestI2SClockInput);
+            ESP_LOGI(TAG, "Test i2sClockInput: %d", gElocConfig.testI2SClockInput);
             ESP_LOGI(TAG, "\n\n\n");
 
             fclose(f);
@@ -254,8 +263,8 @@ void readConfig() {
 
     i2s_mic_Config.sample_rate = gSampleRate;
     if (gSampleRate <= 32000) { // my wav files sound wierd if apll clock raate is > 32kh. So force non-apll clock if >32khz
-        i2s_mic_Config.use_apll = gUseAPLL;
-        ESP_LOGI(TAG, "Sample Rate is < 32khz USE APLL Clock %d", gUseAPLL);
+        i2s_mic_Config.use_apll = gElocConfig.useAPLL;
+        ESP_LOGI(TAG, "Sample Rate is < 32khz USE APLL Clock %d", gElocConfig.useAPLL);
     } else {
         i2s_mic_Config.use_apll = false;
         ESP_LOGI(TAG, "Sample Rate is > 32khz Forcing NO_APLL ");

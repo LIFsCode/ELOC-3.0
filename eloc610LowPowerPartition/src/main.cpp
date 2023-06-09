@@ -167,10 +167,10 @@ void testInput() {
           I2SSampler *input;
           for (uint32_t i=1000; i<34000; i=i+2000) {
                  i2s_mic_Config.sample_rate=i;
-                 i2s_mic_Config.use_apll=gUseAPLL;
+                 i2s_mic_Config.use_apll=getConfig().useAPLL;
            
 
-                 input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config,gTimingFix); //the true at the end is the timing fix
+                 input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, gbitShift, getConfig().listenOnly, gTimingFix);
                  input->start();
                  delay(100);
                   ESP_LOGI(TAG, "Clockrate: %f", i2s_get_clk(I2S_NUM_0));
@@ -419,10 +419,6 @@ void record(I2SSampler *input) {
   gRecording=true;
   char fname[100];
   
-  //BUGME: this is very dirty: I2SMEMSSampler directly accesses global variable gbitShift
-  //        the high power partition uses gMicBitShift (WTF?) but its never set through config
-  gbitShift=getMicInfo().MicBitShift.toInt();
-
     input->start();
   gRealSampleRate=(int32_t)(i2s_get_clk(I2S_NUM_0));
   ESP_LOGI(TAG, "I2s REAL clockrate in record  %u", gRealSampleRate  );
@@ -456,11 +452,11 @@ void record(I2SSampler *input) {
   
 
   
-  if (gListenOnly)  ESP_LOGI(TAG, "Listening only...");
+  if (getConfig().listenOnly)  ESP_LOGI(TAG, "Listening only...");
   while (!stopit) {
       
       
-      if (!gListenOnly) {
+      if (!getConfig().listenOnly) {
             createFilename(fname);
             fp = fopen(fname, "wb");
 
@@ -493,7 +489,7 @@ void record(I2SSampler *input) {
                          //  get the i2s buffer overflow ALWAYS
                          // there is no i2s output when DELAY is active. but get buffer overflow always
             
-             if (!gListenOnly)  {
+             if (!getConfig().listenOnly)  {
                   writestart = esp_timer_get_time();
                   writer->write(samples, samples_read);
                   
@@ -503,7 +499,7 @@ void record(I2SSampler *input) {
                   if (writeTimeMillis>bufferTimeMillis) bufferUnderruns++;
                   ESP_LOGI(TAG, "Wrote %d samples in %lld ms. Longest: %lld. buffer (ms): %f underrun: %lld loop:%lld",   samples_read,writeTimeMillis,longestWriteTimeMillis,bufferTimeMillis,bufferUnderruns,looptime/1000);
             }
-            //if (gListenOnly)  ESP_LOGI(TAG, "Listening only...");
+            //if (getConfig().listenOnly)  ESP_LOGI(TAG, "Listening only...");
             rec_req_t rec_req = REC_REQ_NONE;
             if (xQueueReceive(rec_req_evt_queue, &rec_req, 0))  { // 0 waiting time
                 if (rec_req == REC_REQ_STOP) {
@@ -549,7 +545,7 @@ void record(I2SSampler *input) {
           
       }
     
-    if (!gListenOnly) {
+    if (!getConfig().listenOnly) {
         writer->finish();
         fclose(fp);
         delete writer;
@@ -696,7 +692,7 @@ i2s_config_t getI2sConfig() {
     // update the config with the updated parameters
     ESP_LOGI(TAG, "Sample rate = %d", gSampleRate);
     i2s_mic_Config.sample_rate = gSampleRate; //fails when hardcoded to 22050
-    i2s_mic_Config.use_apll = gUseAPLL; //not getting set. gUseAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
+    i2s_mic_Config.use_apll = getConfig().useAPLL; //not getting set. getConfig().useAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
     if (i2s_mic_Config.sample_rate == 0) {
         ESP_LOGI(TAG, "Resetting invalid sample rate to default = %d", I2S_DEFAULT_SAMPLE_RATE);
         i2s_mic_Config.sample_rate = I2S_DEFAULT_SAMPLE_RATE;
@@ -836,9 +832,9 @@ void app_main(void) {
 
     /** Setup Power Management */
     esp_pm_config_esp32_t cfg = {
-        .max_freq_mhz = gMaxFrequencyMHZ, 
-        .min_freq_mhz = gMinFrequencyMHZ, 
-        .light_sleep_enable = gEnableLightSleep
+        .max_freq_mhz = getConfig().cpuMaxFrequencyMHZ, 
+        .min_freq_mhz = getConfig().cpuMinFrequencyMHZ, 
+        .light_sleep_enable = getConfig().cpuEnableLightSleep
     };
     esp_pm_configure(&cfg);
     // calling gpio_sleep_sel_dis must be done after esp_pm_configure() otherwise they will get overwritten
@@ -853,7 +849,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(rtc_gpio_wakeup_enable(GPIO_BUTTON, GPIO_INTR_LOW_LEVEL));
     ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
 
-    if (TestI2SClockInput)
+    if (getConfig().testI2SClockInput)
         testInput();
 
     ESP_LOGI(TAG, "waiting for button or bluetooth");
@@ -872,7 +868,7 @@ void app_main(void) {
                     LEDflashError();
                 } else {
                     getI2sConfig(); 
-                    I2SMEMSSampler input (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, gTimingFix); // the true at the end is the timing fix
+                    I2SMEMSSampler input (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, gbitShift, getConfig().listenOnly, gTimingFix);
                     record(&input);
                 }
             }

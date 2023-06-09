@@ -639,7 +639,7 @@ void wakeup_task (void *pvParameters)
     uint32_t gpio_num;
     int loopcounter = 0;
     //ESP_LOGI(TAG, "wakeup_task starting...");
-    if (gEnableBluetoothAtStart) {
+    if (getConfig().bluetoothEnableAtStart) {
         if (enableBluetooth() != ESP_OK) {
             ESP_LOGE(TAG, "Failed to enable bluetooth!");
         }
@@ -669,7 +669,7 @@ void wakeup_task (void *pvParameters)
             ESP_LOGI(TAG, "Bat Voltage %.3f\n", voltage);
 
             //TODO: check for config to enable bluetooth
-            if (!gBluetoothEnabled) {
+            if (!gBluetoothEnabled && getConfig().bluetoothEnableOnTapping) {
                 ESP_LOGI(TAG, " two following are heap size, total and max alloc ");
                 ESP_LOGI(TAG, "     %u", ESP.getFreeHeap());
                 ESP_LOGI(TAG, "     %u", ESP.getMaxAllocHeap());

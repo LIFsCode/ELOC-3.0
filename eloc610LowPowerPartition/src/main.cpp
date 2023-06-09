@@ -734,13 +734,16 @@ i2s_config_t getI2sConfig() {
 
 void app_main(void) {
 
-    ESP_LOGI(TAG, "\n\n---------VERSION %s\n\n", VERSIONTAG);
+    ESP_LOGI(TAG, "\nSETUP--start\n");
     initArduino();
     ESP_LOGI(TAG, "initArduino done");
 
-    ESP_LOGI(TAG, "\nSETUP--start\n");
-
     printPartitionInfo(); // so if reboots, always boot into the bluetooth partition
+
+    ESP_LOGI(TAG, "\n"
+        "------------------------- ELOC Recorder -------------------------\n"
+        "-- VERSION: %s\n"
+        "-----------------------------------------------------------------\n", VERSIONTAG);
 
     printRevision();
 
@@ -805,10 +808,6 @@ void app_main(void) {
     ESP_LOGI(TAG, "Setting up Battery...");
     Battery::GetInstance();
 
-    // delay(30000);
-
-    printMemory();
-
     if (!SPIFFS.begin(true, "/spiffs")) {
         ESP_LOGI(TAG, "An Error has occurred while mounting SPIFFS");
         // return;
@@ -867,8 +866,6 @@ void app_main(void) {
     while (true) {
 
         rec_req_t rec_req = REC_REQ_NONE;
-        // wait_for_button_push();
-        // record(input);
         if (xQueueReceive(rec_req_evt_queue, &rec_req, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG,"REC_REQ = %d", rec_req);
             if (rec_req == REC_REQ_START) {

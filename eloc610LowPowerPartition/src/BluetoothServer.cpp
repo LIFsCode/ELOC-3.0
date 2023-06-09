@@ -473,7 +473,7 @@ void wait_for_bt_command() {
         if (SerialBT.available()) {
             // handle case for sending initial default setup to app
             serialIN = SerialBT.readString();
-            // ESP_LOGI(TAG, serialIN);
+            ESP_LOGI(TAG, "%s", serialIN.c_str());
             // if (serialIN.startsWith("settingsRequest")) {
             //    btwrite("#"+String(getMicInfo().MicSampleRate)+"#"+String(getConfig().secondsPerFile)+"#"+gLocation);
             // }
@@ -721,14 +721,14 @@ esp_err_t BluetoothServerSetup(bool installGpioIsr) {
     //lis3dh.lis3dh_set_mode (lis3dh_odr_400, lis3dh_high_res, true, true, true);
 
     // take 5 measurements for debugging purpose
-    for (int i=0; i<5; i++) {
-        lis3dh_float_data_t  data;
-        while(!lis3dh.lis3dh_new_data ());
-        if (lis3dh.lis3dh_get_float_data (&data)) {}
-            // max. full scale is +-16 g and best resolution is 1 mg, i.e. 5 digits
-            ESP_LOGI(TAG, "LIS3DH (xyz)[g] ax=%+7.3f ay=%+7.3f az=%+7.3f\n",
-                    data.ax, data.ay, data.az);
-    }
+    // for (int i=0; i<5; i++) {
+    //     lis3dh_float_data_t  data;
+    //     while(!lis3dh.lis3dh_new_data ());
+    //     if (lis3dh.lis3dh_get_float_data (&data)) {}
+    //         // max. full scale is +-16 g and best resolution is 1 mg, i.e. 5 digits
+    //         ESP_LOGI(TAG, "LIS3DH (xyz)[g] ax=%+7.3f ay=%+7.3f az=%+7.3f\n",
+    //                 data.ax, data.ay, data.az);
+    // }
 
     return ESP_OK;
 }

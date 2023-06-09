@@ -43,6 +43,7 @@
 #include "lis3dh.h"
 #include "Battery.hpp"
 #include "ElocSystem.hpp"
+#include "ElocConfig.hpp"
 #include "ManualWakeup.hpp"
 
 static const char *TAG = "main";
@@ -62,14 +63,7 @@ int gBufferCount=18;   // so 6*4000 = 24k buf len
 float gVoltage[] = {0.0f, 0.0f, 0.0f, 0.0f};
 //always keep these in same order
 String gLocation = "not_set";
-String gMicType="ns";
-String gMicBitShift="11";
 int gbitShift;
-String gMicGPSCoords="ns";
-String gMicPointingDirectionDegrees="ns";
-String gMicHeight="ns";
-String gMicMountType="ns";
-String gMicBluetoothOnOrOff="on";
 bool gDisableBluetoothWhenRecording=false;
 
 ////// these are the things you can change for now. 
@@ -1431,59 +1425,6 @@ String getSubstring(String data, char separator, int index)
     return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
 }
 
-
-
-
-void writeMicInfo() {
-  File file2 = SPIFFS.open("/micinfo.txt", FILE_WRITE);
-  
-  file2.print(gMicType+'\n');
-  file2.print(gMicBitShift+'\n');
-  file2.print(gMicGPSCoords+'\n');
-  file2.print(gMicPointingDirectionDegrees+'\n');
-  file2.print(gMicHeight+'\n');
-  file2.print(gMicMountType+'\n');
-  file2.print(gMicBluetoothOnOrOff+'\n');
-  file2.close();
-  Serial.println("micinfo: "+gMicType+"  "+gMicBitShift+"  "+gMicGPSCoords+"  "+gMicPointingDirectionDegrees+" "+gMicHeight+" "+gMicMountType+" "+gMicBluetoothOnOrOff);
-
-
-
-
-
-}
-
-
-void readMicInfo() {
-     if(!(SPIFFS.exists("/micinfo.txt"))){
-
-      printf("micinfo.txt not exist");
-      writeMicInfo();
-      
-        
-
-    }
-    File file2 = SPIFFS.open("/micinfo.txt", FILE_READ);
-    gMicType=file2.readStringUntil('\n');
-    gMicType.trim();
-    gMicBitShift=file2.readStringUntil('\n');
-    gMicBitShift.trim();
-    gMicGPSCoords=file2.readStringUntil('\n');
-    gMicGPSCoords.trim();
-    gMicPointingDirectionDegrees=file2.readStringUntil('\n');
-    gMicPointingDirectionDegrees.trim();
-    gMicHeight=file2.readStringUntil('\n');
-    gMicHeight.trim();
-    gMicMountType=file2.readStringUntil('\n');
-    gMicMountType.trim();
-    gMicBluetoothOnOrOff=file2.readStringUntil('\n');
-    gMicBluetoothOnOrOff.trim();
-
-    file2.close();
-    Serial.println("micinfo: "+gMicType+"  "+gMicBitShift+"  "+gMicGPSCoords+"  "+gMicPointingDirectionDegrees+" "+gMicHeight+" "+gMicMountType+" "+gMicBluetoothOnOrOff);
- 
-
-}
 
 
 

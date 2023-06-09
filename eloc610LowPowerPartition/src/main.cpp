@@ -850,7 +850,7 @@ void app_main(void) {
     //       interrupts but not edge triggered interrupts. If LIS3DH_INT_PIN should be used for wakeup
     //       then the config must be modifed to .latch = false, so that te INTR pin is not hold. 
     //       Also the interrupt handler must be adjusted, so that it does no fire continuously
-    //ESP_ERROR_CHECK(gpio_wakeup_enable(LIS3DH_INT_PIN, GPIO_INTR_HIGH_LEVEL));
+    ESP_ERROR_CHECK(gpio_wakeup_enable(LIS3DH_INT_PIN, GPIO_INTR_HIGH_LEVEL));
     ESP_ERROR_CHECK(gpio_wakeup_enable(GPIO_BUTTON, GPIO_INTR_LOW_LEVEL));
     ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
 

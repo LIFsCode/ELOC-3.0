@@ -63,10 +63,16 @@ static QueueHandle_t gpio_evt_queue = NULL;
 
 void IRAM_ATTR int_signal_handler (void *args)
 {
+    // We have not woken a task at the start of the ISR.
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     uint32_t gpio_num = (uint32_t) args;
     // send an event with GPIO to the interrupt user task
     //ESP_LOGI(TAG, "int_signal_handler");
-    xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
+    xQueueSendFromISR(gpio_evt_queue, &gpio_num, &xHigherPriorityTaskWoken);
+
+    if( xHigherPriorityTaskWoken ) {
+        portYIELD_FROM_ISR ();
+    }
 }
 
 
@@ -503,7 +509,8 @@ esp_err_t BluetoothServerSetup(bool installGpioIsr) {
 
     // create an event queue to send interrupt events from interrupt
     // handler to the interrupt task
-    gpio_evt_queue = xQueueCreate(10, sizeof(uint8_t));
+    // a single event is enough, it is only used to trigger the start of BT
+    gpio_evt_queue = xQueueCreate(1, sizeof(uint8_t));
 
     // configure interupt pins for *INT1* and *INT2* signals and set the interrupt handler
     gpio_set_direction(LIS3DH_INT_PIN, GPIO_MODE_INPUT);

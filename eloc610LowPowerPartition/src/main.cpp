@@ -466,7 +466,7 @@ void record(I2SSampler *input) {
             fp = fopen(fname, "wb");
 
           
-            writer = new WAVFileWriter(fp, gRealSampleRate);
+            writer = new WAVFileWriter(fp, gRealSampleRate, NUMBER_OF_CHANNELS);
       }
       long loopCounter=0;
       int64_t recordupdate = esp_timer_get_time();

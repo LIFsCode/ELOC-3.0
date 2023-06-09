@@ -1,7 +1,11 @@
 #pragma once
 
-extern uint32_t gSampleRate, gRealSampleRate;
-#include <../../../src/config.h>
+/* Header contents must be set dynamically. Using this construct in the header:
+ *  gRealSampleRate*2*NUMBER_OF_CHANNELS;
+ *  will only evaluate gRealSampleRate once! Hence if recording is started 
+ *  multiple times witch different sample rate settings the WAVFile will get 
+ *  corrupted.
+ */
 #pragma pack(push, 1)
 typedef struct _wav_header
 {
@@ -14,10 +18,10 @@ typedef struct _wav_header
   char fmt_header[4];      // Contains "fmt " (includes trailing space)
   int fmt_chunk_size = 16; // Should be 16 for PCM
   short audio_format = 1;  // Should be 1 for PCM. 3 for IEEE Float
-  short num_channels = NUMBER_OF_CHANNELS;
-  int sample_rate = gRealSampleRate;
-  int byte_rate = gRealSampleRate*2*NUMBER_OF_CHANNELS;      // Number of bytes per second. sample_rate * num_channels * Bytes Per Sample
-  short sample_alignment = NUMBER_OF_CHANNELS*2; // num_channels * Bytes Per Sample
+  short num_channels = 1;
+  int sample_rate = 20000;  // must be set manually
+  int byte_rate = 40000;      // Number of bytes per second. sample_rate * num_channels * Bytes Per Sample
+  short sample_alignment = 2; // num_channels * Bytes Per Sample
   short bit_depth = 16;       // Number of bits per sample
 
   // Data

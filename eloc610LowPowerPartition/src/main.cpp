@@ -31,6 +31,7 @@
 
 #include "esp_sleep.h"
 #include "rtc_wdt.h"
+#include <driver/rtc_io.h>
 //#include "soc/efuse_reg.h"
 
 /** Arduino libraries*/
@@ -846,12 +847,10 @@ void app_main(void) {
     gpio_sleep_sel_dis(GPIO_BUTTON);
     gpio_sleep_sel_dis(LIS3DH_INT_PIN);
     // now setup GPIOs as wakeup source. This is required to wake up the recorder in tickless idle
-    //BUGME: this could cause problems with the interrupt, as gpio_wakeup_enable() only allows level
-    //       interrupts but not edge triggered interrupts. If LIS3DH_INT_PIN should be used for wakeup
-    //       then the config must be modifed to .latch = false, so that te INTR pin is not hold. 
-    //       Also the interrupt handler must be adjusted, so that it does no fire continuously
-    ESP_ERROR_CHECK(gpio_wakeup_enable(LIS3DH_INT_PIN, GPIO_INTR_HIGH_LEVEL));
-    ESP_ERROR_CHECK(gpio_wakeup_enable(GPIO_BUTTON, GPIO_INTR_LOW_LEVEL));
+    //BUGME: this seems to be a bug in ESP IDF: https://github.com/espressif/arduino-esp32/issues/7158
+    //       gpio_wakeup_enable does not correctly switch to rtc_gpio_wakeup_enable() for RTC GPIOs.
+    ESP_ERROR_CHECK(rtc_gpio_wakeup_enable(LIS3DH_INT_PIN, GPIO_INTR_HIGH_LEVEL));
+    ESP_ERROR_CHECK(rtc_gpio_wakeup_enable(GPIO_BUTTON, GPIO_INTR_LOW_LEVEL));
     ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
 
     if (TestI2SClockInput)

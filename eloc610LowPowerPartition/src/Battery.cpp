@@ -24,7 +24,6 @@
 
 #include <esp_log.h>
 #include <driver/adc.h>
-#include <esp_adc/adc_oneshot.h>
 #include "config.h"
 
 #include "CPPANALOG/analogio.h"
@@ -36,9 +35,9 @@ static const char* TAG = "Battery";
 
 //TODO: adjust these limits for Li-ION
 static const bat_limits_t C_LiION_LIMITS = {
-    .Voff = 2.7,
-    .Vlow = 3.18,
-    .Vfull = 3.3
+    .Voff = 2.7f,
+    .Vlow = 3.18f,
+    .Vfull = 3.3f
 };
 
 static const bat_limits_t C_LiFePo_LIMITS = {

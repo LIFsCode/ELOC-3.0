@@ -29,10 +29,9 @@
 #include "esp_err.h"
 
 typedef struct {
-    // use LiFePo defaults: just in case bat_limits_t is used uninitialized
-    float Voff = 2.7;
-    float Vlow = 3.18;
-    float Vfull = 3.3;
+    float Voff;
+    float Vlow;
+    float Vfull;
 }bat_limits_t;
 
 class Battery

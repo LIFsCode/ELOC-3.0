@@ -15,6 +15,7 @@
 
 #include "SDCard.h"
 #include "SPIFFS.h"
+#include <FFat.h>
 #include "WAVFileWriter.h"
 //#include "WAVFileReader.h"
 #include "config.h"
@@ -25,10 +26,17 @@
 
 #include <time.h>
 #include <sys/time.h>
+#include <sys/stat.h>
 
 #include "esp_sleep.h"
 #include "rtc_wdt.h"
 //#include "soc/efuse_reg.h"
+
+/** Arduino libraries*/
+#include "ESP32Time.h"
+#include "BluetoothSerial.h"
+/** Arduino libraries END*/
+
 
 #include "version.h"
 
@@ -43,7 +51,6 @@ static const char *TAG = "main";
 bool TestI2SClockInput=false;
 bool gMountedSDCard=false;
 bool gRecording=false;
-bool gGPIOButtonPressed =false;
 
 
 int32_t *graw_samples;
@@ -52,31 +59,70 @@ int gRawSampleBlockSize=1000;
 int gSampleBlockSize=16000; //must be factor of 1000   in samples
 int gBufferLen=1000; //in samples
 int gBufferCount=18;   // so 6*4000 = 24k buf len
+float gVoltage[] = {0.0f, 0.0f, 0.0f, 0.0f};
+//always keep these in same order
+String gLocation = "not_set";
+String gMicType="ns";
+String gMicBitShift="11";
+int gbitShift;
+String gMicGPSCoords="ns";
+String gMicPointingDirectionDegrees="ns";
+String gMicHeight="ns";
+String gMicMountType="ns";
+String gMicBluetoothOnOrOff="on";
+bool gDisableBluetoothWhenRecording=false;
 
 ////// these are the things you can change for now. 
 
 uint32_t gSampleRate;
 uint32_t  gRealSampleRate;
-int  gbitShift; //can be 11 through 14 11 for far-field (default) listening and 14 for mounted on mahout.
 uint64_t gStartupTime; //gets read in at startup to set tystem time. 
 int gSecondsPerFile= 60;
 
 char gSessionFolder[65];
 
+//timing
+int64_t gTotalUPTimeSinceReboot=esp_timer_get_time();  //esp_timer_get_time returns 64-bit time since startup, in microseconds.
+int64_t gTotalRecordTimeSinceReboot=0;
+int64_t gSessionRecordTime=0;
+
 //voltage
-//bool gVoltageCalibrationDone=false;
+bool gVoltageCalibrationDone=false;
 float gVoltageOffset=10.0; //read this in on startup
 float gvOff=2.7;
 float gvFull=3.3;
 float gvLow=3.18;
 int gMinutesWaitUntilDeepSleep=60; //change to 1 or 2 for testing
 
+
+//session stuff
+String gSessionIdentifier="";
+
 bool gTimingFix=false;
-bool gListenOnly=false;
+bool gListenOnly=true;
 bool gUseAPLL=true;
 int gMaxFrequencyMHZ=80;    // SPI this fails for anyting below 80   //
 int gMinFrequencyMHZ=10;
 bool gEnableLightSleep=true; //only for AUTOMATIC light leep.
+
+bool gSentSettings=false;
+//String gBluetoothMAC="";
+String gFirmwareVersion=VERSION;
+
+BluetoothSerial SerialBT;
+ESP32Time timeObject;
+//WebServer server(80);
+//bool updateFinished=false;
+bool gWillUpdate=false;
+bool gGPIOButtonPressed=false;
+float gFreeSpaceGB=0.0;
+uint32_t  gFreeSpaceKB=0;
+long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
+String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
+String gLocationCode="unknown";
+String gLocationAccuracy="99";
+//String gTimeDifferenceCode; //see getTimeDifferenceCode() below
+bool gBlueToothISDisabled=false;
 
  #ifdef USE_SPI_VERSION
     SDCard *theSDCardObject;
@@ -87,6 +133,17 @@ bool gEnableLightSleep=true; //only for AUTOMATIC light leep.
  #endif
 
 
+void mountSDCard();
+void btwrite(String theString);
+void sendElocStatus();
+void sendSettings();
+void readSettings();
+void writeSettings(String settings);
+void freeSpace();
+void doDeepSleep();
+float getVoltage();
+void setTime(long epoch, int ms);
+
 // idf-wav-sdcard/lib/sd_card/src/SDCard.cpp   m_host.max_freq_khz = 18000;
 // https://github.com/atomic14/esp32_sdcard_audio/commit/000691f9fca074c69e5bb4fdf39635ccc5f993d4#diff-6410806aa37281ef7c073550a4065903dafce607a78dc0d4cbc72cf50bac3439
 
@@ -95,7 +152,245 @@ extern "C"
   void app_main(void);
 }
 
+void readConfig() {
 
+  char line[128] = "";
+  char *position;
+  if (gMountedSDCard)
+  {
+    FILE* f = fopen("/sdcard/eloctest.txt", "r");
+    if (f == NULL)
+    {
+      ESP_LOGI(TAG, "no eloc testing file on root of SDCARD ");
+      // return;
+    }
+    else
+    {
+      ESP_LOGI(TAG, "\n\n\n");
+      while (!feof(f))
+      {
+        fgets(line, sizeof(line), f);
+        // ESP_LOGI(TAG, "%s", line);
+
+        position = strstr(line, "SampleRate:");
+        if (position != NULL)
+        {
+          position = strstr(line, ":");
+          gSampleRate = atoi(position + 1);
+          ESP_LOGI(TAG, "sample rate override %u", gSampleRate);
+        }
+
+        position = strstr(line, "MaxFrequencyMHZ:");
+        if (position != NULL)
+        {
+          position = strstr(line, ":");
+          gMaxFrequencyMHZ = atoi(position + 1);
+          ESP_LOGI(TAG, "Max Frequency MHZ override %d", gMaxFrequencyMHZ);
+        }
+        position = strstr(line, "MinFrequencyMHZ:");
+        if (position != NULL)
+        {
+          position = strstr(line, ":");
+          gMinFrequencyMHZ = atoi(position + 1);
+          ESP_LOGI(TAG, "Min Frequency MHZ override %d", gMinFrequencyMHZ);
+        }
+
+        position = strstr(line, "gain:");
+        if (position != NULL)
+        {
+          position = strstr(line, ":");
+          gbitShift = atoi(position + 1);
+          ESP_LOGI(TAG, "gain override: %d", gbitShift);
+        }
+
+        position = strstr(line, "VoltageOffset:");
+        if (position != NULL)
+        {
+          position = strstr(line, ":");
+          gVoltageOffset = atof(position + 1);
+          ESP_LOGI(TAG, "voltage offset  override: %f", gVoltageOffset);
+        }
+
+        position = strstr(line, "SecondsPerFile:");
+        if (position != NULL)
+        {
+          position = strstr(line, ":");
+          gSecondsPerFile = atoi(position + 1);
+          ESP_LOGI(TAG, "Seconds per File override: %d", gSecondsPerFile);
+        }
+
+        position = strstr(line, "UseAPLL:no");
+        if (position != NULL)
+        {
+          gUseAPLL = false;
+        }
+        position = strstr(line, "UseAPLL:yes");
+        if (position != NULL)
+        {
+          gUseAPLL = true;
+        }
+        position = strstr(line, "TryLightSleep?:yes");
+        if (position != NULL)
+        {
+          gEnableLightSleep = true;
+        }
+        position = strstr(line, "TryLightSleep?:no");
+        if (position != NULL)
+        {
+          gEnableLightSleep = false;
+        }
+        position = strstr(line, "ListenOnly?:no");
+        if (position != NULL)
+        {
+          gListenOnly = false;
+        }
+        position = strstr(line, "ListenOnly?:yes");
+        if (position != NULL)
+        {
+          gListenOnly = true;
+        }
+        position = strstr(line, "TimingFix:no");
+        if (position != NULL)
+        {
+          gTimingFix = false;
+        }
+        position = strstr(line, "TimingFix:yes");
+        if (position != NULL)
+        {
+          gTimingFix = true;
+        }
+        position = strstr(line, "TestI2SClockInput:no");
+        if (position != NULL)
+        {
+          TestI2SClockInput = false;
+        }
+        position = strstr(line, "TestI2SClockInput:yes");
+        if (position != NULL)
+        {
+          TestI2SClockInput = true;
+        }
+      }
+      ESP_LOGI(TAG, "Use APLL override: %d", gUseAPLL);
+      ESP_LOGI(TAG, "Enable light Sleep override: %d", gEnableLightSleep);
+      ESP_LOGI(TAG, "Listen Only override: %d", gListenOnly);
+      ESP_LOGI(TAG, "Timing fix override: %d", gTimingFix);
+      ESP_LOGI(TAG, "Test i2sClockInput: %d", TestI2SClockInput);
+      ESP_LOGI(TAG, "\n\n\n");
+
+      fclose(f);
+    }
+  }
+
+  i2s_mic_Config.sample_rate = gSampleRate;
+  if (gSampleRate <= 32000)
+  { // my wav files sound wierd if apll clock raate is > 32kh. So force non-apll clock if >32khz
+    i2s_mic_Config.use_apll = gUseAPLL;
+    ESP_LOGI(TAG, "Sample Rate is < 32khz USE APLL Clock %d", gUseAPLL);
+  }
+  else
+  {
+    i2s_mic_Config.use_apll = false;
+    ESP_LOGI(TAG, "Sample Rate is > 32khz Forcing NO_APLL ");
+  }
+}
+
+void readCurrentSession() {
+  char line[128]="";
+  char *position;
+ 
+  FILE *f = fopen("/spiffs/currentsession.txt", "r");
+  if (f == NULL) {
+        //gSessionFolder="";
+        ESP_LOGI(TAG, "Failed to open file for reading");
+        //return;
+    } else {
+
+ 
+
+            //char *test=line;
+
+          
+            while (!feof(f)) {
+              fgets(line, sizeof(line), f);
+              //ESP_LOGI(TAG, "%s", line);
+              //char *test2;
+              //int start,finish;
+              position = strstr (line,"Session ID");
+              if (position != NULL) {
+                    position = strstr (line,"_"); //need to ad one memory location
+                    //
+                    // the long epoch will be in the first 10 digits. int microseconds the last 3 
+                    
+                    gStartupTime= atoll(position+1);
+
+                    char epoch[10]="";
+                    epoch[0]=*(position+1);
+                    epoch[1]=*(position+2);
+                    epoch[2]=*(position+3);
+                    epoch[3]=*(position+4);
+                    epoch[4]=*(position+5);
+                    epoch[5]=*(position+6);
+                    epoch[6]=*(position+7);
+                    epoch[7]=*(position+8);
+                    epoch[8]=*(position+9);
+                    epoch[9]=*(position+10);
+                    
+                    
+                    
+                    char ms[3]="";
+                    ms[0]=*(position+11);
+                    ms[1]=*(position+12);
+                    ms[2]=*(position+13);
+
+                    //ESP_LOGI(TAG, "epoch %s",  epoch);
+                    //ESP_LOGI(TAG, "ms %s",  ms);
+                    
+                    setTime(atol(epoch),atoi(ms));
+                    ESP_LOGI(TAG, "startup time %lld",  gStartupTime);
+                    //ESP_LOGI(TAG, "testing atol %ld",  atol("1676317685250"));
+                    // ESP_LOGI(TAG, "testing atoll %lld",  atoll("1676317685250"));
+                    position = strstr (line,":  ");
+                    ESP_LOGI(TAG, "session FOLDER 1 %s",  position+3);
+                    strncat(gSessionFolder,position+3,63);
+                    gSessionFolder[strcspn(gSessionFolder, "\n")] = '\0';
+                    ESP_LOGI(TAG, "gSessionFolder %s",  gSessionFolder);
+
+
+              }
+              position = strstr (line,"Sample Rate:");
+              if (position != NULL) {
+                    position = strstr (line,":  "); //need to ad one memory location
+                    gSampleRate=atoi(position+3);
+                    //gSampleRate=4000;
+                    ESP_LOGI(TAG, "sample rate %u", gSampleRate );
+        
+
+              }
+        
+              position = strstr (line,"Mic Gain:");
+              if (position != NULL) {
+                    position = strstr (line,":  "); //need to ad one memory location
+                    gbitShift=atol(position+3);
+                    ESP_LOGI(TAG, "bit shift %d", gbitShift );
+        
+
+              }
+
+              position = strstr (line,"Seconds Per File:");
+              if (position != NULL) {
+                    position = strstr (line,":  "); //need to ad one memory location
+                    gSecondsPerFile=atol(position+3);
+                    ESP_LOGI(TAG, "seconds per file %d", gSecondsPerFile );
+        
+
+              }
+        
+              
+            }
+    }
+    
+   fclose(f);
+}
 
 void resetPeripherals() {
    /*
@@ -276,20 +571,260 @@ void changeBootPartition() {  ///will always set boot partition back to partitio
 
 }
 
+long getTimeFromTimeObjectMS() {
+    return(timeObject.getEpoch()*1000L+timeObject.getMillis());
+
+}
+
 
 void wait_for_button_push()
 {
+ 
+  //digitalWrite(BATTERY_LED,LOW);
+  //bool gBatteryLEDToggle=false;
+  float currentvolts;
+  currentvolts= getVoltage()+ gVoltageOffset;
+  
+  gRecording=false;
+  //getVoltage();
+  boolean sentElocStatus=false;
+  int loopcounter=0;
+  Serial.println( "waiting for button or bluetooth");
+  Serial.println( "voltage is "+String(getVoltage()+gVoltageOffset));
   
   
-  
-   ESP_LOGI(TAG, "\n\n\n");
-   ESP_LOGI(TAG, "-----Waiting for GPIO Button Press to Mount SD Card and start recording ---------");
-    ESP_LOGI(TAG, "\n\n\n");
-  while (gpio_get_level(GPIO_BUTTON) == 1)
+  int64_t timein= getSystemTimeMS();
+
+
+  int gotrecord=false;
+  int leddelay;
+  String serialIN;
+ 
+  Serial.println(" two following are heap size, total and max alloc ");
+  Serial.println(ESP.getFreeHeap());
+  Serial.println(ESP.getMaxAllocHeap()); 
+  //mountSDCard();
+  //freeSpace();
+ 
+  while (!gotrecord)
   {
-    vTaskDelay(pdMS_TO_TICKS(100));
+      //getVoltage();
+      //gotrecord=false;
+      //Serial.println( "waiting for buttonpress");
+      //btwrite("Waiting for record button");    
+      if (SerialBT.connected()) {
+        if (!gSentSettings) {
+
+
+
+          //vTaskDelay(pdMS_TO_TICKS(200));
+          mountSDCard();
+          vTaskDelay(pdMS_TO_TICKS(200));
+          sendSettings();
+          vTaskDelay(pdMS_TO_TICKS(200));
+          freeSpace();
+          vTaskDelay(pdMS_TO_TICKS(200));
+          btwrite("getClk\n");
+          //vTaskDelay(pdMS_TO_TICKS(50));
+          //vTaskDelay(pdMS_TO_TICKS(800));
+          //sendElocStatus();
+          //if (gFreeSpaceGB!=0.0) btwrite("SD card free: "+String(gFreeSpaceGB)+" GB");
+          //vTaskDelay(pdMS_TO_TICKS(100));
+
+          //btwrite(SD);
+          gSentSettings=true;
+          //vTaskDelay(pdMS_TO_TICKS(200));
+
+          //btwrite("#"+String(gSampleRate)+"#"+String(gSecondsPerFile)+"#"+gLocation); 
+        } 
+      } else {
+          gSentSettings=false; 
+          sentElocStatus=false;
+      }
+      //gotCommand=false;
+      if (SerialBT.available()) {
+        // handle case for sending initial default setup to app
+        serialIN=SerialBT.readString();
+        //Serial.println(serialIN);
+          //if (serialIN.startsWith("settingsRequest")) {
+          //   btwrite("#"+String(gSampleRate)+"#"+String(gSecondsPerFile)+"#"+gLocation); 
+          //}
+          
+          
+           if (serialIN.startsWith("record")) {
+              btwrite("\n\nYou are using an old version of the Android app. Please upgrade\n\n");
+
+           }
+          
+          if (serialIN.startsWith( "_setClk_")) {
+                   Serial.println("setClk starting");
+                  //string will look like _setClk_G__120____32456732728  //if google, 12 mins since last phone sync 
+                  //                   or _setClk_P__0____43267832648  //if phone, 0 min since last phone sync
+                  
+                  
+                  String everything = serialIN.substring(serialIN.indexOf("___")+3,serialIN.length());
+                  everything.trim();
+                  String seconds = everything.substring(0,10); //was 18
+                  String milliseconds=everything.substring(10,everything.length()); 
+                  Serial.println("timestamp in from android GMT "+everything    +"  sec: "+seconds + "   millisec: "+milliseconds);
+                  String minutesSinceSync=serialIN.substring(11,serialIN.indexOf("___"));
+                  gSyncPhoneOrGoogle=serialIN.substring(8,9);
+                  //Serial.println(minutesSinceSync);
+                // Serial.println("GorP: "+GorP);
+                //delay(8000);
+                // Serial.println(test);
+                  //Serial.println(seconds);
+                  //Serial.println(milliseconds);
+                  milliseconds.trim();
+                  if (milliseconds.length()<2) milliseconds="0";
+                  timeObject.setTime(atol(seconds.c_str())+(TIMEZONE_OFFSET*60L*60L),  (atol(milliseconds.c_str()))*1000    );
+                  //timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
+                  // timestamps coming in from android are always GMT (minus 7 hrs)
+                  // if I not add timezone then timeobject is off 
+                  // so timeobject does not seem to be adding timezone to system time.
+                  // timestamps are in gmt+0, so timestamp convrters
+                
+                  struct timeval tv_now;
+                  gettimeofday(&tv_now, NULL);
+                  int64_t time_us = (     (int64_t)tv_now.tv_sec      * 1000000L) + (int64_t)tv_now.tv_usec;
+                  time_us=time_us/1000;
+                  
+                  //Serial.println("atol(minutesSinceSync.c_str()) *60L*1000L "+String(atol(minutesSinceSync.c_str()) *60L*1000L));
+                  gLastSystemTimeUpdate=getTimeFromTimeObjectMS() -(      atol(minutesSinceSync.c_str()) *60L*1000L);
+                  timein= getSystemTimeMS();
+                  //Serial.println("timestamp in from android GMT "+everything    +"  sec: "+seconds + "   millisec: "+milliseconds);
+                  //ESP_LOGI("d", "new timestamp from new sys time (local time) %lld", time_us  ); //this is 7 hours too slow!
+                  //ESP_LOGI("d","new timestamp from timeobJect (local time) %lld",gLastSystemTimeUpdate);
+                  
+
+                  
+                  //btwrite("time: "+timeObject.getDateTime()+"\n");
+                   if (!sentElocStatus) {
+                      sentElocStatus=true;
+                      sendElocStatus();
+                   }
+                   Serial.println("setClk ending");
+          }          
+    
+    
+          if (serialIN.startsWith( "setGPS")) {
+               // read the location on startup? 
+               //only report recorded location status? 
+               // need to differentiate between manual set and record set.
+              gLocationCode=  serialIN.substring(serialIN.indexOf("^")+1,serialIN.indexOf("#") );
+              gLocationCode.trim();
+              gLocationAccuracy= serialIN.substring(serialIN.indexOf("#")+1,serialIN.length() );
+              gLocationAccuracy.trim();
+              Serial.println("loc: "+gLocationCode+"   acc "+gLocationAccuracy);
+              
+              File file = SPIFFS.open("/gps.txt", FILE_WRITE); 
+              file.println(gLocationCode);
+              file.println(gLocationAccuracy);
+               gotrecord=true;
+ 
+              //btwrite("GPS Location set");
+
+          }         
+
+          if (serialIN.startsWith("_record_")) {
+ 
+            gotrecord=true;
+            } else {
+                //const char *converted=serialIN.c_str();
+               /* if (serialIN.startsWith( "8k")){gSampleRate=8000;btwrite("sample rate changed to 8k");gotCommand=true;}
+                if (serialIN.startsWith( "16k")){gSampleRate=16000;btwrite("sample rate changed to 16k");gotCommand=true;}
+                if (serialIN.startsWith( "22k")){gSampleRate=22000;btwrite("sample rate changed to 22k");gotCommand=true;}
+                if (serialIN.startsWith( "32k")){gSampleRate=32000;btwrite("sample rate changed to 32k");gotCommand=true;}
+                if (serialIN.startsWith( "10s")){gSecondsPerFile=10;btwrite("10 secs per file");gotCommand=true;}
+                if (serialIN.startsWith( "1m")){gSecondsPerFile=60;btwrite("1 minute per file");gotCommand=true;}
+                if (serialIN.startsWith( "5m")){gSecondsPerFile=300;btwrite("5 minutes per file");gotCommand=true;}
+                if (serialIN.startsWith( "1h")){gSecondsPerFile=3600;btwrite("1 hour per file");gotCommand=true;}
+                if (serialIN.startsWith( "settingsRequest")){gotCommand=true;}
+                if (!gotCommand) btwrite("command not found. options are 8k 16k 22k 32k  and 10s 1m 5m 1h");
+                */
+
+                    
+               
+                
+
+              
+                if (serialIN.startsWith( "#settings")) {
+                    writeSettings(serialIN);
+                    vTaskDelay(pdMS_TO_TICKS(200));
+                    readSettings();
+                    vTaskDelay(pdMS_TO_TICKS(200));
+                    btwrite("settings updated");
+                     vTaskDelay(pdMS_TO_TICKS(500));
+                     sendElocStatus();
+
+                }
+
+ 
+
+
+ 
+
+              
+            }
+
+
+
+      }
+    
+      
+      if (gotrecord) {
+        mountSDCard();
+        if (!gMountedSDCard) { 
+          //mountSDCard();
+          LEDflashError();
+          gotrecord=false;
+          sendSettings();
+        }
+
+          if ((gFreeSpaceGB > 0.0)&& (gFreeSpaceGB < 0.5) ) {
+            btwrite("!!!!!!!!!!!!!!!!!!!!!");
+            btwrite("SD Card full. Cannot record");
+            btwrite("!!!!!!!!!!!!!!!!!!!!!");
+            LEDflashError();
+            gotrecord=false;
+            sendSettings();
+
+
+          }      
+      
+      
+      }
+      
+      loopcounter++;
+      if (loopcounter==30) loopcounter=0;
+      vTaskDelay(pdMS_TO_TICKS(30)); //so if we get record, max 10ms off
+     
+
+         if (loopcounter==0) {
+                currentvolts= getVoltage()+ gVoltageOffset;
+                //currentvolts=0.1;
+                if ((getSystemTimeMS()-timein) > (60000*gMinutesWaitUntilDeepSleep)) doDeepSleep(); // one hour to deep sleep 
+                if (currentvolts <= gvOff) doDeepSleep();
+                 digitalWrite(STATUS_LED,HIGH);
+                
+                
+                digitalWrite(BATTERY_LED,LOW);
+                if (currentvolts <= gvLow) digitalWrite(BATTERY_LED,HIGH);
+                if (currentvolts >= gvFull) digitalWrite(BATTERY_LED,HIGH);
+                
+           } else {
+                if (!SerialBT.connected()) digitalWrite(STATUS_LED,LOW);
+                if (currentvolts <= gvLow) digitalWrite(BATTERY_LED,LOW);
+           }
   }
+ 
+ //mountSDCard();
+ gSentSettings=false; 
+
 }
+
+
+
 
 
 
@@ -346,10 +881,29 @@ void createFilename( char *fname) {
 
 }
 
+String getProperDateTime() {
+
+        String year = String(timeObject.getYear()); 
+        String month = String(timeObject.getMonth());
+        String day = String(timeObject.getDay());
+        String hour = String(timeObject.getHour(true));
+        String minute = String(timeObject.getMinute());
+        String second = String(timeObject.getSecond());
+        //String millis = String(timeObject.getMillis());
+        if (month.length()==1) month="0"+month;
+        if (day.length()==1) day="0"+day;
+        if (hour.length()==1) hour="0"+hour;
+        if (minute.length()==1) minute="0"+minute;
+        if (second.length()==1) second="0"+second;
+
+       return(year+"-"+month+"-"+day+" "+hour+":"+minute+":"+second);
+
+}
+
 
 float IRAM_ATTR getVoltage() {
     //Statements;
-    //Serial.println(" two following are heap size, total and max alloc ");
+    //printf(" two following are heap size, total and max alloc ");
     // Note: ADC2 pins cannot be used when Wi-Fi is used. So, if you’re using Wi-Fi and you’re having trouble 
     //getting the value from an ADC2 GPIO, you may consider using an ADC1 GPIO instead, that should solve your problem.
     
@@ -382,18 +936,29 @@ float IRAM_ATTR getVoltage() {
       avg=accum/5.0;
       
       
-      // Serial.print("voltage raw, calc" );
-      //  Serial.print(value);
-      //   Serial.print("    ");
-      //  Serial.print(((float)value/4095)*3.96*1.142 ); //see above calc
-      //   Serial.println("    ");
+      // printf("voltage raw, calc" );
+      //  printf(value);
+      //   printf("    ");
+      //  printf(((float)value/4095)*3.96*1.142 ); //see above calc
+      //   printf("    ");
          
-       //Serial.println(analogReadMilliVolts(VOLTAGE_PIN));
+       //printf(analogReadMilliVolts(VOLTAGE_PIN));
        //delay(500);
 
    return(10.0);                    //comment
   //return((avg/4095)*3.96*1.142); //uncomment for field versions
 
+}
+
+
+float calculateVoltageOffset() {
+  //gvoltageoffset will always be ADDED
+  // assume battery is currently at voff =2.7
+  // 
+  float temp= getVoltage()-gvLow; //if v = 2.6 offset will be neg so need to be added  if 2.8, pos, so need to be sub 
+  gVoltageOffset=temp*-1.0;
+  Serial.println ("voltage offset is "+String(gVoltageOffset));
+  return gVoltageOffset;
 }
 
 void doDeepSleep(){
@@ -403,11 +968,11 @@ void doDeepSleep(){
       esp_sleep_enable_ext0_wakeup(GPIO_BUTTON, 0); //try commenting this out
      
       
-     // Serial.println("Going to sleep now");
+     // printf("Going to sleep now");
       delay(2000);
       esp_deep_sleep_start(); //change to deep?  
       
-      //Serial.println("OK button was pressed.waking up");
+      //printf("OK button was pressed.waking up");
       delay(2000);
       esp_restart();
 
@@ -431,7 +996,7 @@ void record(I2SSampler *input) {
 
     input->start();
   gRealSampleRate=(int32_t)(i2s_get_clk(I2S_NUM_0));
-  ESP_LOGI(TAG, "I2s REAL clockrate in record  %ld", gRealSampleRate  );
+  ESP_LOGI(TAG, "I2s REAL clockrate in record  %u", gRealSampleRate  );
 
   
    bool deepSleep=false;
@@ -482,7 +1047,7 @@ void record(I2SSampler *input) {
  
  
       loops= (float)gSecondsPerFile/((gSampleBlockSize)/((float)gSampleRate)) ;
-      //Serial.print("loops: "); Serial.println(loops); 
+      //printf("loops: "); printf(loops); 
       loopstart=esp_timer_get_time(); 
       while (loopCounter < loops ) {
             loopCounter++;
@@ -521,7 +1086,7 @@ void record(I2SSampler *input) {
                 //vTaskGetRunTimeStats( ( char * ) sBuffer );
                 //ESP_LOGI(TAG,"vTaskGetRunTimeStats:\n %s", sBuffer);
              
-                //Serial.println("freeSpaceGB "+String(gFreeSpaceGB));
+                //printf("freeSpaceGB "+String(gFreeSpaceGB));
 
                 recordupdate=esp_timer_get_time(); 
 
@@ -582,21 +1147,96 @@ void record(I2SSampler *input) {
 void mountSDCard() {
     gMountedSDCard=false;
     #ifdef USE_SPI_VERSION
-  
- 
           ESP_LOGI(TAG, "TRYING to mount SDCArd, SPI ");
           theSDCardObject = new SDCard("/sdcard",PIN_NUM_MISO, PIN_NUM_MOSI, PIN_NUM_CLK, PIN_NUM_CS);
-
-
     #endif 
     
     #ifdef USE_SDIO_VERSION
 
           ESP_LOGI(TAG, "TRYING to mount SDCArd, SDIO ");
            theSDCardObject = new SDCardSDIO("/sdcard");
+           if (gMountedSDCard) {
+            ESP_LOGI(TAG, "SD card mounted ");
+           }
     #endif
+}
 
 
+
+void btwrite(String theString){
+ //FILE *fp;
+  if (gBlueToothISDisabled) return;
+
+  //SerialBT.
+  if (SerialBT.connected()) {
+    SerialBT.println(theString);
+  }
+}
+
+void freeSpace() {
+    // FATFS *fs;
+    // uint32_t fre_clust, fre_sect, tot_sect;
+    // FRESULT res;
+    // /* Get volume information and free clusters of drive 0 */
+    // res = f_getfree("0:", &fre_clust, &fs);
+    // /* Get total sectors and free sectors */
+    // tot_sect = (fs->n_fatent - 2) * fs->csize;
+    // fre_sect = fre_clust * fs->csize;
+
+    // /* Print the free space (assuming 512 bytes/sector) */
+    // printf("%10lu KiB total drive space.\n%10lu KiB available.\n",
+    //        tot_sect / 2, fre_sect / 2);
+
+
+    //   gFreeSpaceGB= float((float)fre_sect/1048576.0 /2.0);
+    //   printf("\n %2.1f GB free\n", gFreeSpaceGB);
+
+    //   gFreeSpaceKB=fre_sect / 2;
+    //   printf("\n %u KB free\n", gFreeSpaceKB);
+
+}
+
+
+
+bool folderExists(const char* folder)
+{
+    //folder = "/sdcard/eloc";
+    struct stat sb;
+
+    if (stat(folder, &sb) == 0 && S_ISDIR(sb.st_mode)) {
+        Serial.println("yes");
+         return true;
+    } else {
+         Serial.println("no");
+         return false;
+    }
+  return false;
+}
+
+
+String readNodeName() {
+
+      // int a =gDeleteMe.length();
+      // if (a==2) {a=1;}
+      if(!(SPIFFS.exists("/nodename.txt"))){
+  
+        Serial.println("No nodename set. Returning ELOC_NONAME");
+        return("ELOC_NONAME");
+          
+
+      }
+ 
+
+  File file2 = SPIFFS.open("/nodename.txt", FILE_READ);
+  
+  //String temp = file2.readStringUntil('\n');
+
+  String temp = file2.readString();
+  temp.trim();
+  file2.close();
+  Serial.println("node name: "+temp);
+  return(temp);
+ //return("");
 
 }
 
@@ -604,10 +1244,526 @@ void mountSDCard() {
 
 
 
-void app_main(void)
+void saveStatusToSD() {
+       String sendstring;
+       
+      sendstring=sendstring+   "Session ID:  " +gSessionIdentifier+   "\n" ;
+      
+     sendstring=sendstring+   "Session Start Time:  "    +String(timeObject.getYear())+"-"  +String(timeObject.getMonth())+"-" +String(timeObject.getDay())+" " +String(timeObject.getHour(true))+":" +String(timeObject.getMinute())+":"  +String(timeObject.getSecond())           + "\n" ;
+
+          
+      sendstring=sendstring+   "Firmware Version:  "+          gFirmwareVersion                    + "\n" ; //firmware
+      
+    
+      sendstring=sendstring+   "File Header:  "+     gLocation                         + "\n" ; //file header
+  
+      sendstring=sendstring+   "Bluetooh on when Record?:   " +gMicBluetoothOnOrOff              + "\n" ;
+  
+      sendstring=sendstring+   "Sample Rate:  " +String(gSampleRate)               + "\n" ;
+      sendstring=sendstring+   "Seconds Per File:  " +String(gSecondsPerFile)               + "\n" ;
+ 
+      
+  
+       //sendstring=sendstring+   "Voltage Offset:  " +String(gVoltageOffset)                  + "\n" ;
+       sendstring=sendstring+   "Mic Type:  " +gMicType                  + "\n" ;
+        sendstring=sendstring+   "SD Card Free GB:   "+ String(gFreeSpaceGB)                  + "\n" ;
+       sendstring=sendstring+   "Mic Gain:  " +gMicBitShift                  + "\n" ;
+       sendstring=sendstring+   "GPS Location:  " +gLocationCode                + "\n" ;
+      sendstring=sendstring+    "GPS Accuracy:  " +gLocationAccuracy                + " m\n" ;
+     
+       // sendstring=sendstring+ "\n\n";
+     
+      FILE *fp;
+      String temp= "/sdcard/eloc/"+gSessionIdentifier+"/"+"config_"+gSessionIdentifier+".txt";
+      fp = fopen(temp.c_str(), "wb");
+      //fwrite()
+      //String temp=
+      //String temp="/sdcard/eloc/test.txt";
+      //File file = SD.open(temp.c_str(), FILE_WRITE);
+      //file.print(sendstring);
+      fputs(sendstring.c_str(), fp);
+      fclose(fp);
+     
+      File file = SPIFFS.open("/currentsession.txt", FILE_WRITE); 
+      file.print(sendstring);
+      file.close();
+
+
+  
+
+}
+
+void sendElocStatus() {  //compiles and sends eloc config
+      /*
+        
+
+        will be based on 
+
+
+
+      //what kind of things we want to send?
+      // distinguish between record now,  no-record and previous record
+      - mac address
+      - gfirmwareVersion
+      - eloc_name
+      - android appver
+      - timeofday (phone time)
+      - ID of ranger who did it
+      - bat voltage
+      - o sdcard size
+      - sdcard free space
+      - gLocation
+      - gps location
+
+      /// mic info
+        - gMicType
+        - 
+
+
+      - buffer underruns etc of last record
+
+
+      // info of last record session: ?
+          -buffer underruns
+          - record time
+          - record type , samplerate, gain, etc
+          - max/avg file write time.
+
+
+
+      ///////// timings since last boot ////
+          - total uptime  
+          - record time no bluetooth
+          - record time bluetooth
+
+      /////// timing since last bat change ////
+          - total uptime  
+          - record time no bluetooth
+          - record time bluetooth 
+
+
+      //// if recording was started  ///
+          - time of day
+          - secondsperfile
+          - samplerate
+          - gMicBitShift
+          - gps coords
+          - gps accuracy
+          - record type (bluetooth on or off)
+          - other record parameters, e.g. cpu freq, apll, etc buffer sizes?
+          
+
+
+      */ 
+
+
+       String sendstring= "statusupdate\n";
+       sendstring=sendstring+   "Time:  "    +getProperDateTime()          + "\n" ;
+       sendstring=sendstring+  "Ranger:  "    +"_@b$_"           + "\n" ;
+       //sendstring=sendstring+ "\n\n";
+       sendstring=sendstring+   "!0!"+          readNodeName()                     + "\n" ; //dont change
+
+      
+      sendstring=sendstring+   "!1!"+          gFirmwareVersion                    + "\n" ; //firmware
+      
+      float tempvolts= getVoltage()+gVoltageOffset;
+      String temptemp= "FULL";
+      if (tempvolts <gvFull) temptemp="";
+      if (tempvolts <gvLow) temptemp="!!! LOW !!!";
+      if (tempvolts <gvOff) temptemp="turn off";
+
+      if (gVoltageCalibrationDone) {
+          sendstring=sendstring+   "!2!" +String(tempvolts)+ " v # "+temptemp+"\n" ;                     //battery voltage
+      } else {
+           sendstring=sendstring+   "!2!" +String(tempvolts)+ " v "+temptemp+"\n" ;  
+      }
+      sendstring=sendstring+   "!3!"+     gLocation                         + "\n" ; //file header
+      
+  
+       //was uint64tostring
+      sendstring=sendstring+   "!4!"    +      String((float)esp_timer_get_time()/1000/1000/60/60)    + " h"           + "\n" ;
+      sendstring=sendstring+   "!5!"      +    String(((float)gTotalRecordTimeSinceReboot+gSessionRecordTime)/1000/1000/60/60)  +" h"           + "\n" ;
+      sendstring=sendstring+   "!6!"      +    String((float)gSessionRecordTime/1000/1000/60/60 )  +" h"           + "\n" ;
+        
+       
+       
+       sendstring=sendstring+   "!7!" +String(gRecording)              + "\n" ;
+  
+      sendstring=sendstring+   "!8!" +gMicBluetoothOnOrOff              + "\n" ;
+  
+      sendstring=sendstring+   "!9!" +String(gSampleRate)               + "\n" ;
+      sendstring=sendstring+   "!10!" +String(gSecondsPerFile)               + "\n" ;
+ 
+      
+  
+       sendstring=sendstring+   "!11!"+ String(gFreeSpaceGB)                  + "\n" ;
+       sendstring=sendstring+   "!12!" +gMicType                  + "\n" ;
+  
+       sendstring=sendstring+   "!13!" +gMicBitShift                  + "\n" ;
+       sendstring=sendstring+   "!14!" +gLocationCode                + "\n" ;
+      sendstring=sendstring+   "!15!" +gLocationAccuracy                + " m\n" ;
+
+     
+      sendstring=sendstring+   "!16!"+gSessionIdentifier                         + "\n" ;
+
+      Serial.print(sendstring);
+      btwrite(sendstring);
+      
+} 
+
+
+
+
+
+String getSubstring(String data, char separator, int index)
 {
-  changeBootPartition(); // so if reboots, always boot into the bluetooth partition
+    int found = 0;
+    int strIndex[] = { 0, -1 };
+    int maxIndex = data.length() - 1;
+
+    for (int i = 0; i <= maxIndex && found <= index; i++) {
+        if (data.charAt(i) == separator || i == maxIndex) {
+            found++;
+            strIndex[0] = strIndex[1] + 1;
+            strIndex[1] = (i == maxIndex) ? i+1 : i;
+        }
+    }
+    return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+
+
+
+void writeMicInfo() {
+  File file2 = SPIFFS.open("/micinfo.txt", FILE_WRITE);
+  
+  file2.print(gMicType+'\n');
+  file2.print(gMicBitShift+'\n');
+  file2.print(gMicGPSCoords+'\n');
+  file2.print(gMicPointingDirectionDegrees+'\n');
+  file2.print(gMicHeight+'\n');
+  file2.print(gMicMountType+'\n');
+  file2.print(gMicBluetoothOnOrOff+'\n');
+  file2.close();
+  Serial.println("micinfo: "+gMicType+"  "+gMicBitShift+"  "+gMicGPSCoords+"  "+gMicPointingDirectionDegrees+" "+gMicHeight+" "+gMicMountType+" "+gMicBluetoothOnOrOff);
+
+
+
+
+
+}
+
+
+void readMicInfo() {
+     if(!(SPIFFS.exists("/micinfo.txt"))){
+
+      printf("micinfo.txt not exist");
+      writeMicInfo();
+      
+        
+
+    }
+    File file2 = SPIFFS.open("/micinfo.txt", FILE_READ);
+    gMicType=file2.readStringUntil('\n');
+    gMicType.trim();
+    gMicBitShift=file2.readStringUntil('\n');
+    gMicBitShift.trim();
+    gMicGPSCoords=file2.readStringUntil('\n');
+    gMicGPSCoords.trim();
+    gMicPointingDirectionDegrees=file2.readStringUntil('\n');
+    gMicPointingDirectionDegrees.trim();
+    gMicHeight=file2.readStringUntil('\n');
+    gMicHeight.trim();
+    gMicMountType=file2.readStringUntil('\n');
+    gMicMountType.trim();
+    gMicBluetoothOnOrOff=file2.readStringUntil('\n');
+    gMicBluetoothOnOrOff.trim();
+
+    file2.close();
+    Serial.println("micinfo: "+gMicType+"  "+gMicBitShift+"  "+gMicGPSCoords+"  "+gMicPointingDirectionDegrees+" "+gMicHeight+" "+gMicMountType+" "+gMicBluetoothOnOrOff);
+ 
+
+}
+
+
+
+
+void sendSettings() {
+  btwrite("#"+String(gSampleRate)+"#"+String(gSecondsPerFile)+"#"+gLocation); 
+  vTaskDelay(pdMS_TO_TICKS(100));
+  //btwrite("elocName: "+readNodeName() + " "+gFirmwareVersion);
+  vTaskDelay(pdMS_TO_TICKS(100));
+  //btwrite(String(gFreeSpace)+ " GB free");
+  
+}
+
+void writeSettings(String settings) {
+      
+    settings.trim();
+
+
+    if (settings.endsWith("getstats"))  {
+        btwrite("\n\n");
+        sendElocStatus();
+        btwrite("\n\n");
+        delay(500);
+        sendSettings();
+        return;
+    }
+
+
+ 
+
+    if (settings.endsWith("vcal"))  {
+        
+        btwrite("\n\nCalibrating voltage with VLow="+String(gvLow)+ " volts\n");
+        calculateVoltageOffset();
+         btwrite("voltage offset is now "+String(gVoltageOffset));
+        
+        File file = SPIFFS.open("/voltageoffset.txt", FILE_WRITE); 
+        file.print(gVoltageOffset);
+        file.close();
+        gVoltageCalibrationDone=true;
+        delay(5000);
+        sendSettings();
+        return;
+    }
+
+
+    if (settings.endsWith("bton"))  {
+         gMicBluetoothOnOrOff="on";
+        btwrite("\n\nbluetooth ON while recording. Use phone to stop record.\n\n");
+        writeMicInfo();
+        sendSettings();
+        return;
+    }
+
+    if (settings.endsWith("btoff"))  {
+        gMicBluetoothOnOrOff="off";
+        btwrite("\n\nbluetooth OFF while recording. Use button to stop record.\n\n");
+        
+        writeMicInfo();
+        sendSettings();
+        return;
+    }
+
+
+
+
+  
+    if (settings.endsWith("micinfo"))  {
+    
+        btwrite("****** micinfo: ******** \nTYPE: " +gMicType+"\nGAIN: "+gMicBitShift+"\nGPSCoords: "+gMicGPSCoords+"\nDIRECTION: "+gMicPointingDirectionDegrees+"\nHEIGHT: "+gMicHeight+"\nMOUNT: "+gMicMountType+"\nBluetooth when record: "+gMicBluetoothOnOrOff);
+        btwrite("\n");
+        sendSettings();
+        return;
+    }
+
+
+   
+    if (settings.endsWith("help")) {
+ 
+       //btwrite("\n***commands***\nXXsetgain (11=forest, 14=Mahout)\nXXXXsettype (set mic type)\nXXXXsetname (set eloc bt name)\nupdate (reboot + upgrade firmware)\nbtoff BT off when record\nbton BT on when record\ndelete (don't use)\n\n");
+       sendSettings();
+       return;
+
+    }
+
+    
+    if (settings.endsWith("settype")) {
+       gMicType= settings.substring(settings.lastIndexOf('#')+1, settings.length()-7);
+       gMicType.trim();
+       if (gMicType.length()==0) gMicType="ns"; 
+       writeMicInfo();
+       btwrite("Mic Type is now "+gMicType);
+       sendSettings();
+       return;
+
+    }
+
+
+
+
+    if (settings.endsWith("setgain")) {
+       gMicBitShift= settings.substring(settings.lastIndexOf('#')+1, settings.length()-7);
+       gMicBitShift.trim();
+       btwrite(gMicBitShift);
+       if (gMicBitShift == "11" || gMicBitShift == "12" || gMicBitShift == "13" || gMicBitShift == "14" || gMicBitShift == "15" || gMicBitShift == "16" ) {
+ 
+       } else {
+        btwrite("Error, mic gain out of range. (11 to 16) ");
+        gMicBitShift="11"; 
+
+       }
+       
+       writeMicInfo();
+       //int temp=gMicBitShift.toInt();
+       btwrite("Mic gain is now "+gMicBitShift);
+       sendSettings();
+       return;
+
+    }   
+    
+    
+    if (settings.endsWith("update")) {
+      //updateFirmware();
+      File temp = SPIFFS.open("/update.txt","w");
+      temp.close();
+      
+      btwrite("\nEloc will restart for firmware update. Please re-connect in 1 minute.\n");
+      delay(1000);
+      ESP.restart();
+      return;
+    }
+
+    if (settings.endsWith("setname")) {
+      String temp;
+      temp= settings.substring(settings.lastIndexOf('#')+1, settings.length()-7);
+      temp.trim();
+      //temp=settings.lastIndexOf('#');
+    
+      File file = SPIFFS.open("/nodename.txt", FILE_WRITE); 
+      file.print(temp);
+    
+      file.close();
+      Serial.println("new name: "+temp);
+      btwrite("new name "+temp+"\n\n--- Restarting ELOC ----");
+      vTaskDelay(pdMS_TO_TICKS(100));
+      sendSettings();
+      //readSettings();
+      vTaskDelay(pdMS_TO_TICKS(500));
+      ESP.restart();
+      return;
+    }
+
+
+
+
+    //   if (settings.endsWith("sync")) {
+    
+    //       // btwrite("syncnow");
+    //       // btwrite("syncing with time.google.com");
+    //       // vTaskDelay(pdMS_TO_TICKS(5200));
+    //       sendSettings();
+      
+    //        return;
+    // }
+
+
+
+
+
+      
+      if (settings.endsWith("delete")) {
+    
+          //SPIFFS.
+          SPIFFS.remove("/settings.txt");
+          SPIFFS.remove("/nodename.txt");
+          SPIFFS.remove("/micinfo.txt");
+
+          btwrite("spiffs settings removed");
+          vTaskDelay(pdMS_TO_TICKS(100));
+          sendSettings();
+      
+           return;
+    }
+      
+
+      
+
+
+      
+      
+      File file = SPIFFS.open("/settings.txt", FILE_WRITE); 
+        
+        if(!file){
+            printf("There was an error opening the file for writing");
+            return;
+        }
+    
+        /*if(file.print(settings)){
+            printf("File was written");;
+        } else {
+            printf("File write failed");
+        }*/
+
+        file.print(settings);
+    
+        file.close();
+}
+
+
+
+
+void readSettings() {
+  
+  //SPIFFS.remove("/settings.txt");
+  //vTaskDelay(pdMS_TO_TICKS(100));
+
+  if (!(SPIFFS.exists("/settings.txt"))) {
+    writeSettings("#settings#"+String(gSampleRate)+"#"+String(gSecondsPerFile)+"#"+gLocation);
+    printf("wrote settings to spiffs");
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+  }
+
+  
+  File file2 = SPIFFS.open("/settings.txt");
+ 
+    if(!file2){
+ 
+      printf("Failed to open file for reading");
+      return;
+        
+
+    }
+ 
+
+
+  //String temp = file2.readStringUntil('\n');
+
+  String temp = file2.readString();
+  temp.trim();
+
+
+  gSampleRate=getSubstring(temp, '#', 2).toInt();
+  //temp 
+  //if (gSampleRate==44100) gSampleRate=48000;
+  gSecondsPerFile=getSubstring(temp, '#', 3).toInt();
+  gLocation= getSubstring(temp, '#', 4);
+  gLocation.trim();
+
+  Serial.println("settings read: "+temp);
+
+    /*printf("File Content:");
+ 
+    while(file2.available()){
+ 
+        Serial.write(file2.read());
+    }*/
+
+ 
+    file2.close();
+
+}
+
+
+
+
+
+
+
+
+void app_main(void)
+{  
   ESP_LOGI(TAG, "\n\n---------VERSION %s\n\n", VERSIONTAG);
+  initArduino();
+  ESP_LOGI(TAG, "initArduino done");
+  Serial.begin(115200);
+  
+  Serial.println("\nSETUP--start\n");
+
+  changeBootPartition(); // so if reboots, always boot into the bluetooth partition
  
  printRevision();
 
@@ -687,104 +1843,33 @@ Battery::GetInstance();
 printMemory();
 
   
-  new SPIFFS("/spiffs");
-  char line[128]="";
-  char *position;
- 
-  FILE *f = fopen("/spiffs/currentsession.txt", "r");
-  if (f == NULL) {
-        //gSessionFolder="";
-        ESP_LOGI(TAG, "Failed to open file for reading");
-        //return;
-    } else {
-
- 
-
-            //char *test=line;
-
-          
-            while (!feof(f)) {
-              fgets(line, sizeof(line), f);
-              //ESP_LOGI(TAG, "%s", line);
-              //char *test2;
-              //int start,finish;
-              position = strstr (line,"Session ID");
-              if (position != NULL) {
-                    position = strstr (line,"_"); //need to ad one memory location
-                    //
-                    // the long epoch will be in the first 10 digits. int microseconds the last 3 
-                    
-                    gStartupTime= atoll(position+1);
-
-                    char epoch[10]="";
-                    epoch[0]=*(position+1);
-                    epoch[1]=*(position+2);
-                    epoch[2]=*(position+3);
-                    epoch[3]=*(position+4);
-                    epoch[4]=*(position+5);
-                    epoch[5]=*(position+6);
-                    epoch[6]=*(position+7);
-                    epoch[7]=*(position+8);
-                    epoch[8]=*(position+9);
-                    epoch[9]=*(position+10);
-                    
-                    
-                    
-                    char ms[3]="";
-                    ms[0]=*(position+11);
-                    ms[1]=*(position+12);
-                    ms[2]=*(position+13);
-
-                    //ESP_LOGI(TAG, "epoch %s",  epoch);
-                    //ESP_LOGI(TAG, "ms %s",  ms);
-                    
-                    setTime(atol(epoch),atoi(ms));
-                    ESP_LOGI(TAG, "startup time %lld",  gStartupTime);
-                    //ESP_LOGI(TAG, "testing atol %ld",  atol("1676317685250"));
-                    // ESP_LOGI(TAG, "testing atoll %lld",  atoll("1676317685250"));
-                    position = strstr (line,":  ");
-                    ESP_LOGI(TAG, "session FOLDER 1 %s",  position+3);
-                    strncat(gSessionFolder,position+3,63);
-                    gSessionFolder[strcspn(gSessionFolder, "\n")] = '\0';
-                    ESP_LOGI(TAG, "gSessionFolder %s",  gSessionFolder);
+  if(!SPIFFS.begin(true, "/spiffs")){
+      Serial.println("An Error has occurred while mounting SPIFFS");
+      //return;
+  }
+  delay(50);
+//resetPeripherals(); does not help.
+delay(50);
+SerialBT.begin(readNodeName(),false);
+delay(100);
+if (SerialBT.isReady())  {
+      Serial.println("SerialBT is ready ------------------------------------------------------ ");
+} else {
+       Serial.println("SerialBT is NOT ready --------------------------------------------------- ");
+}
 
 
-              }
-              position = strstr (line,"Sample Rate:");
-              if (position != NULL) {
-                    position = strstr (line,":  "); //need to ad one memory location
-                    gSampleRate=atoi(position+3);
-                    //gSampleRate=4000;
-                    ESP_LOGI(TAG, "sample rate %ld", gSampleRate );
-        
+readSettings();
+readMicInfo();
 
-              }
-        
-              position = strstr (line,"Mic Gain:");
-              if (position != NULL) {
-                    position = strstr (line,":  "); //need to ad one memory location
-                    gbitShift=atol(position+3);
-                    ESP_LOGI(TAG, "bit shift %d", gbitShift );
-        
 
-              }
-
-              position = strstr (line,"Seconds Per File:");
-              if (position != NULL) {
-                    position = strstr (line,":  "); //need to ad one memory location
-                    gSecondsPerFile=atol(position+3);
-                    ESP_LOGI(TAG, "seconds per file %d", gSecondsPerFile );
-        
-
-              }
-        
-              
-            }
-    }
-    
-   fclose(f);
+  readCurrentSession();
   
-    f = fopen("/spiffs/voltageoffset.txt", "r");
+  
+  
+// read the voltage offset
+      FILE* f = fopen("/spiffs/voltageoffset.txt", "r");
+      char line[128]="";
     if (f == NULL) {
           ESP_LOGI(TAG, "no voltage offset");
           //return;
@@ -792,9 +1877,6 @@ printMemory();
       fgets(line, sizeof(line), f);
       gVoltageOffset=atof(line);
       ESP_LOGI(TAG, "voltage offset %f", gVoltageOffset );
-     
-
-
     }
 
     fclose(f);
@@ -816,7 +1898,8 @@ ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)GPIO_BUTTON
 ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_BUTTON));
 
   bool firstRecordLoopAlreadyStarted=false;
-  while (true)
+  //BUGME: remove this loop!
+  while (true) 
   {
       
       while (firstRecordLoopAlreadyStarted) { //ugly hack
@@ -826,133 +1909,33 @@ ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_
       
       firstRecordLoopAlreadyStarted=true;
 
-
-       esp_pm_config_esp32_t cfg = {
-      .max_freq_mhz = gMaxFrequencyMHZ,
-      .min_freq_mhz = gMinFrequencyMHZ,
-      .light_sleep_enable = gEnableLightSleep
-  };
-  esp_pm_configure(&cfg);   
-
- 
   
   mountSDCard();
       
+  readConfig();
 
-
-    if (gMountedSDCard) {
-          f = fopen("/sdcard/eloctest.txt", "r");
-          if (f == NULL) {
-          ESP_LOGI(TAG, "no eloc testing file on root of SDCARD ");
-          //return;
-        } else {
-           ESP_LOGI(TAG, "\n\n\n");
-            while (!feof(f)) {
-                  fgets(line, sizeof(line), f);
-                  //ESP_LOGI(TAG, "%s", line);
-                  
-                  
-                  position = strstr (line,"SampleRate:");
-                  if (position != NULL) {
-                      position = strstr (line,":");
-                      gSampleRate=atoi(position+1);
-                      ESP_LOGI(TAG, "sample rate override %ld", gSampleRate );
-                  }
-
-                  position = strstr (line,"MaxFrequencyMHZ:");
-                  if (position != NULL) {
-                      position = strstr (line,":");
-                      gMaxFrequencyMHZ=atoi(position+1);
-                      ESP_LOGI(TAG, "Max Frequency MHZ override %d", gMaxFrequencyMHZ );
-                  }
-                 position = strstr (line,"MinFrequencyMHZ:");
-                  if (position != NULL) {
-                      position = strstr (line,":");
-                      gMinFrequencyMHZ=atoi(position+1);
-                      ESP_LOGI(TAG, "Min Frequency MHZ override %d", gMinFrequencyMHZ );
-                  }
-
-                position = strstr (line,"gain:");
-                  if (position != NULL) {
-                      position = strstr (line,":");
-                      gbitShift=atoi(position+1);
-                      ESP_LOGI(TAG, "gain override: %d", gbitShift );
-                  }
-
-                position = strstr (line,"VoltageOffset:");
-                  if (position != NULL) {
-                      position = strstr (line,":");
-                      gVoltageOffset=atof(position+1);
-                      ESP_LOGI(TAG, "voltage offset  override: %f", gVoltageOffset );
-                  }
-
-                position = strstr (line,"SecondsPerFile:");
-                  if (position != NULL) {
-                      position = strstr (line,":");
-                      gSecondsPerFile=atoi(position+1);
-                      ESP_LOGI(TAG, "Seconds per File override: %d", gSecondsPerFile );
-                  }
-
-
-                  position = strstr (line,"UseAPLL:no");if (position != NULL) {gUseAPLL=false;}
-                  position = strstr (line,"UseAPLL:yes");if (position != NULL) {gUseAPLL=true;}
-                  position = strstr (line,"TryLightSleep?:yes");if (position != NULL) {gEnableLightSleep=true;}
-                  position = strstr (line,"TryLightSleep?:no");if (position != NULL) {gEnableLightSleep=false;}
-                  position = strstr (line,"ListenOnly?:no");if (position != NULL) {gListenOnly=false;}
-                  position = strstr (line,"ListenOnly?:yes");if (position != NULL) {gListenOnly=true;}
-                  position = strstr (line,"TimingFix:no");if (position != NULL) {gTimingFix=false;}
-                  position = strstr (line,"TimingFix:yes");if (position != NULL) {gTimingFix=true;}
-                  position = strstr (line,"TestI2SClockInput:no");if (position != NULL) {TestI2SClockInput=false;}
-                  position = strstr (line,"TestI2SClockInput:yes");if (position != NULL) {TestI2SClockInput=true;}
-                    
-
-
-
-            }
-            ESP_LOGI(TAG, "Use APLL override: %d", gUseAPLL );
-            ESP_LOGI(TAG, "Enable light Sleep override: %d", gEnableLightSleep );
-            ESP_LOGI(TAG, "Listen Only override: %d", gListenOnly );
-            ESP_LOGI(TAG, "Timing fix override: %d", gTimingFix );
-            ESP_LOGI(TAG, "Test i2sClockInput: %d", TestI2SClockInput );
-            ESP_LOGI(TAG, "\n\n\n");
-
-            fclose(f);
-
-        }
-
-    }  
+       esp_pm_config_esp32_t cfg = {
+        .max_freq_mhz = gMaxFrequencyMHZ,
+        .min_freq_mhz = gMinFrequencyMHZ,
+        .light_sleep_enable = gEnableLightSleep
+        };
+    Serial.flush();
+  esp_pm_configure(&cfg);   
 
  
-    i2s_mic_Config.sample_rate=gSampleRate;
-    if (gSampleRate<=32000) { //my wav files sound wierd if apll clock raate is > 32kh. So force non-apll clock if >32khz
-      i2s_mic_Config.use_apll=gUseAPLL;
-        ESP_LOGI(TAG, "Sample Rate is < 32khz USE APLL Clock %d", gUseAPLL );
-    } else {
-      i2s_mic_Config.use_apll=false;
-      ESP_LOGI(TAG, "Sample Rate is > 32khz Forcing NO_APLL " );
-    }
+
+
     input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config,gTimingFix); //the true at the end is the timing fix
     if (TestI2SClockInput) testInput();
-    if (gListenOnly) {
-       delete theSDCardObject;
-       record(input);
-       resetESP32();
 
+
+    
+    while (true) {   
+      wait_for_button_push();
+      
+      record(input);
+      vTaskDelay(pdMS_TO_TICKS(500));
     }
-
-     if (gMountedSDCard) {
-         record(input);
-         delete theSDCardObject;
-         resetESP32();
-     } else {
-        LEDflashError();
-        delay(2000);
-        delete theSDCardObject;
-        resetESP32();
-
-     }
-
-
-  
+ 
   }
 }

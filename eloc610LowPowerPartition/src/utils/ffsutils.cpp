@@ -123,4 +123,14 @@ void printListDir(const char *path) {
     free(lpath);
 }
 
+bool folderExists(const char *folder) {
+    struct stat sb;
+    if (stat(folder, &sb) == 0 && S_ISDIR(sb.st_mode)) {
+        return true;
+    } else {
+        return false;
+    }
+    return false;
+}
+
 }//namespace ffsutil

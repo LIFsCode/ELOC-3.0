@@ -644,11 +644,16 @@ void mountSDCard() {
     
     #ifdef USE_SDIO_VERSION
 
-          ESP_LOGI(TAG, "TRYING to mount SDCArd, SDIO ");
-           theSDCardObject = new SDCardSDIO("/sdcard");
-           if (gMountedSDCard) {
+        ESP_LOGI(TAG, "TRYING to mount SDCArd, SDIO ");
+        theSDCardObject = new SDCardSDIO("/sdcard");
+        if (gMountedSDCard) {
             ESP_LOGI(TAG, "SD card mounted ");
-           }
+            const char* ELOC_FOLDER = "/sdcard/eloc";
+            if (!ffsutil::folderExists(ELOC_FOLDER)) {
+                ESP_LOGI(TAG, "%s does not exist, creating empty folder", ELOC_FOLDER);
+                mkdir(ELOC_FOLDER, 0777);
+            }
+        }
     #endif
 }
 
@@ -671,21 +676,6 @@ void freeSpace() {
 
     gFreeSpaceKB = fre_sect / 2;
     printf("\n %u KB free\n", gFreeSpaceKB);
-}
-
-bool folderExists(const char* folder)
-{
-    //folder = "/sdcard/eloc";
-    struct stat sb;
-
-    if (stat(folder, &sb) == 0 && S_ISDIR(sb.st_mode)) {
-        ESP_LOGI(TAG, "yes");
-         return true;
-    } else {
-         ESP_LOGI(TAG, "no");
-         return false;
-    }
-  return false;
 }
 
 

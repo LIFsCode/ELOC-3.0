@@ -37,6 +37,7 @@
 
 #include "config.h"
 #include "lis3dh.h"
+#include "utils/strutils.h"
 #include "BluetoothServer.hpp"
 #include "ElocConfig.hpp"
 #include "ElocSystem.hpp"
@@ -128,9 +129,6 @@ extern ESP32Time timeObject;
 
 //BUGME: global constant from config.h
 extern String gFirmwareVersion;
-
-//TODO: move this here from ElocConfig
-void sendSettings();
 
 void sendElocStatus() { // compiles and sends eloc config
     /*
@@ -237,6 +235,224 @@ void sendElocStatus() { // compiles and sends eloc config
     btwrite(sendstring);
 }
 
+void sendSettings() {
+
+    btwrite("#" + String(gSampleRate) + "#" + String(gSecondsPerFile) + "#" +
+            gLocation);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    // btwrite("elocName: "+readNodeName() + " "+gFirmwareVersion);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    // btwrite(String(gFreeSpace)+ " GB free");
+}
+
+void writeSettings(String settings) {
+
+    settings.trim();
+
+    if (settings.endsWith("getstats")) {
+        btwrite("\n\n");
+        sendElocStatus();
+        btwrite("\n\n");
+        delay(500);
+        sendSettings();
+        return;
+    }
+
+    if (settings.endsWith("vcal")) {
+        ESP_LOGW(TAG, "vcal is not supported! Usefullness is questionable");
+        /*********** vcal is not supported currently ***********
+         *  If reintroduced it must be calibrated against a defined value, e.g. by measuring with a external multimeter
+
+        btwrite("\n\nCalibrating voltage with VLow="+String(gvLow)+ " volts\n");
+        calculateVoltageOffset();
+         btwrite("voltage offset is now "+String(gVoltageOffset));
+
+        File file = SPIFFS.open("/voltageoffset.txt", FILE_WRITE);
+        file.print(gVoltageOffset);
+        file.close();
+        gVoltageCalibrationDone=true;
+        delay(5000);
+        **************************************************************/
+        sendSettings();
+        return;
+    }
+
+    if (settings.endsWith("bton")) {
+        setMicBluetoothOnOrOff("on");
+        btwrite("\n\nbluetooth ON while recording. Use phone to stop record.\n\n");
+        writeMicInfo();
+        sendSettings();
+        return;
+    }
+
+    if (settings.endsWith("btoff")) {
+        setMicBluetoothOnOrOff("off");
+        btwrite("\n\nbluetooth OFF while recording. Use button to stop record.\n\n");
+
+        writeMicInfo();
+        sendSettings();
+        return;
+    }
+
+    if (settings.endsWith("micinfo")) {
+
+        const micInfo_t& micInfo = getMicInfo();
+        btwrite("****** micinfo: ******** \nTYPE: " + micInfo.MicType + "\nGAIN: " + micInfo.MicBitShift + "\nGPSCoords: " + micInfo.MicGPSCoords +
+                "\nDIRECTION: " + micInfo.MicPointingDirectionDegrees + "\nHEIGHT: " + micInfo.MicHeight + "\nMOUNT: " + micInfo.MicMountType +
+                "\nBluetooth when record: " + micInfo.MicBluetoothOnOrOff);
+        btwrite("\n");
+        sendSettings();
+        return;
+    }
+
+    if (settings.endsWith("help")) {
+
+        // btwrite("\n***commands***\nXXsetgain (11=forest, 14=Mahout)\nXXXXsettype (set mic type)\nXXXXsetname (set eloc bt name)\nupdate
+        // (reboot + upgrade firmware)\nbtoff BT off when record\nbton BT on when record\ndelete (don't use)\n\n");
+        sendSettings();
+        return;
+    }
+
+    if (settings.endsWith("settype")) {
+        String MicType = settings.substring(settings.lastIndexOf('#') + 1, settings.length() - 7);
+        MicType.trim();
+        if (MicType.length() == 0)
+            MicType = "ns";
+        setMicType(MicType);
+        writeMicInfo();
+        btwrite("Mic Type is now " + getMicInfo().MicType);
+        sendSettings();
+        return;
+    }
+
+    if (settings.endsWith("setgain")) {
+        String MicBitShift = settings.substring(settings.lastIndexOf('#') + 1, settings.length() - 7);
+        MicBitShift.trim();
+        btwrite(MicBitShift);
+        if (MicBitShift == "11" || MicBitShift == "12" || MicBitShift == "13" || MicBitShift == "14" || MicBitShift == "15" ||
+            MicBitShift == "16") {
+        } else {
+            btwrite("Error, mic gain out of range. (11 to 16) ");
+            MicBitShift = "11";
+        }
+        setMicBitShift(MicBitShift);
+
+        writeMicInfo();
+        // int temp=gMicInfo.MicBitShift.toInt();
+        btwrite("Mic gain is now " + getMicInfo().MicBitShift);
+        sendSettings();
+        return;
+    }
+
+    if (settings.endsWith("update")) {
+        // updateFirmware();
+        File temp = SPIFFS.open("/update.txt", "w");
+        temp.close();
+
+        btwrite("\nEloc will restart for firmware update. Please re-connect in 1 minute.\n");
+        delay(1000);
+        ESP.restart();
+        return;
+    }
+
+    if (settings.endsWith("setname")) {
+        String temp;
+        temp = settings.substring(settings.lastIndexOf('#') + 1, settings.length() - 7);
+        temp.trim();
+        // temp=settings.lastIndexOf('#');
+
+        File file = SPIFFS.open("/nodename.txt", FILE_WRITE);
+        file.print(temp);
+
+        file.close();
+        ESP_LOGI(TAG, "new name: %s", temp.c_str());
+        btwrite("new name " + temp + "\n\n--- Restarting ELOC ----");
+        vTaskDelay(pdMS_TO_TICKS(100));
+        sendSettings();
+        // readSettings();
+        vTaskDelay(pdMS_TO_TICKS(500));
+        ESP.restart();
+        return;
+    }
+
+    //   if (settings.endsWith("sync")) {
+
+    //       // btwrite("syncnow");
+    //       // btwrite("syncing with time.google.com");
+    //       // vTaskDelay(pdMS_TO_TICKS(5200));
+    //       sendSettings();
+
+    //        return;
+    // }
+
+    if (settings.endsWith("delete")) {
+
+        // SPIFFS.
+        SPIFFS.remove("/settings.txt");
+        SPIFFS.remove("/nodename.txt");
+        SPIFFS.remove("/micinfo.txt");
+
+        btwrite("spiffs settings removed");
+        vTaskDelay(pdMS_TO_TICKS(100));
+        sendSettings();
+
+        return;
+    }
+
+    File file = SPIFFS.open("/settings.txt", FILE_WRITE);
+
+    if (!file) {
+        printf("There was an error opening the file for writing");
+        return;
+    }
+
+    /*if(file.print(settings)){
+        printf("File was written");;
+    } else {
+        printf("File write failed");
+    }*/
+
+    file.print(settings);
+
+    file.close();
+}
+void readSettings() {
+
+    // SPIFFS.remove("/settings.txt");
+    // vTaskDelay(pdMS_TO_TICKS(100));
+
+    if (!(SPIFFS.exists("/settings.txt"))) {
+        writeSettings("#settings#" + String(gSampleRate) + "#" + String(gSecondsPerFile) + "#" + gLocation);
+        printf("wrote settings to spiffs");
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    File file2 = SPIFFS.open("/settings.txt");
+    if (!file2) {
+        printf("Failed to open file for reading");
+        return;
+    }
+    // String temp = file2.readStringUntil('\n');
+    String temp = file2.readString();
+    temp.trim();
+
+    gSampleRate = getSubstring(temp, '#', 2).toInt();
+    // temp
+    // if (gSampleRate==44100) gSampleRate=48000;
+    gSecondsPerFile = getSubstring(temp, '#', 3).toInt();
+    gLocation = getSubstring(temp, '#', 4);
+    gLocation.trim();
+
+    ESP_LOGI(TAG, "settings read: %s", temp.c_str());
+
+    /*printf("File Content:");
+
+    while(file2.available()){
+
+        Serial.write(file2.read());
+    }*/
+
+    file2.close();
+}
 
 void wait_for_bt_command() {
 

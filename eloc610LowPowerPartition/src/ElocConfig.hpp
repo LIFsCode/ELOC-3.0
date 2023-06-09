@@ -38,10 +38,17 @@ typedef struct {
     String MicBluetoothOnOrOff;
 }micInfo_t;
 
+void setMicBitShift(String MicBitShift);
+void setMicType(String MicType);
+void setMicBluetoothOnOrOff(String MicBluetoothOnOrOff);
+
+
 
 void writeMicInfo();
 void readMicInfo();
 const micInfo_t& getMicInfo();
+
+void setMicBitShift();
 
 //BUGME: encapsulate these in a struct & implement a getter
 extern uint32_t gSampleRate;
@@ -63,8 +70,6 @@ extern bool TestI2SClockInput;
 
 String readNodeName();
 
-void writeSettings(String settings);
-void readSettings();
 //TODO: why are there 2 different kind of configs?
 void readConfig();
 

@@ -373,6 +373,15 @@ void setTime(long epoch, int ms) {
   settimeofday(&tv, NULL);
 }
 
+// set initial time. If time is not set the getLocalTime() will stuck for 5 ms due to invalid timestamp
+void initTime() {
+    struct tm tm;
+    strptime(BUILDDATE, "%b %d %Y %H:%M:%S %Y", &tm);
+    time_t timeSinceEpoch = mktime(&tm);
+    timeObject.setTime(timeSinceEpoch);
+    ESP_LOGI(TAG, "Setting initial time to build date: %s", BUILDDATE);
+}
+
 bool createSessionFolder () {
     String fname;
     //TODO: check if another session identifier based on ISO time for mat would be more helpful
@@ -744,6 +753,8 @@ void app_main(void) {
         "------------------------- ELOC Recorder -------------------------\n"
         "-- VERSION: %s\n"
         "-----------------------------------------------------------------\n", VERSIONTAG);
+
+    initTime();
 
     printRevision();
 

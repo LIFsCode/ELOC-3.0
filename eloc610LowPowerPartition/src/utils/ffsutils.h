@@ -32,6 +32,8 @@ void printListDir(const char *path);
 
 void printSPIFFS_size();
 
+bool fileExist(const char* filename);
+
 
 
 }

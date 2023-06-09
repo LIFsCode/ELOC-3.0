@@ -30,6 +30,11 @@
 
 namespace ffsutil {
 
+bool fileExist(const char* filename) {
+    struct stat st;
+    return (stat(filename, &st) == 0);
+}
+
 void printSPIFFS_size() {
     printf("-----------------------------------\n");
 

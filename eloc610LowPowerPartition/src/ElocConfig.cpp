@@ -27,6 +27,7 @@
 #include <FS.h>
 #include "SPIFFS.h"
 
+#include "utils/ffsutils.h"
 #include "config.h"
 #include "ElocConfig.hpp"
 
@@ -212,18 +213,17 @@ bool readConfigFile(const char* filename) {
 }
 
 void readConfig() {
-
-    if (gMountedSDCard && (access(CFG_FILE_SD, F_OK) == 0)) {
+    if (gMountedSDCard && ffsutil::fileExist(CFG_FILE_SD)) {
         ESP_LOGI(TAG, "Using test config from sd-card: %s", CFG_FILE_SD);
         readConfigFile(CFG_FILE_SD);
     }
     else {
-        if (access(CFG_FILE, F_OK)==0) {
+        if (ffsutil::fileExist(CFG_FILE)) {
             readConfigFile(CFG_FILE);
         }
         else {
             ESP_LOGW(TAG, "No config file found, creating default config!");
-            bool writeConfig();
+            writeConfig();
         }
     }
     i2s_mic_Config.sample_rate = gMicInfo.MicSampleRate;
@@ -239,9 +239,9 @@ void readConfig() {
 
 bool writeConfigFile(const char* filename) {
 
-    FILE *f = fopen("/sdcard/elocConfig.config.bak", "w+");
+    FILE *f = fopen(filename, "w+");
     if (f == NULL) {
-        ESP_LOGE(TAG, "Failed to open config file on sd card!");
+        ESP_LOGE(TAG, "Failed to open config file %s!", filename);
         return false;
         // return;
     } 

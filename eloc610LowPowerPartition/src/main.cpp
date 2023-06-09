@@ -324,8 +324,8 @@ void wait_for_button_push()
   //Battery::GetInstance().getVoltage();
   boolean sentElocStatus=false;
   int loopcounter=0;
-  Serial.println( "waiting for button or bluetooth");
-  Serial.println( "voltage is "+String(Battery::GetInstance().getVoltage()));
+  ESP_LOGI(TAG,  "waiting for button or bluetooth");
+  ESP_LOGI(TAG,  "voltage is %.3f", Battery::GetInstance().getVoltage());
   
   
   int64_t timein= getSystemTimeMS();
@@ -335,9 +335,9 @@ void wait_for_button_push()
   int leddelay;
   String serialIN;
  
-  Serial.println(" two following are heap size, total and max alloc ");
-  Serial.println(ESP.getFreeHeap());
-  Serial.println(ESP.getMaxAllocHeap()); 
+  ESP_LOGI(TAG, " two following are heap size, total and max alloc ");
+  ESP_LOGI(TAG, "     %u", ESP.getFreeHeap());
+  ESP_LOGI(TAG, "     %u", ESP.getMaxAllocHeap()); 
   //mountSDCard();
   //freeSpace();
  
@@ -345,7 +345,7 @@ void wait_for_button_push()
   {
       //Battery::GetInstance().getVoltage();
       //gotrecord=false;
-      //Serial.println( "waiting for buttonpress");
+      //ESP_LOGI(TAG,  "waiting for buttonpress");
       //btwrite("Waiting for record button");    
       if (SerialBT.connected()) {
         if (!gSentSettings) {
@@ -380,7 +380,7 @@ void wait_for_button_push()
       if (SerialBT.available()) {
         // handle case for sending initial default setup to app
         serialIN=SerialBT.readString();
-        //Serial.println(serialIN);
+        //ESP_LOGI(TAG, serialIN);
           //if (serialIN.startsWith("settingsRequest")) {
           //   btwrite("#"+String(gSampleRate)+"#"+String(gSecondsPerFile)+"#"+gLocation); 
           //}
@@ -392,7 +392,7 @@ void wait_for_button_push()
            }
           
           if (serialIN.startsWith( "_setClk_")) {
-                   Serial.println("setClk starting");
+                   ESP_LOGI(TAG, "setClk starting");
                   //string will look like _setClk_G__120____32456732728  //if google, 12 mins since last phone sync 
                   //                   or _setClk_P__0____43267832648  //if phone, 0 min since last phone sync
                   
@@ -401,15 +401,16 @@ void wait_for_button_push()
                   everything.trim();
                   String seconds = everything.substring(0,10); //was 18
                   String milliseconds=everything.substring(10,everything.length()); 
-                  Serial.println("timestamp in from android GMT "+everything    +"  sec: "+seconds + "   millisec: "+milliseconds);
+                  String tmp = "timestamp in from android GMT "+everything    +"  sec: "+seconds + "   millisec: "+milliseconds;
+                  ESP_LOGI(TAG, "%s", tmp.c_str());
                   String minutesSinceSync=serialIN.substring(11,serialIN.indexOf("___"));
                   gSyncPhoneOrGoogle=serialIN.substring(8,9);
-                  //Serial.println(minutesSinceSync);
-                // Serial.println("GorP: "+GorP);
+                  //ESP_LOGI(TAG, minutesSinceSync);
+                // ESP_LOGI(TAG, "GorP: "+GorP);
                 //delay(8000);
-                // Serial.println(test);
-                  //Serial.println(seconds);
-                  //Serial.println(milliseconds);
+                // ESP_LOGI(TAG, test);
+                  //ESP_LOGI(TAG, seconds);
+                  //ESP_LOGI(TAG, milliseconds);
                   milliseconds.trim();
                   if (milliseconds.length()<2) milliseconds="0";
                   timeObject.setTime(atol(seconds.c_str())+(TIMEZONE_OFFSET*60L*60L),  (atol(milliseconds.c_str()))*1000    );
@@ -424,10 +425,10 @@ void wait_for_button_push()
                   int64_t time_us = (     (int64_t)tv_now.tv_sec      * 1000000L) + (int64_t)tv_now.tv_usec;
                   time_us=time_us/1000;
                   
-                  //Serial.println("atol(minutesSinceSync.c_str()) *60L*1000L "+String(atol(minutesSinceSync.c_str()) *60L*1000L));
+                  //ESP_LOGI(TAG, "atol(minutesSinceSync.c_str()) *60L*1000L "+String(atol(minutesSinceSync.c_str()) *60L*1000L));
                   gLastSystemTimeUpdate=getTimeFromTimeObjectMS() -(      atol(minutesSinceSync.c_str()) *60L*1000L);
                   timein= getSystemTimeMS();
-                  //Serial.println("timestamp in from android GMT "+everything    +"  sec: "+seconds + "   millisec: "+milliseconds);
+                  //ESP_LOGI(TAG, "timestamp in from android GMT "+everything    +"  sec: "+seconds + "   millisec: "+milliseconds);
                   //ESP_LOGI("d", "new timestamp from new sys time (local time) %lld", time_us  ); //this is 7 hours too slow!
                   //ESP_LOGI("d","new timestamp from timeobJect (local time) %lld",gLastSystemTimeUpdate);
                   
@@ -438,7 +439,7 @@ void wait_for_button_push()
                       sentElocStatus=true;
                       sendElocStatus();
                    }
-                   Serial.println("setClk ending");
+                   ESP_LOGI(TAG, "setClk ending");
           }          
     
     
@@ -450,7 +451,7 @@ void wait_for_button_push()
               gLocationCode.trim();
               gLocationAccuracy= serialIN.substring(serialIN.indexOf("#")+1,serialIN.length() );
               gLocationAccuracy.trim();
-              Serial.println("loc: "+gLocationCode+"   acc "+gLocationAccuracy);
+              ESP_LOGI(TAG, "loc: %s   acc %s", gLocationCode.c_str(), gLocationAccuracy.c_str());
               
               File file = SPIFFS.open("/gps.txt", FILE_WRITE); 
               file.println(gLocationCode);
@@ -885,10 +886,10 @@ bool folderExists(const char* folder)
     struct stat sb;
 
     if (stat(folder, &sb) == 0 && S_ISDIR(sb.st_mode)) {
-        Serial.println("yes");
+        ESP_LOGI(TAG, "yes");
          return true;
     } else {
-         Serial.println("no");
+         ESP_LOGI(TAG, "no");
          return false;
     }
   return false;
@@ -901,7 +902,7 @@ String readNodeName() {
       // if (a==2) {a=1;}
       if(!(SPIFFS.exists("/nodename.txt"))){
   
-        Serial.println("No nodename set. Returning ELOC_NONAME");
+        ESP_LOGI(TAG, "No nodename set. Returning ELOC_NONAME");
         return("ELOC_NONAME");
           
 
@@ -915,7 +916,7 @@ String readNodeName() {
   String temp = file2.readString();
   temp.trim();
   file2.close();
-  Serial.println("node name: "+temp);
+  ESP_LOGI(TAG, "node name: %s", temp.c_str());
   return(temp);
  //return("");
 
@@ -1100,9 +1101,8 @@ void app_main(void)
   ESP_LOGI(TAG, "\n\n---------VERSION %s\n\n", VERSIONTAG);
   initArduino();
   ESP_LOGI(TAG, "initArduino done");
-  Serial.begin(115200);
   
-  Serial.println("\nSETUP--start\n");
+  ESP_LOGI(TAG, "\nSETUP--start\n");
 
   changeBootPartition(); // so if reboots, always boot into the bluetooth partition
  
@@ -1185,7 +1185,7 @@ printMemory();
 
   
   if(!SPIFFS.begin(true, "/spiffs")){
-      Serial.println("An Error has occurred while mounting SPIFFS");
+      ESP_LOGI(TAG, "An Error has occurred while mounting SPIFFS");
       //return;
   }
   delay(50);
@@ -1194,9 +1194,9 @@ delay(50);
 SerialBT.begin(readNodeName(),false);
 delay(100);
 if (SerialBT.isReady())  {
-      Serial.println("SerialBT is ready ------------------------------------------------------ ");
+      ESP_LOGI(TAG, "SerialBT is ready ------------------------------------------------------ ");
 } else {
-       Serial.println("SerialBT is NOT ready --------------------------------------------------- ");
+       ESP_LOGI(TAG, "SerialBT is NOT ready --------------------------------------------------- ");
 }
 
 
@@ -1236,7 +1236,6 @@ ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_
         .min_freq_mhz = gMinFrequencyMHZ,
         .light_sleep_enable = gEnableLightSleep
         };
-    Serial.flush();
   esp_pm_configure(&cfg);   
 
  

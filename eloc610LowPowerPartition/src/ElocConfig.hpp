@@ -89,4 +89,6 @@ bool writeConfig();
 
 void clearConfig();
 
+void printConfig(String& buf);
+
 #endif // ELOCCONFIG_HPP_

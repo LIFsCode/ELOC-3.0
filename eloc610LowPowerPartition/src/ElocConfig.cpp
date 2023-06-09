@@ -236,17 +236,9 @@ void readConfig() {
     }
 }
 
-
-bool writeConfigFile(const char* filename) {
-
-    FILE *f = fopen(filename, "w+");
-    if (f == NULL) {
-        ESP_LOGE(TAG, "Failed to open config file %s!", filename);
-        return false;
-        // return;
-    } 
+void printConfig(String& buf) {
+    
     StaticJsonDocument<1024> doc;
-
     JsonObject device = doc.createNestedObject("device");
     device["location"]                    = gElocDeviceInfo.location.c_str();
     device["locationCode"]                = gElocDeviceInfo.locationCode.c_str();
@@ -274,20 +266,24 @@ bool writeConfigFile(const char* filename) {
     micInfo["MicHeight"]                   = gMicInfo.MicHeight.c_str();
     micInfo["MicMountType"]                = gMicInfo.MicMountType.c_str();
 
-    // Serialize JSON to file
-    const size_t BUF_SIZE = 2048;
-    char * charBuffer = reinterpret_cast<char*>(malloc(BUF_SIZE));
-    if (!charBuffer) {
-        ESP_LOGE(TAG, "Not enough heap memory for writing %s", filename);
-        fclose(f);
-        return false;
-    }
-    if (serializeJsonPretty(doc, charBuffer, BUF_SIZE) == 0) {
+    if (serializeJsonPretty(doc, buf) == 0) {
         ESP_LOGE(TAG, "Failed to write to file");
     }
-    fprintf(f, "%s", charBuffer);
+}
+
+bool writeConfigFile(const char* filename) {
+
+    FILE *f = fopen(filename, "w+");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open config file %s!", filename);
+        return false;
+        // return;
+    } 
+    
+    String buffer;
+    printConfig(buffer);
+    fprintf(f, "%s", buffer.c_str());
     // BUGME: add scopeguard here to make sure file is closed
-    free(charBuffer);
     fclose(f);
     return true;
 }

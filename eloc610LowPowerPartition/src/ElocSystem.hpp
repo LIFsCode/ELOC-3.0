@@ -21,13 +21,42 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "esp_err.h"
+#ifndef ELOCSYSTEM_HPP_
+#define ELOCSYSTEM_HPP_
 
-esp_err_t ManualWakeupConfig();
+#include "CPPI2C/cppi2c.h"
+#include "ELOC_IOEXP.hpp"
+#include "lis3dh.h"
+
+class ElocSystem
+{
+private:
+    /* data */
+    ElocSystem();
+    CPPI2C::I2c* mI2CInstance;
+    ELOC_IOEXP* mIOExpInstance;
+    LIS3DH* mLis3DH;
+public:
+    inline static ElocSystem& Get() {
+        static ElocSystem System;
+        return System;
+    }
+    ~ElocSystem();
+    inline CPPI2C::I2c& getI2C() {
+        assert(mI2CInstance != NULL);
+        return *mI2CInstance;
+    }
+    inline ELOC_IOEXP& getIoExpander() {
+        assert(mIOExpInstance != NULL);
+        return *mIOExpInstance;
+    }
+    inline LIS3DH& getLIS3DH() {
+        assert(mLis3DH != NULL);
+        return *mLis3DH;
+    }
+};
 
 
 
 
-
-
-
+#endif // ELOCSYSTEM_HPP_

@@ -32,6 +32,7 @@
 #include "config.h"
 #include "lis3dh.h"
 #include "ManualWakeup.hpp"
+#include "ElocSystem.hpp"
 
 
 static const char *TAG = "ManualWakeup";
@@ -57,10 +58,6 @@ void IRAM_ATTR int_signal_handler (void *args)
 }
 
 // User task that fetches the sensor values.
-
-//BUGME: handle global creation of driver instances in a separate class!
-static LIS3DH* gLis3DH;
-
 void wakeup_task (void *pvParameters)
 {
     uint32_t gpio_num;
@@ -73,7 +70,7 @@ void wakeup_task (void *pvParameters)
             lis3dh_int_click_source_t click_src = {};
 
             // get the source of the interrupt and reset *INTx* signals
-            gLis3DH->lis3dh_get_int_click_source (&click_src);
+            ElocSystem::Get().getLIS3DH().lis3dh_get_int_click_source (&click_src);
 
 
             // in case of click detection interrupt   
@@ -85,19 +82,9 @@ void wakeup_task (void *pvParameters)
 }
 
 
-esp_err_t ManualWakeupConfig(CPPI2C::I2c& i2c) {
+esp_err_t ManualWakeupConfig() {
 
-    ESP_LOGI(TAG, "Creating LIS3DH instance...");
-    static LIS3DH lis3dh(i2c, LIS3DH_I2C_ADDRESS_2);
-    gLis3DH = &lis3dh;
-    esp_err_t err = lis3dh.lis3dh_init_sensor();
-    if (err != ESP_OK) {
-        ESP_LOGI(TAG, "Creating LIS3DH failed with %s", esp_err_to_name(err));
-        return err;
-        //TODO: throw error code and abort
-    }
-    ESP_LOGI(TAG, "Creating LIS3DH done.");
-
+    LIS3DH& lis3dh = ElocSystem::Get().getLIS3DH();
 
     /** --- INTERRUPT CONFIGURATION PART ---- */
     

@@ -105,7 +105,7 @@ static esp_err_t enableBluetooth() {
     return ESP_OK;
 }
 
-void btwrite(String theString) {
+void btwrite(const String& theString) {
     // FILE *fp;
     if (!gBluetoothEnabled)
         return;
@@ -113,6 +113,7 @@ void btwrite(String theString) {
     // SerialBT.
     if (SerialBT.connected()) {
         SerialBT.println(theString);
+        SerialBT.print(static_cast<char>(0x04));
     }
 }
 
@@ -485,6 +486,14 @@ void wait_for_bt_command() {
                 String cfg;
                 printConfig(cfg);
                 btwrite(cfg);
+            }
+            if (serialIN.startsWith("setConfig")) {
+                String cfg = serialIN.substring(serialIN.indexOf('#')+1);
+                ESP_LOGI(TAG, "updating config with %s", cfg.c_str());
+                esp_err_t err = updateConfig(cfg);
+                char response[128];
+                snprintf(response, sizeof(response), "E%05d: %s", err, esp_err_to_name(err));
+                btwrite(String(response));
             }
 
             if (serialIN.startsWith("_setClk_")) {

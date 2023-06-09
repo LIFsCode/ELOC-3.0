@@ -33,6 +33,8 @@
 
 static const char* TAG = "CONFIG";
 
+static const uint32_t JSON_DOC_SIZE = 1024;
+
 static const char* CFG_FILE = "/spiffs/eloc.config";
 static const char* CFG_FILE_SD = "/sdcard/eloctest.txt";
 
@@ -168,6 +170,7 @@ void loadMicInfo(const JsonObject& micInfo) {
 }     
 
 bool readConfigFile(const char* filename) {
+
     FILE *f = fopen(filename, "r");
     if (f == NULL) {
         ESP_LOGW(TAG, "file not present: %s", filename);
@@ -185,19 +188,17 @@ bool readConfigFile(const char* filename) {
             return false;
         }
         fread(input, fsize, 1, f);
-        fclose(f);
-
-        ESP_LOGI(TAG, "Running with this Configuration:");
+            
+        ESP_LOGI(TAG, "Read this Configuration:");
         printf(input);
 
-        static StaticJsonDocument<1024> doc;
+        StaticJsonDocument<JSON_DOC_SIZE> doc;
 
         DeserializationError error = deserializeJson(doc, input, fsize);
         
         if (error) {
             ESP_LOGE(TAG, "Parsing %s failed with %s!", filename, error.c_str());
         }
-
         JsonObject device = doc["device"];
         loadDevideInfo(device);
         
@@ -208,6 +209,8 @@ bool readConfigFile(const char* filename) {
         loadMicInfo(mic);
 
         free(input);
+        fclose(f);
+
     }
     return true;
 }
@@ -226,19 +229,24 @@ void readConfig() {
             writeConfig();
         }
     }
+
+    String cfg;
+    printConfig(cfg);
+    ESP_LOGI(TAG, "Running with this Configuration:");
+    printf(cfg.c_str());
+    
     i2s_mic_Config.sample_rate = gMicInfo.MicSampleRate;
     if (gMicInfo.MicSampleRate <= 32000) { // my wav files sound wierd if apll clock raate is > 32kh. So force non-apll clock if >32khz
         i2s_mic_Config.use_apll = gMicInfo.MicUseAPLL;
-        ESP_LOGI(TAG, "Sample Rate is < 32khz USE APLL Clock %d", gMicInfo.MicUseAPLL);
+        ESP_LOGI(TAG, "Sample Rate %u is < 32khz USE APLL Clock %d", gMicInfo.MicSampleRate, gMicInfo.MicUseAPLL);
     } else {
         i2s_mic_Config.use_apll = false;
-        ESP_LOGI(TAG, "Sample Rate is > 32khz Forcing NO_APLL ");
+        ESP_LOGI(TAG, "Sample Rate is %u > 32khz Forcing NO_APLL ", gMicInfo.MicSampleRate);
     }
 }
 
-void printConfig(String& buf) {
-    
-    StaticJsonDocument<1024> doc;
+void buildConfigFile(JsonDocument& doc) {
+    doc.clear();
     JsonObject device = doc.createNestedObject("device");
     device["location"]                    = gElocDeviceInfo.location.c_str();
     device["locationCode"]                = gElocDeviceInfo.locationCode.c_str();
@@ -265,9 +273,14 @@ void printConfig(String& buf) {
     micInfo["MicPointingDirectionDegrees"] = gMicInfo.MicPointingDirectionDegrees.c_str();
     micInfo["MicHeight"]                   = gMicInfo.MicHeight.c_str();
     micInfo["MicMountType"]                = gMicInfo.MicMountType.c_str();
+}
 
+void printConfig(String& buf) {
+
+    StaticJsonDocument<JSON_DOC_SIZE> doc;
+    buildConfigFile(doc);
     if (serializeJsonPretty(doc, buf) == 0) {
-        ESP_LOGE(TAG, "Failed to write to file");
+        ESP_LOGE(TAG, "Failed serialize JSON config!");
     }
 }
 
@@ -305,4 +318,46 @@ bool writeConfig() {
 void clearConfig() {
     //TODO: set config to default
     remove(CFG_FILE);
+}
+
+
+static void merge(JsonVariant dst, JsonVariantConst src) {
+    if (src.is<JsonObjectConst>()) {
+        for (JsonPairConst kvp : src.as<JsonObjectConst>()) {
+            if (dst[kvp.key()])
+                merge(dst[kvp.key()], kvp.value());
+            else
+                dst[kvp.key()] = kvp.value();
+        }
+    } else {
+        dst.set(src);
+    }
+}
+
+esp_err_t updateConfig(const String& buf) {
+    static StaticJsonDocument<JSON_DOC_SIZE> newCfg;
+    newCfg.clear();
+
+    DeserializationError error = deserializeJson(newCfg, buf);
+    if (error) {
+        ESP_LOGE(TAG, "Parsing config failed with %s!", error.c_str());
+        return ESP_ERR_INVALID_ARG;
+    }
+    static StaticJsonDocument<JSON_DOC_SIZE> doc;
+    buildConfigFile(doc);
+
+    merge(doc, newCfg);
+
+    JsonObject device = doc["device"];
+    loadDevideInfo(device);
+    
+    JsonObject config = doc["config"];
+    loadConfig(config);
+
+    JsonObject mic = doc["mic"];
+    loadMicInfo(mic);
+
+    writeConfig();
+
+    return ESP_OK;
 }

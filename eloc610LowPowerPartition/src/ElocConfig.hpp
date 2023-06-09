@@ -91,4 +91,6 @@ void clearConfig();
 
 void printConfig(String& buf);
 
+esp_err_t updateConfig(const String& buf) ;
+
 #endif // ELOCCONFIG_HPP_

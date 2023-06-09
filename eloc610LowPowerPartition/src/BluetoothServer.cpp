@@ -219,8 +219,8 @@ void sendElocStatus() { // compiles and sends eloc config
 
     sendstring = sendstring + "!8!" + getMicInfo().MicBluetoothOnOrOff + "\n";
 
-    sendstring = sendstring + "!9!" + String(gSampleRate) + "\n";
-    sendstring = sendstring + "!10!" + String(gSecondsPerFile) + "\n";
+    sendstring = sendstring + "!9!" + String(getConfig().sampleRate) + "\n";
+    sendstring = sendstring + "!10!" + String(getConfig().secondsPerFile) + "\n";
 
     sendstring = sendstring + "!11!" + String(gFreeSpaceGB) + "\n";
     sendstring = sendstring + "!12!" + getMicInfo().MicType + "\n";
@@ -237,7 +237,7 @@ void sendElocStatus() { // compiles and sends eloc config
 
 void sendSettings() {
 
-    btwrite("#" + String(gSampleRate) + "#" + String(gSecondsPerFile) + "#" +
+    btwrite("#" + String(getConfig().sampleRate) + "#" + String(getConfig().secondsPerFile) + "#" +
             gLocation);
     vTaskDelay(pdMS_TO_TICKS(100));
     // btwrite("elocName: "+readNodeName() + " "+gFirmwareVersion);
@@ -422,7 +422,7 @@ void readSettings() {
     // vTaskDelay(pdMS_TO_TICKS(100));
 
     if (!(SPIFFS.exists("/settings.txt"))) {
-        writeSettings("#settings#" + String(gSampleRate) + "#" + String(gSecondsPerFile) + "#" + gLocation);
+        writeSettings("#settings#" + String(getConfig().sampleRate) + "#" + String(getConfig().secondsPerFile) + "#" + gLocation);
         printf("wrote settings to spiffs");
         vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -435,10 +435,12 @@ void readSettings() {
     String temp = file2.readString();
     temp.trim();
 
-    gSampleRate = getSubstring(temp, '#', 2).toInt();
+    int sampleRate = getSubstring(temp, '#', 2).toInt();
+    setSampleRate(sampleRate);
     // temp
-    // if (gSampleRate==44100) gSampleRate=48000;
-    gSecondsPerFile = getSubstring(temp, '#', 3).toInt();
+    // if (getConfig().sampleRate==44100) getConfig().sampleRate=48000;
+    int secondsPerFile = getSubstring(temp, '#', 3).toInt();
+    setSecondsPerFile(secondsPerFile);
     gLocation = getSubstring(temp, '#', 4);
     gLocation.trim();
 
@@ -506,7 +508,7 @@ void wait_for_bt_command() {
             sentSettings = true;
             // vTaskDelay(pdMS_TO_TICKS(200));
 
-            // btwrite("#"+String(gSampleRate)+"#"+String(gSecondsPerFile)+"#"+gLocation);
+            // btwrite("#"+String(getConfig().sampleRate)+"#"+String(getConfig().secondsPerFile)+"#"+gLocation);
         }
         // gotCommand=false;
         if (SerialBT.available()) {
@@ -514,7 +516,7 @@ void wait_for_bt_command() {
             serialIN = SerialBT.readString();
             // ESP_LOGI(TAG, serialIN);
             // if (serialIN.startsWith("settingsRequest")) {
-            //    btwrite("#"+String(gSampleRate)+"#"+String(gSecondsPerFile)+"#"+gLocation);
+            //    btwrite("#"+String(getConfig().sampleRate)+"#"+String(getConfig().secondsPerFile)+"#"+gLocation);
             // }
 
             if (serialIN.startsWith("record")) {
@@ -603,14 +605,14 @@ void wait_for_bt_command() {
                 xQueueSend(rec_req_evt_queue, &rec_req, NULL);
             } else {
                 // const char *converted=serialIN.c_str();
-                /* if (serialIN.startsWith( "8k")){gSampleRate=8000;btwrite("sample rate changed to 8k");gotCommand=true;}
-                if (serialIN.startsWith( "16k")){gSampleRate=16000;btwrite("sample rate changed to 16k");gotCommand=true;}
-                if (serialIN.startsWith( "22k")){gSampleRate=22000;btwrite("sample rate changed to 22k");gotCommand=true;}
-                if (serialIN.startsWith( "32k")){gSampleRate=32000;btwrite("sample rate changed to 32k");gotCommand=true;}
-                if (serialIN.startsWith( "10s")){gSecondsPerFile=10;btwrite("10 secs per file");gotCommand=true;}
-                if (serialIN.startsWith( "1m")){gSecondsPerFile=60;btwrite("1 minute per file");gotCommand=true;}
-                if (serialIN.startsWith( "5m")){gSecondsPerFile=300;btwrite("5 minutes per file");gotCommand=true;}
-                if (serialIN.startsWith( "1h")){gSecondsPerFile=3600;btwrite("1 hour per file");gotCommand=true;}
+                /* if (serialIN.startsWith( "8k")){getConfig().sampleRate=8000;btwrite("sample rate changed to 8k");gotCommand=true;}
+                if (serialIN.startsWith( "16k")){getConfig().sampleRate=16000;btwrite("sample rate changed to 16k");gotCommand=true;}
+                if (serialIN.startsWith( "22k")){getConfig().sampleRate=22000;btwrite("sample rate changed to 22k");gotCommand=true;}
+                if (serialIN.startsWith( "32k")){getConfig().sampleRate=32000;btwrite("sample rate changed to 32k");gotCommand=true;}
+                if (serialIN.startsWith( "10s")){getConfig().secondsPerFile=10;btwrite("10 secs per file");gotCommand=true;}
+                if (serialIN.startsWith( "1m")){getConfig().secondsPerFile=60;btwrite("1 minute per file");gotCommand=true;}
+                if (serialIN.startsWith( "5m")){getConfig().secondsPerFile=300;btwrite("5 minutes per file");gotCommand=true;}
+                if (serialIN.startsWith( "1h")){getConfig().secondsPerFile=3600;btwrite("1 hour per file");gotCommand=true;}
                 if (serialIN.startsWith( "settingsRequest")){gotCommand=true;}
                 if (!gotCommand) btwrite("command not found. options are 8k 16k 22k 32k  and 10s 1m 5m 1h");
                 */

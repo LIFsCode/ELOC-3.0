@@ -103,8 +103,6 @@ void readMicInfo() {
 
 /*************************** Global settings via BT Config ****************************************/
 //BUGME: encapsulate these in a struct & implement a getter
-uint32_t gSampleRate = I2S_DEFAULT_SAMPLE_RATE;
-int gSecondsPerFile= 60;
 String gLocation = "not_set";
 String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
 String gLocationCode="unknown";
@@ -127,6 +125,24 @@ elocConfig_T gElocConfig {
 };
 const elocConfig_T& getConfig() {
     return gElocConfig;
+}
+
+bool setSampleRate(int sampleRate) {
+    if (sampleRate <= 0) {
+        ESP_LOGE(TAG, "Invalid Sample rate %d! Ignoring setting\n", sampleRate);
+        return false;
+    }
+    //TODO: should we check for a max. sample rate?
+    gElocConfig.sampleRate = sampleRate;
+    return true;
+}
+bool setSecondsPerFile(int secondsPerFile) {
+    if (secondsPerFile <= 0) {
+        ESP_LOGE(TAG, "Invalid Seconds per File %d! Ignoring setting\n", secondsPerFile);
+        return false;
+    }
+    gElocConfig.secondsPerFile = secondsPerFile;
+    return true;
 }
 
 /**************************************************************************************************/
@@ -178,8 +194,8 @@ void readConfig() {
                 position = strstr(line, "SampleRate:");
                 if (position != NULL) {
                     position = strstr(line, ":");
-                    gSampleRate = atoi(position + 1);
-                    ESP_LOGI(TAG, "sample rate override %u", gSampleRate);
+                    gElocConfig.sampleRate = atoi(position + 1);
+                    ESP_LOGI(TAG, "sample rate override %u", gElocConfig.sampleRate);
                 }
 
                 position = strstr(line, "MaxFrequencyMHZ:");
@@ -205,8 +221,8 @@ void readConfig() {
                 position = strstr(line, "SecondsPerFile:");
                 if (position != NULL) {
                     position = strstr(line, ":");
-                    gSecondsPerFile = atoi(position + 1);
-                    ESP_LOGI(TAG, "Seconds per File override: %d", gSecondsPerFile);
+                    gElocConfig.secondsPerFile = atoi(position + 1);
+                    ESP_LOGI(TAG, "Seconds per File override: %d", gElocConfig.secondsPerFile);
                 }
 
                 position = strstr(line, "UseAPLL:no");
@@ -261,8 +277,8 @@ void readConfig() {
         }
     }
 
-    i2s_mic_Config.sample_rate = gSampleRate;
-    if (gSampleRate <= 32000) { // my wav files sound wierd if apll clock raate is > 32kh. So force non-apll clock if >32khz
+    i2s_mic_Config.sample_rate = getConfig().sampleRate;
+    if (getConfig().sampleRate <= 32000) { // my wav files sound wierd if apll clock raate is > 32kh. So force non-apll clock if >32khz
         i2s_mic_Config.use_apll = gElocConfig.useAPLL;
         ESP_LOGI(TAG, "Sample Rate is < 32khz USE APLL Clock %d", gElocConfig.useAPLL);
     } else {

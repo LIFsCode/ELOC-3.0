@@ -65,8 +65,8 @@ typedef struct {
 
 const elocConfig_T& getConfig();
 
-extern uint32_t gSampleRate; // TODO: this should finally be moved to Mic Info for consistency
-extern int  gSecondsPerFile;
+bool setSampleRate(int sampleRate);
+bool setSecondsPerFile(int secondsPerFile);
 
 
 typedef struct {

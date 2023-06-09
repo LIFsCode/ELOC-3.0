@@ -430,7 +430,7 @@ void record(I2SSampler *input) {
   int64_t longestWriteTimeMillis=0;
   int64_t writeTimeMillis=0;
   int64_t bufferUnderruns=0;
-  float bufferTimeMillis=(((float)gBufferCount*(float)gBufferLen)/(float)gSampleRate)*1000;
+  float bufferTimeMillis=(((float)gBufferCount*(float)gBufferLen)/(float)getConfig().sampleRate)*1000;
   int64_t writestart,writeend,loopstart,looptime,temptime;
   
 
@@ -468,7 +468,7 @@ void record(I2SSampler *input) {
  
  
  
-      loops= (float)gSecondsPerFile/((gSampleBlockSize)/((float)gSampleRate)) ;
+      loops= (float)getConfig().secondsPerFile/((gSampleBlockSize)/((float)getConfig().sampleRate)) ;
       //printf("loops: "); printf(loops); 
       loopstart=esp_timer_get_time(); 
       while (loopCounter < loops ) {
@@ -653,8 +653,8 @@ void saveStatusToSD() {
   
       sendstring=sendstring+   "Bluetooh on when Record?:   " +getMicInfo().MicBluetoothOnOrOff              + "\n" ;
   
-      sendstring=sendstring+   "Sample Rate:  " +String(gSampleRate)               + "\n" ;
-      sendstring=sendstring+   "Seconds Per File:  " +String(gSecondsPerFile)               + "\n" ;
+      sendstring=sendstring+   "Sample Rate:  " +String(getConfig().sampleRate)               + "\n" ;
+      sendstring=sendstring+   "Seconds Per File:  " +String(getConfig().secondsPerFile)               + "\n" ;
  
       
   
@@ -690,8 +690,8 @@ void saveStatusToSD() {
 
 i2s_config_t getI2sConfig() {
     // update the config with the updated parameters
-    ESP_LOGI(TAG, "Sample rate = %d", gSampleRate);
-    i2s_mic_Config.sample_rate = gSampleRate; //fails when hardcoded to 22050
+    ESP_LOGI(TAG, "Sample rate = %d", getConfig().sampleRate);
+    i2s_mic_Config.sample_rate = getConfig().sampleRate; //fails when hardcoded to 22050
     i2s_mic_Config.use_apll = getConfig().useAPLL; //not getting set. getConfig().useAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
     if (i2s_mic_Config.sample_rate == 0) {
         ESP_LOGI(TAG, "Resetting invalid sample rate to default = %d", I2S_DEFAULT_SAMPLE_RATE);

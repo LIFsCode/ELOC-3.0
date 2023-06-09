@@ -103,10 +103,7 @@ void readMicInfo() {
 
 /*************************** Global settings via BT Config ****************************************/
 //BUGME: encapsulate these in a struct & implement a getter
-String gLocation = "not_set";
 String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
-String gLocationCode="unknown";
-String gLocationAccuracy="99";
 long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
 
 
@@ -142,6 +139,33 @@ bool setSecondsPerFile(int secondsPerFile) {
         return false;
     }
     gElocConfig.secondsPerFile = secondsPerFile;
+    return true;
+}
+
+elocDeviceInfo_T gElocDeviceInfo {
+    .location = "not_set",
+    .locationCode = "unknown", 
+    .locationAccuracy = "99",
+    .nodeName = "ELOC_NONAME",
+};
+const elocDeviceInfo_T& getDeviceInfo() {
+    return gElocDeviceInfo;
+}
+
+void setLocationName(const String& location) {
+    gElocDeviceInfo.location = location;
+}
+void setLocationSettings(const String& code, const String& accuracy) {
+    gElocDeviceInfo.locationCode = code;
+    gElocDeviceInfo.locationAccuracy = accuracy;
+}
+
+bool setNodeName(const String& nodeName) {
+    if (nodeName.length() == 0) {
+        ESP_LOGE(TAG, "Invalid Node Name! Node Name must at least hold 1 character!");
+        return false;
+    }
+    gElocDeviceInfo.nodeName = nodeName;
     return true;
 }
 

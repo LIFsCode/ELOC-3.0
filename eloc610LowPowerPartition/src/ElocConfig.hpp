@@ -28,6 +28,8 @@
 
 //BUGME: encapsulate these in a struct & implement a getter
 #include "WString.h"
+
+/// @brief Holds all the Microphone & recording spedific settings
 typedef struct {
     String MicType;
     String MicBitShift;
@@ -42,14 +44,11 @@ void setMicBitShift(String MicBitShift);
 void setMicType(String MicType);
 void setMicBluetoothOnOrOff(String MicBluetoothOnOrOff);
 
-
-
 void writeMicInfo();
 void readMicInfo();
 const micInfo_t& getMicInfo();
 
-void setMicBitShift();
-
+/// @brief holds all the device specific configuration settings
 typedef struct {
     uint32_t sampleRate; // TODO: this should finally be moved to Mic Info for consistency
     bool useAPLL;
@@ -68,16 +67,21 @@ const elocConfig_T& getConfig();
 bool setSampleRate(int sampleRate);
 bool setSecondsPerFile(int secondsPerFile);
 
-
+/// @brief Holds all Device Meta data, such as Name, location, etc.
 typedef struct {
-
+    String location;
+    String locationCode;
+    String locationAccuracy;
+    String nodeName;
 }elocDeviceInfo_T;
+const elocDeviceInfo_T& getDeviceInfo();
+
+void setLocationName(const String& location);
+void setLocationSettings(const String& code, const String& accuracy);
+bool setNodeName(const String& nodeName);
 
 //BUGME: encapsulate these in a struct & implement a getter
-extern String gLocation;
 extern String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
-extern String gLocationCode;
-extern String gLocationAccuracy;
 extern long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
 extern bool gTimingFix;
 

@@ -649,7 +649,7 @@ void saveStatusToSD() {
       sendstring=sendstring+   "Firmware Version:  "+          gFirmwareVersion                    + "\n" ; //firmware
       
     
-      sendstring=sendstring+   "File Header:  "+     gLocation                         + "\n" ; //file header
+      sendstring=sendstring+   "File Header:  "+     getDeviceInfo().location                         + "\n" ; //file header
   
       sendstring=sendstring+   "Bluetooh on when Record?:   " +getMicInfo().MicBluetoothOnOrOff              + "\n" ;
   
@@ -662,8 +662,8 @@ void saveStatusToSD() {
        sendstring=sendstring+   "Mic Type:  " +getMicInfo().MicType                  + "\n" ;
         sendstring=sendstring+   "SD Card Free GB:   "+ String(gFreeSpaceGB)                  + "\n" ;
        sendstring=sendstring+   "Mic Gain:  " +getMicInfo().MicBitShift                  + "\n" ;
-       sendstring=sendstring+   "GPS Location:  " +gLocationCode                + "\n" ;
-      sendstring=sendstring+    "GPS Accuracy:  " +gLocationAccuracy                + " m\n" ;
+       sendstring=sendstring+   "GPS Location:  " +getDeviceInfo().locationCode                + "\n" ;
+      sendstring=sendstring+    "GPS Accuracy:  " +getDeviceInfo().locationAccuracy                + " m\n" ;
      
        // sendstring=sendstring+ "\n\n";
      

@@ -207,12 +207,13 @@ void sendElocStatus() { // compiles and sends eloc config
     } else {
         sendstring = sendstring + "!2!" + String(tempvolts) + " v " + temptemp + "\n";
     }
-    sendstring = sendstring + "!3!" + gLocation + "\n"; // file header
+    sendstring = sendstring + "!3!" + getDeviceInfo().location + "\n"; // file header
 
     // was uint64tostring
     sendstring = sendstring + "!4!" + String((float)esp_timer_get_time() / 1000 / 1000 / 60 / 60) + " h" + "\n";
-    sendstring =
-        sendstring + "!5!" + String(((float)gTotalRecordTimeSinceReboot + gSessionRecordTime) / 1000 / 1000 / 60 / 60) + " h" + "\n";
+    
+    sendstring = sendstring + "!5!" + String(((float)gTotalRecordTimeSinceReboot + gSessionRecordTime) / 1000 / 1000 / 60 / 60) + " h" + "\n";
+    
     sendstring = sendstring + "!6!" + String((float)gSessionRecordTime / 1000 / 1000 / 60 / 60) + " h" + "\n";
 
     sendstring = sendstring + "!7!" + String(gRecording) + "\n";
@@ -226,8 +227,8 @@ void sendElocStatus() { // compiles and sends eloc config
     sendstring = sendstring + "!12!" + getMicInfo().MicType + "\n";
 
     sendstring = sendstring + "!13!" + getMicInfo().MicBitShift + "\n";
-    sendstring = sendstring + "!14!" + gLocationCode + "\n";
-    sendstring = sendstring + "!15!" + gLocationAccuracy + " m\n";
+    sendstring = sendstring + "!14!" + getDeviceInfo().locationCode + "\n";
+    sendstring = sendstring + "!15!" + getDeviceInfo().locationAccuracy + " m\n";
 
     sendstring = sendstring + "!16!" + gSessionIdentifier + "\n";
 
@@ -238,7 +239,7 @@ void sendElocStatus() { // compiles and sends eloc config
 void sendSettings() {
 
     btwrite("#" + String(getConfig().sampleRate) + "#" + String(getConfig().secondsPerFile) + "#" +
-            gLocation);
+            getDeviceInfo().location);
     vTaskDelay(pdMS_TO_TICKS(100));
     // btwrite("elocName: "+readNodeName() + " "+gFirmwareVersion);
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -422,7 +423,7 @@ void readSettings() {
     // vTaskDelay(pdMS_TO_TICKS(100));
 
     if (!(SPIFFS.exists("/settings.txt"))) {
-        writeSettings("#settings#" + String(getConfig().sampleRate) + "#" + String(getConfig().secondsPerFile) + "#" + gLocation);
+        writeSettings("#settings#" + String(getConfig().sampleRate) + "#" + String(getConfig().secondsPerFile) + "#" + getDeviceInfo().location);
         printf("wrote settings to spiffs");
         vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -441,8 +442,9 @@ void readSettings() {
     // if (getConfig().sampleRate==44100) getConfig().sampleRate=48000;
     int secondsPerFile = getSubstring(temp, '#', 3).toInt();
     setSecondsPerFile(secondsPerFile);
-    gLocation = getSubstring(temp, '#', 4);
-    gLocation.trim();
+    String location = getSubstring(temp, '#', 4);
+    location.trim();
+    setLocationName(location);
 
     ESP_LOGI(TAG, "settings read: %s", temp.c_str());
 
@@ -576,15 +578,16 @@ void wait_for_bt_command() {
                 // read the location on startup?
                 // only report recorded location status?
                 // need to differentiate between manual set and record set.
-                gLocationCode = serialIN.substring(serialIN.indexOf("^") + 1, serialIN.indexOf("#"));
-                gLocationCode.trim();
-                gLocationAccuracy = serialIN.substring(serialIN.indexOf("#") + 1, serialIN.length());
-                gLocationAccuracy.trim();
-                ESP_LOGI(TAG, "loc: %s   acc %s", gLocationCode.c_str(), gLocationAccuracy.c_str());
+                String locationCode = serialIN.substring(serialIN.indexOf("^") + 1, serialIN.indexOf("#"));
+                locationCode.trim();
+                String locationAccuracy = serialIN.substring(serialIN.indexOf("#") + 1, serialIN.length());
+                locationAccuracy.trim();
+                setLocationSettings(locationCode, locationAccuracy);
+                ESP_LOGI(TAG, "loc: %s   acc %s", locationCode.c_str(), locationAccuracy.c_str());
 
                 File file = SPIFFS.open("/gps.txt", FILE_WRITE);
-                file.println(gLocationCode);
-                file.println(gLocationAccuracy);
+                file.println(locationCode);
+                file.println(locationAccuracy);
                 ESP_LOGI(TAG, "Starting Recording...");
                 rec_req_t rec_req = REC_REQ_START;
                 xQueueSend(rec_req_evt_queue, &rec_req, NULL);

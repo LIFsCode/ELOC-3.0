@@ -3,7 +3,7 @@
     "location": "not_set",
     "locationCode": "unknown",
     "locationAccuracy": "99",
-    "nodeName": "99"
+    "nodeName": "ELOC_NONAME"
   },
   "config": {
     "secondsPerFile": 60,
@@ -11,9 +11,10 @@
     "cpuMaxFrequencyMHZ": 80,
     "cpuMinFrequencyMHZ": 10,
     "cpuEnableLightSleep": true,
-    "bluetoothEnableAtStart": false,
+    "bluetoothEnableAtStart": true,
     "bluetoothEnableOnTapping": true,
-    "bluetoothEnableDuringRecord": false
+    "bluetoothEnableDuringRecord": true,
+    "bluetoothOffTimeoutSeconds": 60
   },
   "mic": {
     "MicType": "ns",

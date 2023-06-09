@@ -77,10 +77,10 @@ static const elocConfig_T C_ElocConfig_Default {
     .cpuMaxFrequencyMHZ = 80,    // minimum 80
     .cpuMinFrequencyMHZ = 10,
     .cpuEnableLightSleep = true,
-    .bluetoothEnableAtStart = false,
+    .bluetoothEnableAtStart = true,
     .bluetoothEnableOnTapping = true,
     .bluetoothEnableDuringRecord = true,
-    .bluetoothOffTimeoutSeconds = -1,
+    .bluetoothOffTimeoutSeconds = 60,
     .testI2SClockInput = false
 };
 elocConfig_T gElocConfig = C_ElocConfig_Default;

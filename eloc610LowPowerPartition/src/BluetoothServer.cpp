@@ -495,6 +495,10 @@ void wait_for_bt_command() {
                 snprintf(response, sizeof(response), "E%05d: %s", err, esp_err_to_name(err));
                 btwrite(String(response));
             }
+            if (serialIN.startsWith("delConfig")) {
+                clearConfig();
+                btwrite("E00000: config file deleted, starting with default");
+            }
 
             if (serialIN.startsWith("_setClk_")) {
                 ESP_LOGI(TAG, "setClk starting");

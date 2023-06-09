@@ -40,7 +40,7 @@ static const char* CFG_FILE_SD = "/sdcard/eloctest.txt";
 
 
 //BUGME: encapsulate these in a struct & implement a getter
-micInfo_t gMicInfo {
+static const micInfo_t C_MicInfo_Default {
     .MicType="ns",
     .MicBitShift=11,
     .MicSampleRate = I2S_DEFAULT_SAMPLE_RATE,
@@ -51,6 +51,7 @@ micInfo_t gMicInfo {
     .MicHeight="ns",
     .MicMountType="ns",
 };
+micInfo_t gMicInfo = C_MicInfo_Default;
 
 void setMicBitShift(int MicBitShift) {
     gMicInfo.MicBitShift = MicBitShift;
@@ -69,7 +70,7 @@ const micInfo_t& getMicInfo() {
 //BUGME: encapsulate these in a struct & implement a getter
 
 
-elocConfig_T gElocConfig {
+static const elocConfig_T C_ElocConfig_Default {
     .secondsPerFile = 60,
     .listenOnly = false,
     // Power management
@@ -78,9 +79,10 @@ elocConfig_T gElocConfig {
     .cpuEnableLightSleep = true,
     .bluetoothEnableAtStart = false,
     .bluetoothEnableOnTapping = true,
-    .bluetoothEnableDuringRecord = false,
+    .bluetoothEnableDuringRecord = true,
     .testI2SClockInput = false
 };
+elocConfig_T gElocConfig = C_ElocConfig_Default;
 const elocConfig_T& getConfig() {
     return gElocConfig;
 }
@@ -106,12 +108,13 @@ void setBluetoothOnOrOffDuringRecord(bool MicBluetoothOnOrOff) {
     gElocConfig.bluetoothEnableDuringRecord = MicBluetoothOnOrOff;
 }
 
-elocDeviceInfo_T gElocDeviceInfo {
+static const elocDeviceInfo_T C_ElocDeviceInfo_Default {
     .location = "not_set",
     .locationCode = "unknown", 
     .locationAccuracy = "99",
     .nodeName = "ELOC_NONAME",
 };
+elocDeviceInfo_T gElocDeviceInfo = C_ElocDeviceInfo_Default;
 const elocDeviceInfo_T& getDeviceInfo() {
     return gElocDeviceInfo;
 }
@@ -141,32 +144,32 @@ extern bool gMountedSDCard;
 
 
 void loadDevideInfo(const JsonObject& device) {
-    gElocDeviceInfo.location         = device["location"].as<String>(); 
-    gElocDeviceInfo.locationCode     = device["locationCode"].as<String>();
-    gElocDeviceInfo.locationAccuracy = device["locationAccuracy"].as<String>();
-    gElocDeviceInfo.nodeName         = device["nodeName"].as<String>();
+    gElocDeviceInfo.location         = device["location"]         | C_ElocDeviceInfo_Default.location; 
+    gElocDeviceInfo.locationCode     = device["locationCode"]     | C_ElocDeviceInfo_Default.locationCode;
+    gElocDeviceInfo.locationAccuracy = device["locationAccuracy"] | C_ElocDeviceInfo_Default.locationAccuracy;
+    gElocDeviceInfo.nodeName         = device["nodeName"]         | C_ElocDeviceInfo_Default.nodeName;
 }
 void loadConfig(const JsonObject& config) {
-    gElocConfig.secondsPerFile              = config["secondsPerFile"];             
-    gElocConfig.listenOnly                  = config["listenOnly"];            
-    gElocConfig.cpuMaxFrequencyMHZ          = config["cpuMaxFrequencyMHZ"];    
-    gElocConfig.cpuMinFrequencyMHZ          = config["cpuMinFrequencyMHZ"];    
-    gElocConfig.cpuEnableLightSleep         = config["cpuEnableLightSleep"];   
-    gElocConfig.bluetoothEnableAtStart      = config["bluetoothEnableAtStart"];  
-    gElocConfig.bluetoothEnableOnTapping    = config["bluetoothEnableOnTapping"]; 
-    gElocConfig.bluetoothEnableDuringRecord = config["bluetoothEnableDuringRecord"];
+    gElocConfig.secondsPerFile              = config["secondsPerFile"]              | C_ElocConfig_Default.secondsPerFile;             
+    gElocConfig.listenOnly                  = config["listenOnly"]                  | C_ElocConfig_Default.listenOnly;            
+    gElocConfig.cpuMaxFrequencyMHZ          = config["cpuMaxFrequencyMHZ"]          | C_ElocConfig_Default.cpuMaxFrequencyMHZ;    
+    gElocConfig.cpuMinFrequencyMHZ          = config["cpuMinFrequencyMHZ"]          | C_ElocConfig_Default.cpuMinFrequencyMHZ;    
+    gElocConfig.cpuEnableLightSleep         = config["cpuEnableLightSleep"]         | C_ElocConfig_Default.cpuEnableLightSleep;   
+    gElocConfig.bluetoothEnableAtStart      = config["bluetoothEnableAtStart"]      | C_ElocConfig_Default.bluetoothEnableAtStart;  
+    gElocConfig.bluetoothEnableOnTapping    = config["bluetoothEnableOnTapping"]    | C_ElocConfig_Default.bluetoothEnableOnTapping; 
+    gElocConfig.bluetoothEnableDuringRecord = config["bluetoothEnableDuringRecord"] | C_ElocConfig_Default.bluetoothEnableDuringRecord;
 }
 
 void loadMicInfo(const JsonObject& micInfo) {
-    gMicInfo.MicType                     = micInfo["MicType"].as<String>(); 
-    gMicInfo.MicBitShift                 = micInfo["MicBitShift"];             
-    gMicInfo.MicSampleRate               = micInfo["MicSampleRate"];   
-    gMicInfo.MicUseAPLL                  = micInfo["MicUseAPLL"];             
-    gMicInfo.MicUseTimingFix             = micInfo["MicUseTimingFix"];
-    gMicInfo.MicGPSCoords                = micInfo["MicGPSCoords"].as<String>();           
-    gMicInfo.MicPointingDirectionDegrees = micInfo["MicPointingDirectionDegrees"].as<String>();
-    gMicInfo.MicHeight                   = micInfo["MicHeight"].as<String>();
-    gMicInfo.MicMountType                = micInfo["MicMountType"].as<String>();
+    gMicInfo.MicType                     = micInfo["MicType"]                     | C_MicInfo_Default.MicType; 
+    gMicInfo.MicBitShift                 = micInfo["MicBitShift"]                 | C_MicInfo_Default.MicBitShift;             
+    gMicInfo.MicSampleRate               = micInfo["MicSampleRate"]               | C_MicInfo_Default.MicSampleRate;   
+    gMicInfo.MicUseAPLL                  = micInfo["MicUseAPLL"]                  | C_MicInfo_Default.MicUseAPLL;             
+    gMicInfo.MicUseTimingFix             = micInfo["MicUseTimingFix"]             | C_MicInfo_Default.MicUseTimingFix;
+    gMicInfo.MicGPSCoords                = micInfo["MicGPSCoords"]                | C_MicInfo_Default.MicGPSCoords;           
+    gMicInfo.MicPointingDirectionDegrees = micInfo["MicPointingDirectionDegrees"] | C_MicInfo_Default.MicPointingDirectionDegrees;
+    gMicInfo.MicHeight                   = micInfo["MicHeight"]                   | C_MicInfo_Default.MicHeight;
+    gMicInfo.MicMountType                = micInfo["MicMountType"]                | C_MicInfo_Default.MicMountType;
 }     
 
 bool readConfigFile(const char* filename) {

@@ -46,6 +46,48 @@ static const bat_limits_t C_LiFePo_LIMITS = {
     .Vfull = 3.3
 };
 
+// from https://www.researchgate.net/figure/LiPo-Voltage-SOC-state-of-charge-table-SOC-Cell-Voltage-V-2-Cells-Voltage-V-3_tbl1_341375744
+static const std::vector<socLUT_t> C_LiION_SOCs =
+{
+    {3.27,   0},
+    {3.61,   5},
+    {3.69,  10},
+    {3.71,  15},
+    {3.73,  20},
+    {3.75,  25},
+    {3.77,  30},
+    {3.79,  35},
+    {3.80,  40},
+    {3.82,  45},
+    {3.84,  50},
+    {3.85,  55},
+    {3.87,  60},
+    {3.91,  65},
+    {3.95,  70},
+    {3.98,  75},
+    {4.02,  80},
+    {4.08,  85},
+    {4.11,  90},
+    {4.15,  95},
+    {4.20, 100},
+};  
+
+// from https://footprinthero.com/lifepo4-battery-voltage-charts
+static const std::vector<socLUT_t> C_LiFePo_SOCs =
+{
+    {2.50,   0},
+    {3.00,   9},
+    {3.13,  14},
+    {3.20,  17},
+    {3.23,  20},
+    {3.25,  30},
+    {3.28,  40},
+    {3.30,  70},
+    {3.33,  90},
+    {3.35,  99},
+    {3.40, 100},
+};    
+
 
 Battery::Battery() : 
     mChargingEnabled(true),
@@ -89,7 +131,7 @@ const char* Battery::getBatType() const {
     }
 }
 
-bat_limits_t Battery::getLimits() {
+const bat_limits_t& Battery::getLimits() const {
     switch(mBatteryType) {
         case BAT_LiPo: 
             return C_LiION_LIMITS;
@@ -98,6 +140,18 @@ bat_limits_t Battery::getLimits() {
         default:
         // use LiFePo as default limits, for a save version
         return C_LiFePo_LIMITS;
+    }
+}
+
+const std::vector<socLUT_t>& Battery::getSocLUT() const {
+    switch(mBatteryType) {
+        case BAT_LiPo: 
+            return C_LiION_SOCs;
+        case BAT_LiFePo: 
+            return C_LiFePo_SOCs;
+        default:
+        // use LiFePo as default limits, for a save version
+        return C_LiFePo_SOCs;
     }
 }
 
@@ -145,19 +199,26 @@ float Battery::getVoltage() {
 float Battery::getSoC()
 {
     //TODO: Create a table for Voltage - SoC translation per battery type
-    getVoltage();
-    float soc = 0.0;
-    if (mSys.hasIoExpander() && mSys.getIoExpander().hasLiIonBattery()) {
-        if (mVoltage >= 4.2) {
-            soc = 100;
+    updateVoltage();
+
+    const std::vector<socLUT_t>& lut = getSocLUT();
+    if (lut[0].volt > mVoltage) {
+        // voltage below lowest SoC voltage
+        return 0.0;
+    }
+
+    for(int i = 0; i < lut.size()-1; i++ )
+    {
+        if ( lut[i].volt <= mVoltage && lut[i+1].volt >= mVoltage )
+        {
+            double diffx = mVoltage - lut[i].volt;
+            double diffn = lut[i+1].volt - lut[i].volt;
+
+            return lut[i].soc + ( lut[i+1].soc - lut[i].soc ) * diffx / diffn; 
         }
     }
-    else {
-        if (mVoltage >= 3.4) {
-            soc = 100;
-        }
-    }
-    return 0.0f;
+
+    return 100; // Not in Range
 }
 const char* Battery::getState() {
     if (isFull()) {

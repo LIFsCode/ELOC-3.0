@@ -24,6 +24,8 @@
 #ifndef BATTERY_HPP_
 #define BATTERY_HPP_
 
+#include <vector>
+
 #include "CPPANALOG/analogio.h"
 #include "ElocSystem.hpp"
 #include "esp_err.h"
@@ -34,6 +36,7 @@ typedef struct {
     float Vfull;
 }bat_limits_t;
 
+typedef struct { double volt; double soc; } socLUT_t;
 
 class Battery
 {
@@ -57,7 +60,8 @@ private:
     
     void updateVoltage();
     virtual esp_err_t setChargingEnable(bool enable); 
-    bat_limits_t getLimits();
+    const bat_limits_t& getLimits() const;
+    const std::vector<socLUT_t>&  getSocLUT() const;
     Battery();
     esp_err_t init();
 

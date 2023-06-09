@@ -218,15 +218,15 @@ void sendElocStatus() { // compiles and sends eloc config
 
     sendstring = sendstring + "!7!" + String(gRecording) + "\n";
 
-    sendstring = sendstring + "!8!" + getMicInfo().MicBluetoothOnOrOff + "\n";
+    sendstring = sendstring + "!8!" + (getConfig().bluetoothEnableDuringRecord ? "on" : "off") + "\n";
 
-    sendstring = sendstring + "!9!" + String(getConfig().sampleRate) + "\n";
+    sendstring = sendstring + "!9!" + String(getMicInfo().MicSampleRate) + "\n";
     sendstring = sendstring + "!10!" + String(getConfig().secondsPerFile) + "\n";
 
     sendstring = sendstring + "!11!" + String(gFreeSpaceGB) + "\n";
     sendstring = sendstring + "!12!" + getMicInfo().MicType + "\n";
 
-    sendstring = sendstring + "!13!" + getMicInfo().MicBitShift + "\n";
+    sendstring = sendstring + "!13!" + String(getMicInfo().MicBitShift) + "\n";
     sendstring = sendstring + "!14!" + getDeviceInfo().locationCode + "\n";
     sendstring = sendstring + "!15!" + getDeviceInfo().locationAccuracy + " m\n";
 
@@ -238,7 +238,7 @@ void sendElocStatus() { // compiles and sends eloc config
 
 void sendSettings() {
 
-    btwrite("#" + String(getConfig().sampleRate) + "#" + String(getConfig().secondsPerFile) + "#" +
+    btwrite("#" + String(getMicInfo().MicSampleRate) + "#" + String(getConfig().secondsPerFile) + "#" +
             getDeviceInfo().location);
     vTaskDelay(pdMS_TO_TICKS(100));
     // btwrite("elocName: "+readNodeName() + " "+gFirmwareVersion);
@@ -279,7 +279,7 @@ void writeSettings(String settings) {
     }
 
     if (settings.endsWith("bton")) {
-        setMicBluetoothOnOrOff("on");
+        setBluetoothOnOrOffDuringRecord(true);
         btwrite("\n\nbluetooth ON while recording. Use phone to stop record.\n\n");
         writeMicInfo();
         sendSettings();
@@ -287,7 +287,7 @@ void writeSettings(String settings) {
     }
 
     if (settings.endsWith("btoff")) {
-        setMicBluetoothOnOrOff("off");
+        setBluetoothOnOrOffDuringRecord(false);
         btwrite("\n\nbluetooth OFF while recording. Use button to stop record.\n\n");
 
         writeMicInfo();
@@ -298,9 +298,9 @@ void writeSettings(String settings) {
     if (settings.endsWith("micinfo")) {
 
         const micInfo_t& micInfo = getMicInfo();
-        btwrite("****** micinfo: ******** \nTYPE: " + micInfo.MicType + "\nGAIN: " + micInfo.MicBitShift + "\nGPSCoords: " + micInfo.MicGPSCoords +
+        btwrite("****** micinfo: ******** \nTYPE: " + micInfo.MicType + "\nGAIN: " + String(micInfo.MicBitShift) + "\nGPSCoords: " + micInfo.MicGPSCoords +
                 "\nDIRECTION: " + micInfo.MicPointingDirectionDegrees + "\nHEIGHT: " + micInfo.MicHeight + "\nMOUNT: " + micInfo.MicMountType +
-                "\nBluetooth when record: " + micInfo.MicBluetoothOnOrOff);
+                "\nBluetooth when record: " + (getConfig().bluetoothEnableDuringRecord ? "on" : "off"));
         btwrite("\n");
         sendSettings();
         return;
@@ -336,7 +336,7 @@ void writeSettings(String settings) {
             btwrite("Error, mic gain out of range. (11 to 16) ");
             MicBitShift = "11";
         }
-        setMicBitShift(MicBitShift);
+        setMicBitShift(MicBitShift.toInt());
 
         writeMicInfo();
         // int temp=gMicInfo.MicBitShift.toInt();
@@ -423,7 +423,7 @@ void readSettings() {
     // vTaskDelay(pdMS_TO_TICKS(100));
 
     if (!(SPIFFS.exists("/settings.txt"))) {
-        writeSettings("#settings#" + String(getConfig().sampleRate) + "#" + String(getConfig().secondsPerFile) + "#" + getDeviceInfo().location);
+        writeSettings("#settings#" + String(getMicInfo().MicSampleRate) + "#" + String(getConfig().secondsPerFile) + "#" + getDeviceInfo().location);
         printf("wrote settings to spiffs");
         vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -436,10 +436,10 @@ void readSettings() {
     String temp = file2.readString();
     temp.trim();
 
-    int sampleRate = getSubstring(temp, '#', 2).toInt();
-    setSampleRate(sampleRate);
+    int MicSampleRate = getSubstring(temp, '#', 2).toInt();
+    setSampleRate(MicSampleRate);
     // temp
-    // if (getConfig().sampleRate==44100) getConfig().sampleRate=48000;
+    // if (getMicInfo().MicSampleRate==44100) getMicInfo().MicSampleRate=48000;
     int secondsPerFile = getSubstring(temp, '#', 3).toInt();
     setSecondsPerFile(secondsPerFile);
     String location = getSubstring(temp, '#', 4);
@@ -472,7 +472,7 @@ void wait_for_bt_command() {
 
     String serialIN;
 
-    if (gRecording && getMicInfo().MicBluetoothOnOrOff.equalsIgnoreCase("off")) {
+    if (gRecording && !getConfig().bluetoothEnableDuringRecord) {
         btwrite("recording");
         btwrite("");btwrite("");
         btwrite("ELOC will disconnect. USE button to stop recording.");
@@ -510,7 +510,7 @@ void wait_for_bt_command() {
             sentSettings = true;
             // vTaskDelay(pdMS_TO_TICKS(200));
 
-            // btwrite("#"+String(getConfig().sampleRate)+"#"+String(getConfig().secondsPerFile)+"#"+gLocation);
+            // btwrite("#"+String(getMicInfo().MicSampleRate)+"#"+String(getConfig().secondsPerFile)+"#"+gLocation);
         }
         // gotCommand=false;
         if (SerialBT.available()) {
@@ -518,7 +518,7 @@ void wait_for_bt_command() {
             serialIN = SerialBT.readString();
             // ESP_LOGI(TAG, serialIN);
             // if (serialIN.startsWith("settingsRequest")) {
-            //    btwrite("#"+String(getConfig().sampleRate)+"#"+String(getConfig().secondsPerFile)+"#"+gLocation);
+            //    btwrite("#"+String(getMicInfo().MicSampleRate)+"#"+String(getConfig().secondsPerFile)+"#"+gLocation);
             // }
 
             if (serialIN.startsWith("record")) {
@@ -608,10 +608,10 @@ void wait_for_bt_command() {
                 xQueueSend(rec_req_evt_queue, &rec_req, NULL);
             } else {
                 // const char *converted=serialIN.c_str();
-                /* if (serialIN.startsWith( "8k")){getConfig().sampleRate=8000;btwrite("sample rate changed to 8k");gotCommand=true;}
-                if (serialIN.startsWith( "16k")){getConfig().sampleRate=16000;btwrite("sample rate changed to 16k");gotCommand=true;}
-                if (serialIN.startsWith( "22k")){getConfig().sampleRate=22000;btwrite("sample rate changed to 22k");gotCommand=true;}
-                if (serialIN.startsWith( "32k")){getConfig().sampleRate=32000;btwrite("sample rate changed to 32k");gotCommand=true;}
+                /* if (serialIN.startsWith( "8k")){getMicInfo().MicSampleRate=8000;btwrite("sample rate changed to 8k");gotCommand=true;}
+                if (serialIN.startsWith( "16k")){getMicInfo().MicSampleRate=16000;btwrite("sample rate changed to 16k");gotCommand=true;}
+                if (serialIN.startsWith( "22k")){getMicInfo().MicSampleRate=22000;btwrite("sample rate changed to 22k");gotCommand=true;}
+                if (serialIN.startsWith( "32k")){getMicInfo().MicSampleRate=32000;btwrite("sample rate changed to 32k");gotCommand=true;}
                 if (serialIN.startsWith( "10s")){getConfig().secondsPerFile=10;btwrite("10 secs per file");gotCommand=true;}
                 if (serialIN.startsWith( "1m")){getConfig().secondsPerFile=60;btwrite("1 minute per file");gotCommand=true;}
                 if (serialIN.startsWith( "5m")){getConfig().secondsPerFile=300;btwrite("5 minutes per file");gotCommand=true;}

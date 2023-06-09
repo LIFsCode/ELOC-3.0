@@ -35,22 +35,21 @@ const char* TAG = "CONFIG";
 //BUGME: encapsulate these in a struct & implement a getter
 micInfo_t gMicInfo {
     .MicType="ns",
-    .MicBitShift="11",
+    .MicBitShift=11,
+    .MicSampleRate = I2S_DEFAULT_SAMPLE_RATE,
+    .MicUseAPLL = true,
+    .MicUseTimingFix = true,
     .MicGPSCoords="ns",
     .MicPointingDirectionDegrees="ns",
     .MicHeight="ns",
     .MicMountType="ns",
-    .MicBluetoothOnOrOff="on"
 };
 
-void setMicBitShift(String MicBitShift) {
+void setMicBitShift(int MicBitShift) {
     gMicInfo.MicBitShift = MicBitShift;
 }
 void setMicType(String MicType) {
     gMicInfo.MicType = MicType;
-}
-void setMicBluetoothOnOrOff(String MicBluetoothOnOrOff) {
-    gMicInfo.MicBluetoothOnOrOff = MicBluetoothOnOrOff;
 }
 
 const micInfo_t& getMicInfo() {
@@ -61,15 +60,15 @@ void writeMicInfo() {
     File file2 = SPIFFS.open("/micinfo.txt", FILE_WRITE);
 
     file2.print(gMicInfo.MicType + '\n');
-    file2.print(gMicInfo.MicBitShift + '\n');
+    file2.print(String(gMicInfo.MicBitShift) + '\n');
     file2.print(gMicInfo.MicGPSCoords + '\n');
     file2.print(gMicInfo.MicPointingDirectionDegrees + '\n');
     file2.print(gMicInfo.MicHeight + '\n');
     file2.print(gMicInfo.MicMountType + '\n');
-    file2.print(gMicInfo.MicBluetoothOnOrOff + '\n');
+    // file2.print(gMicInfo.MicBluetoothOnOrOff + '\n');
     file2.close();
-    String info = "micinfo: " + gMicInfo.MicType + "  " + gMicInfo.MicBitShift + "  " + gMicInfo.MicGPSCoords + "  " + gMicInfo.MicPointingDirectionDegrees + " " + gMicInfo.MicHeight + " " + gMicInfo.MicMountType + " " + gMicInfo.MicBluetoothOnOrOff;
-    ESP_LOGI(TAG, "%s", info.c_str());
+    // String info = "micinfo: " + gMicInfo.MicType + "  " + String(gMicInfo.MicBitShift) + "  " + gMicInfo.MicGPSCoords + "  " + gMicInfo.MicPointingDirectionDegrees + " " + gMicInfo.MicHeight + " " + gMicInfo.MicMountType + " " + gMicInfo.MicBluetoothOnOrOff;
+    // ESP_LOGI(TAG, "%s", info.c_str());
 }
 
 void readMicInfo() {
@@ -81,8 +80,7 @@ void readMicInfo() {
     File file2 = SPIFFS.open("/micinfo.txt", FILE_READ);
     gMicInfo.MicType = file2.readStringUntil('\n');
     gMicInfo.MicType.trim();
-    gMicInfo.MicBitShift = file2.readStringUntil('\n');
-    gMicInfo.MicBitShift.trim();
+    gMicInfo.MicBitShift = file2.readStringUntil('\n').toInt();
     gMicInfo.MicGPSCoords = file2.readStringUntil('\n');
     gMicInfo.MicGPSCoords.trim();
     gMicInfo.MicPointingDirectionDegrees = file2.readStringUntil('\n');
@@ -91,12 +89,12 @@ void readMicInfo() {
     gMicInfo.MicHeight.trim();
     gMicInfo.MicMountType = file2.readStringUntil('\n');
     gMicInfo.MicMountType.trim();
-    gMicInfo.MicBluetoothOnOrOff = file2.readStringUntil('\n');
-    gMicInfo.MicBluetoothOnOrOff.trim();
+    // gMicInfo.MicBluetoothOnOrOff = file2.readStringUntil('\n');
+    // gMicInfo.MicBluetoothOnOrOff.trim();
 
     file2.close();
-    String info = "micinfo: " + gMicInfo.MicType + "  " + gMicInfo.MicBitShift + "  " + gMicInfo.MicGPSCoords + "  " + gMicInfo.MicPointingDirectionDegrees + " " + gMicInfo.MicHeight + " " + gMicInfo.MicMountType + " " + gMicInfo.MicBluetoothOnOrOff;
-    ESP_LOGI(TAG, "%s", info.c_str());
+    // String info = "micinfo: " + gMicInfo.MicType + "  " + gMicInfo.MicBitShift + "  " + gMicInfo.MicGPSCoords + "  " + gMicInfo.MicPointingDirectionDegrees + " " + gMicInfo.MicHeight + " " + gMicInfo.MicMountType + " " + gMicInfo.MicBluetoothOnOrOff;
+    // ESP_LOGI(TAG, "%s", info.c_str());
 }
 /**************************************************************************************************/
 
@@ -108,8 +106,6 @@ long gLastSystemTimeUpdate; // local system time of last time update PLUS minute
 
 
 elocConfig_T gElocConfig {
-    .sampleRate = I2S_DEFAULT_SAMPLE_RATE,
-    .useAPLL = true,
     .secondsPerFile = 60,
     .listenOnly = false,
     // Power management
@@ -118,19 +114,20 @@ elocConfig_T gElocConfig {
     .cpuEnableLightSleep = true,
     .bluetoothEnableAtStart = false,
     .bluetoothEnableOnTapping = true,
+    .bluetoothEnableDuringRecord = false,
     .testI2SClockInput = false
 };
 const elocConfig_T& getConfig() {
     return gElocConfig;
 }
 
-bool setSampleRate(int sampleRate) {
-    if (sampleRate <= 0) {
-        ESP_LOGE(TAG, "Invalid Sample rate %d! Ignoring setting\n", sampleRate);
+bool setSampleRate(int MicSampleRate) {
+    if (MicSampleRate <= 0) {
+        ESP_LOGE(TAG, "Invalid Sample rate %d! Ignoring setting\n", MicSampleRate);
         return false;
     }
     //TODO: should we check for a max. sample rate?
-    gElocConfig.sampleRate = sampleRate;
+    gMicInfo.MicSampleRate = MicSampleRate;
     return true;
 }
 bool setSecondsPerFile(int secondsPerFile) {
@@ -140,6 +137,9 @@ bool setSecondsPerFile(int secondsPerFile) {
     }
     gElocConfig.secondsPerFile = secondsPerFile;
     return true;
+}
+void setBluetoothOnOrOffDuringRecord(bool MicBluetoothOnOrOff) {
+    gElocConfig.bluetoothEnableDuringRecord = MicBluetoothOnOrOff;
 }
 
 elocDeviceInfo_T gElocDeviceInfo {
@@ -197,9 +197,6 @@ String readNodeName() {
 //BUGME: handle this through file system
 extern bool gMountedSDCard;
 
-//BUGME: encapsulate these in a struct & implement a getter
-bool gTimingFix=false;
-
 void readConfig() {
 
     char line[128] = "";
@@ -218,8 +215,8 @@ void readConfig() {
                 position = strstr(line, "SampleRate:");
                 if (position != NULL) {
                     position = strstr(line, ":");
-                    gElocConfig.sampleRate = atoi(position + 1);
-                    ESP_LOGI(TAG, "sample rate override %u", gElocConfig.sampleRate);
+                    gMicInfo.MicSampleRate = atoi(position + 1);
+                    ESP_LOGI(TAG, "sample rate override %u", gMicInfo.MicSampleRate);
                 }
 
                 position = strstr(line, "MaxFrequencyMHZ:");
@@ -238,8 +235,8 @@ void readConfig() {
                 position = strstr(line, "gain:");
                 if (position != NULL) {
                     position = strstr(line, ":");
-                    gMicInfo.MicBitShift = String(position + 1);
-                    ESP_LOGI(TAG, "gain override: %d", (int)gMicInfo.MicBitShift.toInt());
+                    gMicInfo.MicBitShift = atoi(position + 1);
+                    ESP_LOGI(TAG, "gain override: %d", gMicInfo.MicBitShift);
                 }
 
                 position = strstr(line, "SecondsPerFile:");
@@ -251,11 +248,11 @@ void readConfig() {
 
                 position = strstr(line, "UseAPLL:no");
                 if (position != NULL) {
-                    gElocConfig.useAPLL = false;
+                    gMicInfo.MicUseAPLL = false;
                 }
                 position = strstr(line, "UseAPLL:yes");
                 if (position != NULL) {
-                    gElocConfig.useAPLL = true;
+                    gMicInfo.MicUseAPLL = true;
                 }
                 position = strstr(line, "TryLightSleep?:yes");
                 if (position != NULL) {
@@ -275,11 +272,11 @@ void readConfig() {
                 }
                 position = strstr(line, "TimingFix:no");
                 if (position != NULL) {
-                    gTimingFix = false;
+                    gMicInfo.MicUseTimingFix = false;
                 }
                 position = strstr(line, "TimingFix:yes");
                 if (position != NULL) {
-                    gTimingFix = true;
+                    gMicInfo.MicUseTimingFix = true;
                 }
                 position = strstr(line, "gElocConfig.testI2SClockInput:no");
                 if (position != NULL) {
@@ -290,10 +287,10 @@ void readConfig() {
                     gElocConfig.testI2SClockInput = true;
                 }
             }
-            ESP_LOGI(TAG, "Use APLL override: %d", gElocConfig.useAPLL);
+            ESP_LOGI(TAG, "Use APLL override: %d", gMicInfo.MicUseAPLL);
             ESP_LOGI(TAG, "Enable light Sleep override: %d", gElocConfig.cpuEnableLightSleep);
             ESP_LOGI(TAG, "Listen Only override: %d", gElocConfig.listenOnly);
-            ESP_LOGI(TAG, "Timing fix override: %d", gTimingFix);
+            ESP_LOGI(TAG, "Timing fix override: %d", gMicInfo.MicUseTimingFix);
             ESP_LOGI(TAG, "Test i2sClockInput: %d", gElocConfig.testI2SClockInput);
             ESP_LOGI(TAG, "\n\n\n");
 
@@ -301,12 +298,13 @@ void readConfig() {
         }
     }
 
-    i2s_mic_Config.sample_rate = getConfig().sampleRate;
-    if (getConfig().sampleRate <= 32000) { // my wav files sound wierd if apll clock raate is > 32kh. So force non-apll clock if >32khz
-        i2s_mic_Config.use_apll = gElocConfig.useAPLL;
-        ESP_LOGI(TAG, "Sample Rate is < 32khz USE APLL Clock %d", gElocConfig.useAPLL);
+    i2s_mic_Config.sample_rate = gMicInfo.MicSampleRate;
+    if (gMicInfo.MicSampleRate <= 32000) { // my wav files sound wierd if apll clock raate is > 32kh. So force non-apll clock if >32khz
+        i2s_mic_Config.use_apll = gMicInfo.MicUseAPLL;
+        ESP_LOGI(TAG, "Sample Rate is < 32khz USE APLL Clock %d", gMicInfo.MicUseAPLL);
     } else {
         i2s_mic_Config.use_apll = false;
         ESP_LOGI(TAG, "Sample Rate is > 32khz Forcing NO_APLL ");
     }
 }
+

@@ -31,18 +31,20 @@
 
 /// @brief Holds all the Microphone & recording spedific settings
 typedef struct {
-    String MicType;
-    String MicBitShift;
-    String MicGPSCoords;
-    String MicPointingDirectionDegrees;
-    String MicHeight;
-    String MicMountType;
-    String MicBluetoothOnOrOff;
+    String   MicType;
+    int      MicBitShift;
+    uint32_t MicSampleRate; // TODO: this should finally be moved to Mic Info for consistency
+    bool     MicUseAPLL;
+    bool     MicUseTimingFix;
+    String   MicGPSCoords;
+    String   MicPointingDirectionDegrees;
+    String   MicHeight;
+    String   MicMountType;
 }micInfo_t;
 
-void setMicBitShift(String MicBitShift);
+void setMicBitShift(int MicBitShift);
 void setMicType(String MicType);
-void setMicBluetoothOnOrOff(String MicBluetoothOnOrOff);
+void setBluetoothOnOrOffDuringRecord(bool MicBluetoothOnOrOff);
 
 void writeMicInfo();
 void readMicInfo();
@@ -50,8 +52,6 @@ const micInfo_t& getMicInfo();
 
 /// @brief holds all the device specific configuration settings
 typedef struct {
-    uint32_t sampleRate; // TODO: this should finally be moved to Mic Info for consistency
-    bool useAPLL;
     int  secondsPerFile;
     bool listenOnly;
     int  cpuMaxFrequencyMHZ;    // SPI this fails for anyting below 80   //
@@ -59,12 +59,13 @@ typedef struct {
     bool cpuEnableLightSleep; //only for AUTOMATIC light leep.
     bool bluetoothEnableAtStart;
     bool bluetoothEnableOnTapping;
+    bool bluetoothEnableDuringRecord;
     bool testI2SClockInput;
 }elocConfig_T;
 
 const elocConfig_T& getConfig();
 
-bool setSampleRate(int sampleRate);
+bool setSampleRate(int MicSampleRate);
 bool setSecondsPerFile(int secondsPerFile);
 
 /// @brief Holds all Device Meta data, such as Name, location, etc.
@@ -83,7 +84,6 @@ bool setNodeName(const String& nodeName);
 //BUGME: encapsulate these in a struct & implement a getter
 extern String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
 extern long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
-extern bool gTimingFix;
 
 String readNodeName();
 

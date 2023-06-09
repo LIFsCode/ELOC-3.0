@@ -167,10 +167,10 @@ void testInput() {
           I2SSampler *input;
           for (uint32_t i=1000; i<34000; i=i+2000) {
                  i2s_mic_Config.sample_rate=i;
-                 i2s_mic_Config.use_apll=getConfig().useAPLL;
+                 i2s_mic_Config.use_apll=getMicInfo().MicUseAPLL;
            
 
-                 input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift.toInt(), getConfig().listenOnly, gTimingFix);
+                 input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
                  input->start();
                  delay(100);
                   ESP_LOGI(TAG, "Clockrate: %f", i2s_get_clk(I2S_NUM_0));
@@ -430,7 +430,7 @@ void record(I2SSampler *input) {
   int64_t longestWriteTimeMillis=0;
   int64_t writeTimeMillis=0;
   int64_t bufferUnderruns=0;
-  float bufferTimeMillis=(((float)gBufferCount*(float)gBufferLen)/(float)getConfig().sampleRate)*1000;
+  float bufferTimeMillis=(((float)gBufferCount*(float)gBufferLen)/(float)getMicInfo().MicSampleRate)*1000;
   int64_t writestart,writeend,loopstart,looptime,temptime;
   
 
@@ -468,7 +468,7 @@ void record(I2SSampler *input) {
  
  
  
-      loops= (float)getConfig().secondsPerFile/((gSampleBlockSize)/((float)getConfig().sampleRate)) ;
+      loops= (float)getConfig().secondsPerFile/((gSampleBlockSize)/((float)getMicInfo().MicSampleRate)) ;
       //printf("loops: "); printf(loops); 
       loopstart=esp_timer_get_time(); 
       while (loopCounter < loops ) {
@@ -651,9 +651,9 @@ void saveStatusToSD() {
     
       sendstring=sendstring+   "File Header:  "+     getDeviceInfo().location                         + "\n" ; //file header
   
-      sendstring=sendstring+   "Bluetooh on when Record?:   " +getMicInfo().MicBluetoothOnOrOff              + "\n" ;
+      sendstring=sendstring+   "Bluetooh on when Record?:   " + (getConfig().bluetoothEnableDuringRecord ? "on" : "off")             + "\n" ;
   
-      sendstring=sendstring+   "Sample Rate:  " +String(getConfig().sampleRate)               + "\n" ;
+      sendstring=sendstring+   "Sample Rate:  " +String(getMicInfo().MicSampleRate)               + "\n" ;
       sendstring=sendstring+   "Seconds Per File:  " +String(getConfig().secondsPerFile)               + "\n" ;
  
       
@@ -661,7 +661,7 @@ void saveStatusToSD() {
        //sendstring=sendstring+   "Voltage Offset:  " +String(gVoltageOffset)                  + "\n" ;
        sendstring=sendstring+   "Mic Type:  " +getMicInfo().MicType                  + "\n" ;
         sendstring=sendstring+   "SD Card Free GB:   "+ String(gFreeSpaceGB)                  + "\n" ;
-       sendstring=sendstring+   "Mic Gain:  " +getMicInfo().MicBitShift                  + "\n" ;
+       sendstring=sendstring+   "Mic Gain:  " +String(getMicInfo().MicBitShift)                  + "\n" ;
        sendstring=sendstring+   "GPS Location:  " +getDeviceInfo().locationCode                + "\n" ;
       sendstring=sendstring+    "GPS Accuracy:  " +getDeviceInfo().locationAccuracy                + " m\n" ;
      
@@ -690,9 +690,9 @@ void saveStatusToSD() {
 
 i2s_config_t getI2sConfig() {
     // update the config with the updated parameters
-    ESP_LOGI(TAG, "Sample rate = %d", getConfig().sampleRate);
-    i2s_mic_Config.sample_rate = getConfig().sampleRate; //fails when hardcoded to 22050
-    i2s_mic_Config.use_apll = getConfig().useAPLL; //not getting set. getConfig().useAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
+    ESP_LOGI(TAG, "Sample rate = %d", getMicInfo().MicSampleRate);
+    i2s_mic_Config.sample_rate = getMicInfo().MicSampleRate; //fails when hardcoded to 22050
+    i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL; //not getting set. getConfig().MicUseAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
     if (i2s_mic_Config.sample_rate == 0) {
         ESP_LOGI(TAG, "Resetting invalid sample rate to default = %d", I2S_DEFAULT_SAMPLE_RATE);
         i2s_mic_Config.sample_rate = I2S_DEFAULT_SAMPLE_RATE;
@@ -868,7 +868,7 @@ void app_main(void) {
                     LEDflashError();
                 } else {
                     getI2sConfig(); 
-                    I2SMEMSSampler input (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift.toInt(), getConfig().listenOnly, gTimingFix);
+                    I2SMEMSSampler input (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,getConfig().listenOnly, getMicInfo().MicUseTimingFix);
                     record(&input);
                 }
             }

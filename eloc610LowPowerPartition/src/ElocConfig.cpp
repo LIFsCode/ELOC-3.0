@@ -57,7 +57,8 @@ void writeMicInfo() {
     file2.print(gMicInfo.MicMountType + '\n');
     file2.print(gMicInfo.MicBluetoothOnOrOff + '\n');
     file2.close();
-    Serial.println("micinfo: " + gMicInfo.MicType + "  " + gMicInfo.MicBitShift + "  " + gMicInfo.MicGPSCoords + "  " + gMicInfo.MicPointingDirectionDegrees + " " + gMicInfo.MicHeight + " " + gMicInfo.MicMountType + " " + gMicInfo.MicBluetoothOnOrOff);
+    String info = "micinfo: " + gMicInfo.MicType + "  " + gMicInfo.MicBitShift + "  " + gMicInfo.MicGPSCoords + "  " + gMicInfo.MicPointingDirectionDegrees + " " + gMicInfo.MicHeight + " " + gMicInfo.MicMountType + " " + gMicInfo.MicBluetoothOnOrOff;
+    ESP_LOGI(TAG, "%s", info.c_str());
 }
 
 void readMicInfo() {
@@ -83,7 +84,8 @@ void readMicInfo() {
     gMicInfo.MicBluetoothOnOrOff.trim();
 
     file2.close();
-    Serial.println("micinfo: " + gMicInfo.MicType + "  " + gMicInfo.MicBitShift + "  " + gMicInfo.MicGPSCoords + "  " + gMicInfo.MicPointingDirectionDegrees + " " + gMicInfo.MicHeight + " " + gMicInfo.MicMountType + " " + gMicInfo.MicBluetoothOnOrOff);
+    String info = "micinfo: " + gMicInfo.MicType + "  " + gMicInfo.MicBitShift + "  " + gMicInfo.MicGPSCoords + "  " + gMicInfo.MicPointingDirectionDegrees + " " + gMicInfo.MicHeight + " " + gMicInfo.MicMountType + " " + gMicInfo.MicBluetoothOnOrOff;
+    ESP_LOGI(TAG, "%s", info.c_str());
 }
 /**************************************************************************************************/
 
@@ -226,7 +228,7 @@ void writeSettings(String settings) {
         file.print(temp);
 
         file.close();
-        Serial.println("new name: " + temp);
+        ESP_LOGI(TAG, "new name: %s", temp.c_str());
         btwrite("new name " + temp + "\n\n--- Restarting ELOC ----");
         vTaskDelay(pdMS_TO_TICKS(100));
         sendSettings();
@@ -324,7 +326,7 @@ void readSettings() {
     gLocation = getSubstring(temp, '#', 4);
     gLocation.trim();
 
-    Serial.println("settings read: " + temp);
+    ESP_LOGI(TAG, "settings read: %s", temp.c_str());
 
     /*printf("File Content:");
 

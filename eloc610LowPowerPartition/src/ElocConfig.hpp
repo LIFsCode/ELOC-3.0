@@ -58,6 +58,7 @@ extern bool gUseAPLL;
 extern int gMaxFrequencyMHZ;    // SPI this fails for anyting below 80   //
 extern int gMinFrequencyMHZ;
 extern bool gEnableLightSleep; //only for AUTOMATIC light leep.
+extern bool gEnableBluetoothAtStart;
 extern bool TestI2SClockInput;
 
 String readNodeName();

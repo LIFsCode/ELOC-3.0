@@ -381,6 +381,7 @@ bool gUseAPLL=true;
 int gMaxFrequencyMHZ=80;    // SPI this fails for anyting below 80   //
 int gMinFrequencyMHZ=10;
 bool gEnableLightSleep=true; //only for AUTOMATIC light leep.
+bool gEnableBluetoothAtStart=false; //only for AUTOMATIC light leep.
 
 void readConfig() {
 

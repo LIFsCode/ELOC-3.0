@@ -361,6 +361,7 @@ void wait_for_bt_command() {
                 File file = SPIFFS.open("/gps.txt", FILE_WRITE);
                 file.println(gLocationCode);
                 file.println(gLocationAccuracy);
+                ESP_LOGI(TAG, "Starting Recording...");
                 rec_req_t rec_req = REC_REQ_START;
                 xQueueSend(rec_req_evt_queue, &rec_req, NULL);
 
@@ -368,12 +369,14 @@ void wait_for_bt_command() {
             }
             if (serialIN.startsWith("stoprecord")) {
 
+                ESP_LOGI(TAG, "Stopping Recording...");
                 rec_req_t rec_req = REC_REQ_STOP;
                 xQueueSend(rec_req_evt_queue, &rec_req, NULL);
             }
 
             if (serialIN.startsWith("_record_")) {
 
+                ESP_LOGI(TAG, "Starting Recording...");
                 rec_req_t rec_req = REC_REQ_START;
                 xQueueSend(rec_req_evt_queue, &rec_req, NULL);
             } else {
@@ -414,6 +417,15 @@ void wakeup_task (void *pvParameters)
     uint32_t gpio_num;
     int loopcounter = 0;
     //ESP_LOGI(TAG, "wakeup_task starting...");
+    if (gEnableBluetoothAtStart) {
+        if (enableBluetooth() != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to enable bluetooth!");
+        }
+    }
+    else {
+        ESP_LOGI(TAG, "Bluetooth is disabled at start. Use Double-tap to wake BT");
+    }
+
     while (1)
     {
         TickType_t gpio_evt_wait = gBluetoothEnabled ? 0 : portMAX_DELAY; // do not wait idle if bluetooth is enabled
@@ -499,7 +511,7 @@ esp_err_t BluetoothServerSetup(bool installGpioIsr) {
     gpio_pullup_dis(LIS3DH_INT_PIN);
     gpio_set_intr_type(LIS3DH_INT_PIN, GPIO_INTR_POSEDGE);
 
-    xTaskCreate(wakeup_task, "Click Sense Wakeup", 2048, NULL, 1, NULL);
+    xTaskCreate(wakeup_task, "Bluetooth Server", 4096, NULL, 1, NULL);
 
     if (installGpioIsr) {
         ESP_ERROR_CHECK(GPIO_INTR_PRIO);

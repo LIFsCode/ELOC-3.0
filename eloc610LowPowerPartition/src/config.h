@@ -77,6 +77,9 @@
 
 #endif
 
+// undefine to skipt performance monitor
+#define USE_PERF_MONITOR
+
 
 
 // i2s config for reading from of I2S

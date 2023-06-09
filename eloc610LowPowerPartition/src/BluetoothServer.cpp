@@ -756,7 +756,7 @@ esp_err_t BluetoothServerSetup(bool installGpioIsr) {
     gpio_pullup_dis(LIS3DH_INT_PIN);
     gpio_set_intr_type(LIS3DH_INT_PIN, GPIO_INTR_POSEDGE);
 
-    xTaskCreate(wakeup_task, "Bluetooth Server", 4096, NULL, 1, NULL);
+    xTaskCreate(wakeup_task, "BT Server", 4096, NULL, 1, NULL);
 
     if (installGpioIsr) {
         ESP_ERROR_CHECK(GPIO_INTR_PRIO);

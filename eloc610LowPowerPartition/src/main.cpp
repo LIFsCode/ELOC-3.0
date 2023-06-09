@@ -50,6 +50,7 @@
 #include "ElocConfig.hpp"
 #include "BluetoothServer.hpp"
 #include "FirmwareUpdate.hpp"
+#include "PerfMonitor.hpp"
 
 static const char *TAG = "main";
 
@@ -835,6 +836,13 @@ void app_main(void) {
     if (esp_err_t err = BluetoothServerSetup(false)) {
         ESP_LOGI(TAG, "BluetoothServerSetup failed with %s", esp_err_to_name(err));
     }
+
+    #ifdef USE_PERF_MONITOR
+        ESP_LOGI(TAG, "Creating Performance Monitor task...");
+        if (esp_err_t err = PerfMonitor::setup()) {
+            ESP_LOGI(TAG, "Performance Monitor failed with %s", esp_err_to_name(err));
+        }
+    #endif
 
     // setup button as interrupt
     ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)GPIO_BUTTON));

@@ -38,4 +38,33 @@ i2s_pin_config_t i2s_mic_pins = {
     .data_in_num = I2S_MIC_SERIAL_DATA
 };
 
-
+/* LIS3DH Config*/
+lis3dh_config_t lis3dh_config = {
+    .scale = lis3dh_scale_2_g,     //use finest scale (max. ±2g full scale)
+    .data_rate = lis3dh_odr_400,   // sampling rate in Hz (affects power consumption, see datasheet 3.2.1)
+    .resolution = lis3dh_high_res, // resolution (8/10/12 bit)
+    .xEn = true,                   // enable x axis
+    .yEn = true,                   // enable y axis
+    .zEn = true,                   // enable z axis
+};
+lis3dh_int_click_config_t lis3dh_click_config = {
+    /* NOTE: if double interrupt is used single clicks will be ignored (must be detected manually)*/
+    .x_single = false,   // x-axis single tap interrupt enabled
+    .x_double = false,   // x-axis double tap interrupt enabled
+    .y_single = false,   // y-axis single tap interrupt enabled
+    .y_double = false,   // y-axis double tap interrupt enabled
+    .z_single = false,   // z-axis single tap interrupt enabled
+    .z_double = true,    // z-axis double tap interrupt enabled
+    .threshold = 10,     /* threshold which is used by the system to start the click-detection procedure */
+    .latch = true,       /* true:  the interrupt is kept high until CLICK_SRC (39h) is read
+                          * false: the interrupt is kept high for the duration of the latency window.  */
+    .time_limit   = 10,  /* define the maximum time interval that can elapse between the start of 
+                          * the click-detection procedure (the acceleration on the selected channel exceeds the 
+                          * programmed threshold) and when the acceleration falls back below the threshold. */
+    .time_latency = 20,  /* define the time interval that starts after the first click detection where 
+                          * the click-detection procedure is disabled, in cases where the device is configured for 
+                          * double-click detection */
+    .time_window  = 255, /* define the maximum interval of time that can elapse after the end of the 
+                          * latency interval in which the click-detection procedure can start, in cases where the device 
+                          * is configured for double-click detection. */
+};

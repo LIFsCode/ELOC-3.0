@@ -30,6 +30,8 @@
 #include "rtc_wdt.h"
 //#include "soc/efuse_reg.h"
 
+#include "version.h"
+
 #include "lis3dh.h"
 #include "ElocSystem.hpp"
 #include "ManualWakeup.hpp"
@@ -604,7 +606,7 @@ void mountSDCard() {
 void app_main(void)
 {
   changeBootPartition(); // so if reboots, always boot into the bluetooth partition
-  ESP_LOGI(TAG, "\n\n---------VERSION %s\n\n", VERSION);
+  ESP_LOGI(TAG, "\n\n---------VERSION %s\n\n", VERSIONTAG);
  
  printRevision();
 

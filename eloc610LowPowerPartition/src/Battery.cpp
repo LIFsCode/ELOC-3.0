@@ -53,42 +53,69 @@ Battery::Battery() :
     mSys(ElocSystem::GetInstance()),
     mAdc(BAT_ADC),
     mVoltage(0.0),
-    AVG_WINDOW(5) // TODO make this configureable
+    mBatteryType(BAT_NONE),
+    mLastReadingMs(0),
+    mHasIoExpander(ElocSystem::GetInstance().hasIoExpander()),
+    AVG_WINDOW(5), // TODO make this configureable
+    UPDATE_INTERVAL_MS(2000)
 {
     //TODO: Read from config file if battery charging should be enabled by default
     setChargingEnable(mChargingEnabled);
 
     if (!mAdc.CheckCalFuse()) {
-        ESP_LOGW(TAG, "ADC %d has been uncalibrated!", BAT_ADC);
+        ESP_LOGW(TAG, "ADC %d has not been calibrated!", BAT_ADC);
     }
+    if (mHasIoExpander) {
+        mBatteryType = mSys.getIoExpander().hasLiIonBattery() ? BAT_LiPo : BAT_LiFePo;
+    }
+    if (getVoltage() < 0.5) {
+        mBatteryType = BAT_NONE;
+    }
+    ESP_LOGI(TAG, "Detected %s", getBatType());
 }
 
 Battery::~Battery()
 {
 }
 
-
-bat_limits_t Battery::getLimits()
-{
-    if (mSys.hasIoExpander()) {
-       if (mSys.getIoExpander().hasLiIonBattery()) {
-            return C_LiION_LIMITS;
-       }
-       else {
-            return C_LiFePo_LIMITS;
-       }
+const char* Battery::getBatType() const {
+    switch(mBatteryType) {
+        case BAT_LiPo: 
+            return "LiPo Battery";
+        case BAT_LiFePo: 
+            return "BAT_LiFePo Battery";
+        default:
+             return "no Battery";
     }
-    return bat_limits_t();
 }
 
-float Battery::getVoltage() {
+bat_limits_t Battery::getLimits() {
+    switch(mBatteryType) {
+        case BAT_LiPo: 
+            return C_LiION_LIMITS;
+        case BAT_LiFePo: 
+            return C_LiFePo_LIMITS;
+        default:
+        // use LiFePo as default limits, for a save version
+        return C_LiFePo_LIMITS;
+    }
+}
+
+void Battery::updateVoltage() {
+
+    int64_t nowMs = (esp_timer_get_time() / 1000ULL);
+    if (((nowMs - mLastReadingMs) <= UPDATE_INTERVAL_MS) && mLastReadingMs) {
+        // reduce load by only updating the battery value once every few seconds
+        return;
+    }
+    mLastReadingMs = nowMs;
+
     // disable charging first
     if (esp_err_t err = setChargingEnable(false)) {
         ESP_LOGI(TAG, "Failed to enable charging %s", esp_err_to_name(err));
     }
     mVoltage = 0.0;
     float accum=0.0; 
-    float avg;
     for (int i=0;  i<AVG_WINDOW;i++) {
         if (mAdc.CheckCalFuse()) {
             accum+= static_cast<float>(mAdc.GetVoltage())/1000.0; // CppAdc1::GetVoltage returns mV
@@ -97,17 +124,21 @@ float Battery::getVoltage() {
             accum+= mAdc.GetRaw();
         }
     } 
+    mVoltage=accum/static_cast<float>(AVG_WINDOW);
 
-    // TODO: add calculation of the voltage divider
-    mVoltage=accum/5.0;
+    // scale the voltage according to the voltage divider on ELOC 3.0 HW
+    mVoltage = mVoltage * (1500.0 + 470.0) / (1500.0);
       
+    //ESP_LOGI(TAG, "scaled voltage =%.3fV, avg = %.3f", mVoltage, accum/static_cast<float>(AVG_WINDOW));
 
     if (mChargingEnabled) {
         if (esp_err_t err = setChargingEnable(mChargingEnabled)) 
             ESP_LOGI(TAG, "Failed to enable charging %s", esp_err_to_name(err));
     }
+}
     //TODO: set battery 
-
+float Battery::getVoltage() {
+    updateVoltage();
     return mVoltage;
 }
 
@@ -130,15 +161,21 @@ float Battery::getSoC()
 }
 bool Battery::isLow()
 {
-    //TODO: trigger a voltage measurement if previous measurement is too old
-    if (mVoltage >= getLimits().Vfull) {
+    if (mBatteryType == BAT_NONE) {
+        return false;
+    }
+    updateVoltage();
+    if (mVoltage <= getLimits().Vlow) {
         return true;
     }
     return false;
 }
 bool Battery::isFull()
 {
-    //TODO: trigger a voltage measurement if previous measurement is too old
+    if (mBatteryType == BAT_NONE) {
+        return true;
+    }
+    updateVoltage();
     if (mVoltage >= getLimits().Vfull) {
         return true;
     }
@@ -146,11 +183,18 @@ bool Battery::isFull()
 }
 bool Battery::isEmpty()
 {
+    if (mBatteryType == BAT_NONE) {
+        return false;
+    }
+    updateVoltage();
+    if (mVoltage <= getLimits().Voff) {
+        return true;
+    }
     return false;
 }
 esp_err_t Battery::setChargingEnable(bool enable)
 {
-    if (mSys.hasIoExpander()) {
+    if (mHasIoExpander) {
        if (esp_err_t err = mSys.getIoExpander().chargeBattery(enable)) {
             ESP_LOGI(TAG, "Failed to %s charging %s", enable ? "enable" : "disable", esp_err_to_name(err));
             return err;

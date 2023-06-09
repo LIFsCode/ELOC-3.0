@@ -34,21 +34,34 @@ typedef struct {
     float Vfull;
 }bat_limits_t;
 
+
 class Battery
 {
 private:
+    typedef enum {
+        BAT_NONE = 0,
+        BAT_LiFePo,
+        BAT_LiPo,
+    }batType_t;
     bool mChargingEnabled;
     float mVoltageOffset;
     ElocSystem& mSys;
     CPPANALOG::CppAdc1 mAdc;
     float mVoltage;
+    batType_t mBatteryType;
+    int64_t mLastReadingMs;
 
+    const bool mHasIoExpander;
     const uint32_t AVG_WINDOW;
+    const uint32_t UPDATE_INTERVAL_MS;
     
+    void updateVoltage();
     virtual esp_err_t setChargingEnable(bool enable); 
     bat_limits_t getLimits();
     Battery();
     esp_err_t init();
+
+    const char* getBatType() const;
 public:
     virtual ~Battery();
     static Battery& GetInstance() {

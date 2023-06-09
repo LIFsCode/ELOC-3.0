@@ -421,10 +421,6 @@ void writeSettings(String settings) {
 
 void wait_for_bt_command() {
 
-    float currentvolts;
-    currentvolts = Battery::GetInstance().getVoltage();
-
-    // Battery::GetInstance().getVoltage();
     static bool sentElocStatus = false;
     static bool sentSettings = false;
     static bool sentRecord = false;

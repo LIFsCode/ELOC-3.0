@@ -170,7 +170,7 @@ void testInput() {
                  i2s_mic_Config.use_apll=getConfig().useAPLL;
            
 
-                 input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, gbitShift, getConfig().listenOnly, gTimingFix);
+                 input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift.toInt(), getConfig().listenOnly, gTimingFix);
                  input->start();
                  delay(100);
                   ESP_LOGI(TAG, "Clockrate: %f", i2s_get_clk(I2S_NUM_0));
@@ -868,7 +868,7 @@ void app_main(void) {
                     LEDflashError();
                 } else {
                     getI2sConfig(); 
-                    I2SMEMSSampler input (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, gbitShift, getConfig().listenOnly, gTimingFix);
+                    I2SMEMSSampler input (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift.toInt(), getConfig().listenOnly, gTimingFix);
                     record(&input);
                 }
             }

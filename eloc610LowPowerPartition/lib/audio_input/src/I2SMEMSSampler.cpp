@@ -2,14 +2,16 @@
 #include "soc/i2s_reg.h"
 
 extern int32_t *graw_samples;
-extern int  gbitShift;
-extern bool gListenOnly;
 
 I2SMEMSSampler::I2SMEMSSampler(
     i2s_port_t i2s_port,
     i2s_pin_config_t &i2s_pins,
     i2s_config_t i2s_config,
-    bool fixSPH0645) : I2SSampler(i2s_port, i2s_config)
+    int bitShift,
+    bool listenOnly,
+    bool fixSPH0645) : I2SSampler(i2s_port, i2s_config),
+    mBitShift(bitShift),
+    mListenOnly(listenOnly)
 {
     m_i2sPins = i2s_pins;
     m_fixSPH0645 = fixSPH0645;
@@ -42,14 +44,14 @@ int I2SMEMSSampler::read(int16_t *samples, int count)
     
                 i2s_read(m_i2sPort, graw_samples, sizeof(int32_t) * 1000, &bytes_read, portMAX_DELAY);
                 samples_read += bytes_read / sizeof(int32_t);
-                if (! gListenOnly) {
+                if (! mListenOnly) {
                     temp=0;
                     for (int i = j*1000; i < samples_read; i++)
                     {
                     
                         //samples[i] = (raw_samples[i] & 0xFFFFFFF0) >> 11;
                         //samples[i] = (raw_samples[i] & 0xFFFFFFF0) >> 14; //16 good
-                        samples[i] = graw_samples[temp++]  >> gbitShift; //14 mahout, 11 forest
+                        samples[i] = graw_samples[temp++]  >> mBitShift; //14 mahout, 11 forest
                     }
                 }
         }

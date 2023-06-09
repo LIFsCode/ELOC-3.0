@@ -231,6 +231,11 @@ void checkForFirmwareUpdateFile() {
 
     if (ffsutil::fileExist(UPDATE_TRIGGER_FILE)) {
         ESP_LOGI(TAG, "%s exists: Doing Firmware update now...", UPDATE_TRIGGER_FILE);
+        if (remove(UPDATE_TRIGGER_FILE)) {
+            ESP_LOGI(TAG, "%s deleted successfully... doing update", UPDATE_TRIGGER_FILE);
+        } else {
+            ESP_LOGI(TAG, "unable to delete file %s", UPDATE_TRIGGER_FILE);
+        }
         // TODO: store the update.bin filename in the update file and read it in here
         updateFirmware();
     }

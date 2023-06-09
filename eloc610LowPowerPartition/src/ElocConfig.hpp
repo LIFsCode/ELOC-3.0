@@ -25,8 +25,8 @@
 #ifndef ELOCCONFIG_HPP_
 #define ELOCCONFIG_HPP_
 
-
-//BUGME: encapsulate these in a struct & implement a getter
+#define ARDUINOJSON_ENABLE_STD_STREAM 1
+#include "ArduinoJson.h"
 #include "WString.h"
 
 /// @brief Holds all the Microphone & recording spedific settings
@@ -89,5 +89,7 @@ String readNodeName();
 
 //TODO: why are there 2 different kind of configs?
 void readConfig();
+
+bool writeConfig();
 
 #endif // ELOCCONFIG_HPP_

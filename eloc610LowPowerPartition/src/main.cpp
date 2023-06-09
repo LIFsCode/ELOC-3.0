@@ -329,6 +329,23 @@ void time() {
    
 }
 
+String uint64ToString(uint64_t input) {
+  String result = "";
+  uint8_t base = 10;
+
+  do {
+    char c = input % base;
+    input /= base;
+
+    if (c < 10)
+      c +='0';
+    else
+      c += 'A' - 10;
+    result = c + result;
+  } while (input);
+  return result;
+}
+
 
 
 
@@ -355,20 +372,41 @@ void setTime(long epoch, int ms) {
   settimeofday(&tv, NULL);
 }
 
+bool createSessionFolder () {
+    String fname;
+    //TODO: check if another session identifier based on ISO time for mat would be more helpful
+    gSessionIdentifier = getDeviceInfo().nodeName + uint64ToString(getSystemTimeMS());
+    fname = "/sdcard/eloc/" + gSessionIdentifier;
+    ESP_LOGI(TAG, "Creating session folder %s", fname.c_str());
+    mkdir(fname.c_str(), 0777);
 
-void createFilename( char *fname) {
-   fname[0]='\0';
-   strcat(fname,"/sdcard/eloc/");
-    strcat(fname,gSessionFolder);
-     strcat(fname,"/");
-     strcat(fname,gSessionFolder);
-    strcat(fname,"_");
- 
+    String cfg;
+    printConfig(cfg);
+    ESP_LOGI(TAG, "Starting session with this config:\n: %s", cfg.c_str());
+    fname += "/" + gSessionIdentifier + ".config";
+    FILE *f = fopen(fname.c_str(), "w+");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open config file for storage %s!", fname.c_str());
+        return false;
+    } 
+    fprintf(f, "%s", cfg.c_str());
+    fclose(f);
+    return true;
+}
 
-    strcat(fname, std::to_string(getSystemTimeMS()).c_str());
-     strcat(fname,".wav");
-      ESP_LOGI(TAG, "filename %s", fname);
+bool createFilename(char *fname, size_t size) {
 
+    char timeStr[64] = {};
+    tm timeinfo = timeObject.getTimeStruct();
+    strftime(timeStr, sizeof(timeStr), "%F_%H_%M_%S", &timeinfo);
+    fname[0] = '\0';
+    int n= snprintf(fname, size, "/sdcard/eloc/%s/%s_%s.wav", gSessionIdentifier.c_str(), gSessionIdentifier.c_str(), timeStr);
+    if ((n<0) || (n > size)) {
+        ESP_LOGE(TAG, "filename buffer too small");
+        return false;
+    }
+    ESP_LOGI(TAG, "filename %s", fname);
+    return true;
 }
 
 String getProperDateTime() {
@@ -443,9 +481,9 @@ void record(I2SSampler *input) {
   float bufferTimeMillis=(((float)gBufferCount*(float)gBufferLen)/(float)getMicInfo().MicSampleRate)*1000;
   int64_t writestart,writeend,loopstart,looptime,temptime;
   
+  //BUGME: this should return the session folder name to parse it to createFilename()
+  createSessionFolder();
 
-  
- 
   
 
   graw_samples = (int32_t *)malloc(sizeof(int32_t) * 1000);
@@ -467,7 +505,7 @@ void record(I2SSampler *input) {
       
       
       if (!getConfig().listenOnly) {
-            createFilename(fname);
+            createFilename(fname, sizeof(fname));
             fp = fopen(fname, "wb");
 
           

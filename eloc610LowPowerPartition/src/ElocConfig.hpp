@@ -47,8 +47,21 @@ const micInfo_t& getMicInfo();
 extern uint32_t gSampleRate;
 extern int gSecondsPerFile;
 extern String gLocation;
+extern int gbitShift;
+extern bool gTimingFix;
+extern bool gListenOnly;
+extern bool gUseAPLL;
+extern int gMaxFrequencyMHZ;    // SPI this fails for anyting below 80   //
+extern int gMinFrequencyMHZ;
+extern bool gEnableLightSleep; //only for AUTOMATIC light leep.
+extern bool TestI2SClockInput;
+
+
 
 void writeSettings(String settings);
 void readSettings();
+//TODO: why are there 2 different kind of configs?
+void readConfig();
+void readCurrentSession();
 
 #endif // ELOCCONFIG_HPP_

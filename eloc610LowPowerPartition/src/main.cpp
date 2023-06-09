@@ -49,7 +49,6 @@
 static const char *TAG = "main";
 
 
-bool TestI2SClockInput=false;
 bool gMountedSDCard=false;
 bool gRecording=false;
 
@@ -61,8 +60,7 @@ int gSampleBlockSize=16000; //must be factor of 1000   in samples
 int gBufferLen=1000; //in samples
 int gBufferCount=18;   // so 6*4000 = 24k buf len
 //always keep these in same order
-int gbitShift;
-bool gDisableBluetoothWhenRecording=false;
+
 
 ////// these are the things you can change for now. 
 
@@ -81,13 +79,6 @@ int gMinutesWaitUntilDeepSleep=60; //change to 1 or 2 for testing
 
 //session stuff
 String gSessionIdentifier="";
-
-bool gTimingFix=false;
-bool gListenOnly=true;
-bool gUseAPLL=true;
-int gMaxFrequencyMHZ=80;    // SPI this fails for anyting below 80   //
-int gMinFrequencyMHZ=10;
-bool gEnableLightSleep=true; //only for AUTOMATIC light leep.
 
 bool gSentSettings=false;
 //String gBluetoothMAC="";
@@ -135,237 +126,6 @@ extern "C"
   void app_main(void);
 }
 
-void readConfig() {
-
-  char line[128] = "";
-  char *position;
-  if (gMountedSDCard)
-  {
-    FILE* f = fopen("/sdcard/eloctest.txt", "r");
-    if (f == NULL)
-    {
-      ESP_LOGI(TAG, "no eloc testing file on root of SDCARD ");
-      // return;
-    }
-    else
-    {
-      ESP_LOGI(TAG, "\n\n\n");
-      while (!feof(f))
-      {
-        fgets(line, sizeof(line), f);
-        // ESP_LOGI(TAG, "%s", line);
-
-        position = strstr(line, "SampleRate:");
-        if (position != NULL)
-        {
-          position = strstr(line, ":");
-          gSampleRate = atoi(position + 1);
-          ESP_LOGI(TAG, "sample rate override %u", gSampleRate);
-        }
-
-        position = strstr(line, "MaxFrequencyMHZ:");
-        if (position != NULL)
-        {
-          position = strstr(line, ":");
-          gMaxFrequencyMHZ = atoi(position + 1);
-          ESP_LOGI(TAG, "Max Frequency MHZ override %d", gMaxFrequencyMHZ);
-        }
-        position = strstr(line, "MinFrequencyMHZ:");
-        if (position != NULL)
-        {
-          position = strstr(line, ":");
-          gMinFrequencyMHZ = atoi(position + 1);
-          ESP_LOGI(TAG, "Min Frequency MHZ override %d", gMinFrequencyMHZ);
-        }
-
-        position = strstr(line, "gain:");
-        if (position != NULL)
-        {
-          position = strstr(line, ":");
-          gbitShift = atoi(position + 1);
-          ESP_LOGI(TAG, "gain override: %d", gbitShift);
-        }
-
-        position = strstr(line, "SecondsPerFile:");
-        if (position != NULL)
-        {
-          position = strstr(line, ":");
-          gSecondsPerFile = atoi(position + 1);
-          ESP_LOGI(TAG, "Seconds per File override: %d", gSecondsPerFile);
-        }
-
-        position = strstr(line, "UseAPLL:no");
-        if (position != NULL)
-        {
-          gUseAPLL = false;
-        }
-        position = strstr(line, "UseAPLL:yes");
-        if (position != NULL)
-        {
-          gUseAPLL = true;
-        }
-        position = strstr(line, "TryLightSleep?:yes");
-        if (position != NULL)
-        {
-          gEnableLightSleep = true;
-        }
-        position = strstr(line, "TryLightSleep?:no");
-        if (position != NULL)
-        {
-          gEnableLightSleep = false;
-        }
-        position = strstr(line, "ListenOnly?:no");
-        if (position != NULL)
-        {
-          gListenOnly = false;
-        }
-        position = strstr(line, "ListenOnly?:yes");
-        if (position != NULL)
-        {
-          gListenOnly = true;
-        }
-        position = strstr(line, "TimingFix:no");
-        if (position != NULL)
-        {
-          gTimingFix = false;
-        }
-        position = strstr(line, "TimingFix:yes");
-        if (position != NULL)
-        {
-          gTimingFix = true;
-        }
-        position = strstr(line, "TestI2SClockInput:no");
-        if (position != NULL)
-        {
-          TestI2SClockInput = false;
-        }
-        position = strstr(line, "TestI2SClockInput:yes");
-        if (position != NULL)
-        {
-          TestI2SClockInput = true;
-        }
-      }
-      ESP_LOGI(TAG, "Use APLL override: %d", gUseAPLL);
-      ESP_LOGI(TAG, "Enable light Sleep override: %d", gEnableLightSleep);
-      ESP_LOGI(TAG, "Listen Only override: %d", gListenOnly);
-      ESP_LOGI(TAG, "Timing fix override: %d", gTimingFix);
-      ESP_LOGI(TAG, "Test i2sClockInput: %d", TestI2SClockInput);
-      ESP_LOGI(TAG, "\n\n\n");
-
-      fclose(f);
-    }
-  }
-
-  i2s_mic_Config.sample_rate = gSampleRate;
-  if (gSampleRate <= 32000)
-  { // my wav files sound wierd if apll clock raate is > 32kh. So force non-apll clock if >32khz
-    i2s_mic_Config.use_apll = gUseAPLL;
-    ESP_LOGI(TAG, "Sample Rate is < 32khz USE APLL Clock %d", gUseAPLL);
-  }
-  else
-  {
-    i2s_mic_Config.use_apll = false;
-    ESP_LOGI(TAG, "Sample Rate is > 32khz Forcing NO_APLL ");
-  }
-}
-
-void readCurrentSession() {
-  char line[128]="";
-  char *position;
- 
-  FILE *f = fopen("/spiffs/currentsession.txt", "r");
-  if (f == NULL) {
-        //gSessionFolder="";
-        ESP_LOGI(TAG, "Failed to open file for reading");
-        //return;
-    } else {
-
- 
-
-            //char *test=line;
-
-          
-            while (!feof(f)) {
-              fgets(line, sizeof(line), f);
-              //ESP_LOGI(TAG, "%s", line);
-              //char *test2;
-              //int start,finish;
-              position = strstr (line,"Session ID");
-              if (position != NULL) {
-                    position = strstr (line,"_"); //need to ad one memory location
-                    //
-                    // the long epoch will be in the first 10 digits. int microseconds the last 3 
-                    
-                    gStartupTime= atoll(position+1);
-
-                    char epoch[10]="";
-                    epoch[0]=*(position+1);
-                    epoch[1]=*(position+2);
-                    epoch[2]=*(position+3);
-                    epoch[3]=*(position+4);
-                    epoch[4]=*(position+5);
-                    epoch[5]=*(position+6);
-                    epoch[6]=*(position+7);
-                    epoch[7]=*(position+8);
-                    epoch[8]=*(position+9);
-                    epoch[9]=*(position+10);
-                    
-                    
-                    
-                    char ms[3]="";
-                    ms[0]=*(position+11);
-                    ms[1]=*(position+12);
-                    ms[2]=*(position+13);
-
-                    //ESP_LOGI(TAG, "epoch %s",  epoch);
-                    //ESP_LOGI(TAG, "ms %s",  ms);
-                    
-                    setTime(atol(epoch),atoi(ms));
-                    ESP_LOGI(TAG, "startup time %lld",  gStartupTime);
-                    //ESP_LOGI(TAG, "testing atol %ld",  atol("1676317685250"));
-                    // ESP_LOGI(TAG, "testing atoll %lld",  atoll("1676317685250"));
-                    position = strstr (line,":  ");
-                    ESP_LOGI(TAG, "session FOLDER 1 %s",  position+3);
-                    strncat(gSessionFolder,position+3,63);
-                    gSessionFolder[strcspn(gSessionFolder, "\n")] = '\0';
-                    ESP_LOGI(TAG, "gSessionFolder %s",  gSessionFolder);
-
-
-              }
-              position = strstr (line,"Sample Rate:");
-              if (position != NULL) {
-                    position = strstr (line,":  "); //need to ad one memory location
-                    gSampleRate=atoi(position+3);
-                    //gSampleRate=4000;
-                    ESP_LOGI(TAG, "sample rate %u", gSampleRate );
-        
-
-              }
-        
-              position = strstr (line,"Mic Gain:");
-              if (position != NULL) {
-                    position = strstr (line,":  "); //need to ad one memory location
-                    gbitShift=atol(position+3);
-                    ESP_LOGI(TAG, "bit shift %d", gbitShift );
-        
-
-              }
-
-              position = strstr (line,"Seconds Per File:");
-              if (position != NULL) {
-                    position = strstr (line,":  "); //need to ad one memory location
-                    gSecondsPerFile=atol(position+3);
-                    ESP_LOGI(TAG, "seconds per file %d", gSecondsPerFile );
-        
-
-              }
-        
-              
-            }
-    }
-    
-   fclose(f);
-}
 
 void resetPeripherals() {
    /*

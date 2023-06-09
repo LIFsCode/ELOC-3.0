@@ -17,6 +17,7 @@
 #include "SDCard.h"
 #include "SPIFFS.h"
 #include <FFat.h>
+#include <ff.h>
 #include "WAVFileWriter.h"
 //#include "WAVFileReader.h"
 #include "config.h"
@@ -42,6 +43,7 @@
 
 #include "version.h"
 
+#include "utils/ffsutils.h"
 #include "lis3dh.h"
 #include "Battery.hpp"
 #include "ElocSystem.hpp"
@@ -594,33 +596,26 @@ void mountSDCard() {
     #endif
 }
 
-
-
 void freeSpace() {
 
-    // FATFS *fs;
-    // uint32_t fre_clust, fre_sect, tot_sect;
-    // FRESULT res;
-    // /* Get volume information and free clusters of drive 0 */
-    // res = f_getfree("0:", &fre_clust, &fs);
-    // /* Get total sectors and free sectors */
-    // tot_sect = (fs->n_fatent - 2) * fs->csize;
-    // fre_sect = fre_clust * fs->csize;
+    FATFS *fs;
+    uint32_t fre_clust, fre_sect, tot_sect;
+    FRESULT res;
+    /* Get volume information and free clusters of drive 0 */
+    res = f_getfree("0:", &fre_clust, &fs);
+    /* Get total sectors and free sectors */
+    tot_sect = (fs->n_fatent - 2) * fs->csize;
+    fre_sect = fre_clust * fs->csize;
 
-    // /* Print the free space (assuming 512 bytes/sector) */
-    // printf("%10lu KiB total drive space.\n%10lu KiB available.\n",
-    //        tot_sect / 2, fre_sect / 2);
+    /* Print the free space (assuming 512 bytes/sector) */
+    printf("%10u KiB total drive space.\n%10u KiB available.\n", tot_sect / 2, fre_sect / 2);
 
+    gFreeSpaceGB = float((float)fre_sect / 1048576.0 / 2.0);
+    printf("\n %2.1f GB free\n", gFreeSpaceGB);
 
-    //   gFreeSpaceGB= float((float)fre_sect/1048576.0 /2.0);
-    //   printf("\n %2.1f GB free\n", gFreeSpaceGB);
-
-    //   gFreeSpaceKB=fre_sect / 2;
-    //   printf("\n %u KB free\n", gFreeSpaceKB);
-
+    gFreeSpaceKB = fre_sect / 2;
+    printf("\n %u KB free\n", gFreeSpaceKB);
 }
-
-
 
 bool folderExists(const char* folder)
 {
@@ -639,45 +634,42 @@ bool folderExists(const char* folder)
 
 
 void saveStatusToSD() {
-       String sendstring;
-       
-      sendstring=sendstring+   "Session ID:  " +gSessionIdentifier+   "\n" ;
-      
-     sendstring=sendstring+   "Session Start Time:  "    +String(timeObject.getYear())+"-"  +String(timeObject.getMonth())+"-" +String(timeObject.getDay())+" " +String(timeObject.getHour(true))+":" +String(timeObject.getMinute())+":"  +String(timeObject.getSecond())           + "\n" ;
+    String sendstring;
 
-          
-      sendstring=sendstring+   "Firmware Version:  "+          gFirmwareVersion                    + "\n" ; //firmware
-      
-    
-      sendstring=sendstring+   "File Header:  "+     getDeviceInfo().location                         + "\n" ; //file header
-  
-      sendstring=sendstring+   "Bluetooh on when Record?:   " + (getConfig().bluetoothEnableDuringRecord ? "on" : "off")             + "\n" ;
-  
-      sendstring=sendstring+   "Sample Rate:  " +String(getMicInfo().MicSampleRate)               + "\n" ;
-      sendstring=sendstring+   "Seconds Per File:  " +String(getConfig().secondsPerFile)               + "\n" ;
- 
-      
-  
-       //sendstring=sendstring+   "Voltage Offset:  " +String(gVoltageOffset)                  + "\n" ;
-       sendstring=sendstring+   "Mic Type:  " +getMicInfo().MicType                  + "\n" ;
-        sendstring=sendstring+   "SD Card Free GB:   "+ String(gFreeSpaceGB)                  + "\n" ;
-       sendstring=sendstring+   "Mic Gain:  " +String(getMicInfo().MicBitShift)                  + "\n" ;
-       sendstring=sendstring+   "GPS Location:  " +getDeviceInfo().locationCode                + "\n" ;
-      sendstring=sendstring+    "GPS Accuracy:  " +getDeviceInfo().locationAccuracy                + " m\n" ;
-     
-       // sendstring=sendstring+ "\n\n";
-     
-      FILE *fp;
-      String temp= "/sdcard/eloc/"+gSessionIdentifier+"/"+"config_"+gSessionIdentifier+".txt";
-      fp = fopen(temp.c_str(), "wb");
-      //fwrite()
-      //String temp=
-      //String temp="/sdcard/eloc/test.txt";
-      //File file = SD.open(temp.c_str(), FILE_WRITE);
-      //file.print(sendstring);
-      fputs(sendstring.c_str(), fp);
-      fclose(fp);
+    sendstring = sendstring + "Session ID:  " + gSessionIdentifier + "\n";
 
+    sendstring = sendstring + "Session Start Time:  " + String(timeObject.getYear()) + "-" + String(timeObject.getMonth()) + "-" +
+                String(timeObject.getDay()) + " " + String(timeObject.getHour(true)) + ":" + String(timeObject.getMinute()) + ":" +
+                String(timeObject.getSecond()) + "\n";
+
+    sendstring = sendstring + "Firmware Version:  " + gFirmwareVersion + "\n"; // firmware
+
+    sendstring = sendstring + "File Header:  " + getDeviceInfo().location + "\n"; // file header
+
+    sendstring = sendstring + "Bluetooh on when Record?:   " + (getConfig().bluetoothEnableDuringRecord ? "on" : "off") + "\n";
+
+    sendstring = sendstring + "Sample Rate:  "      + String(getMicInfo().MicSampleRate) + "\n";
+    sendstring = sendstring + "Seconds Per File:  " + String(getConfig().secondsPerFile) + "\n";
+
+    // sendstring=sendstring+   "Voltage Offset:  " +String(gVoltageOffset)                  + "\n" ;
+    sendstring = sendstring + "Mic Type:  "         + getMicInfo().MicType + "\n";
+    sendstring = sendstring + "SD Card Free GB:   " + String(gFreeSpaceGB) + "\n";
+    sendstring = sendstring + "Mic Gain:  "         + String(getMicInfo().MicBitShift) + "\n";
+    sendstring = sendstring + "GPS Location:  "     + getDeviceInfo().locationCode + "\n";
+    sendstring = sendstring + "GPS Accuracy:  "     + getDeviceInfo().locationAccuracy + " m\n";
+
+    // sendstring=sendstring+ "\n\n";
+
+    FILE *fp;
+    String temp = "/sdcard/eloc/" + gSessionIdentifier + "/" + "config_" + gSessionIdentifier + ".txt";
+    fp = fopen(temp.c_str(), "wb");
+    // fwrite()
+    // String temp=
+    // String temp="/sdcard/eloc/test.txt";
+    // File file = SD.open(temp.c_str(), FILE_WRITE);
+    // file.print(sendstring);
+    fputs(sendstring.c_str(), fp);
+    fclose(fp);
 }
 
 
@@ -690,32 +682,6 @@ i2s_config_t getI2sConfig() {
         ESP_LOGI(TAG, "Resetting invalid sample rate to default = %d", I2S_DEFAULT_SAMPLE_RATE);
         i2s_mic_Config.sample_rate = I2S_DEFAULT_SAMPLE_RATE;
     }
-        // ESP_LOGI(TAG, "i2s_mic_Config = "
-        //             "\n\tmode = %d"
-        //             "\n\tsample_rate = %d"
-        //             "\n\tbits_per_sample = %d"
-        //             "\n\tbits_per_chan = %d"
-        //             "\n\tchannel_format = %d"
-        //             "\n\tcommunication_format = %d"
-        //             "\n\tintr_alloc_flags = %d"
-        //             "\n\tdma_buf_count = %d"
-        //             "\n\tdma_buf_len = %d"
-        //             "\n\tuse_apll = %s"
-        //             "\n\ttx_desc_auto_clear = %s"
-        //             "\n\tfixed_mclk = %d",
-        //             i2s_mic_Config.mode,
-        //             i2s_mic_Config.sample_rate,
-        //             i2s_mic_Config.bits_per_sample,
-        //             i2s_mic_Config.bits_per_chan,
-        //             i2s_mic_Config.channel_format,
-        //             i2s_mic_Config.communication_format,
-        //             i2s_mic_Config.intr_alloc_flags,
-        //             i2s_mic_Config.dma_buf_count,
-        //             i2s_mic_Config.dma_buf_len,
-        //             i2s_mic_Config.use_apll ? "True":"false",
-        //             i2s_mic_Config.tx_desc_auto_clear ? "True":"false",
-        //             i2s_mic_Config.fixed_mclk
-        //             );
     return i2s_mic_Config;
 }
 
@@ -802,6 +768,12 @@ void app_main(void) {
     }
     mountSDCard();
     freeSpace();
+
+    // print some file system info
+     ESP_LOGI(TAG, "File system loaded: ");
+    ffsutil::printListDir("/spiffs");
+    ffsutil::printListDir("/sdcard");
+    ffsutil::printListDir("/sdcard/eloc");
     
     readConfig();
 

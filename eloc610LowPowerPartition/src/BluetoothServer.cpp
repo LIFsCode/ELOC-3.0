@@ -79,6 +79,9 @@ void IRAM_ATTR int_signal_handler (void *args)
 
 static bool gBluetoothEnabled = false;
 
+static String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
+static long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
+
 static esp_err_t disableBluetooth() {
     SerialBT.end();
     return ESP_OK;

@@ -79,10 +79,6 @@ void setLocationName(const String& location);
 void setLocationSettings(const String& code, const String& accuracy);
 bool setNodeName(const String& nodeName);
 
-//BUGME: encapsulate these in a struct & implement a getter
-extern String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
-extern long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
-
 /// @brief load configuration from filesystem
 void readConfig();
 

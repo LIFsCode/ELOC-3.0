@@ -34,7 +34,7 @@
 
 
 #ifdef USE_SDIO_VERSION
-        #define VERSION "eloc610SDIOLowPower06Apr2023A"
+        #define VERSION "ELOC_V0.1"
      
         #define STATUS_LED  GPIO_NUM_4      
         #define BATTERY_LED  GPIO_NUM_4     

@@ -64,8 +64,6 @@ const micInfo_t& getMicInfo() {
 
 /*************************** Global settings via BT Config ****************************************/
 //BUGME: encapsulate these in a struct & implement a getter
-String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
-long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
 
 
 elocConfig_T gElocConfig {
@@ -187,6 +185,9 @@ bool readConfigFile(const char* filename) {
         }
         fread(input, fsize, 1, f);
         fclose(f);
+
+        ESP_LOGI(TAG, "Running with this Configuration:");
+        printf(input);
 
         static StaticJsonDocument<1024> doc;
 

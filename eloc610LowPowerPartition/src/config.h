@@ -1,5 +1,6 @@
 #include <freertos/FreeRTOS.h>
 #include <driver/i2s.h>
+#include <driver/adc.h>
 #include "lis3dh_types.h"
 
 
@@ -40,6 +41,7 @@
         #define GPIO_BUTTON GPIO_NUM_0
         #define OTHER_GPIO_BUTTON GPIO_NUM_0
         #define VOLTAGE_PIN GPIO_NUM_34
+        #define BAT_ADC ADC1_CHANNEL_6
 
         /** Interrupt definitions
          *  lower levels are lower priorities

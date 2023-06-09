@@ -33,6 +33,7 @@
 #include "version.h"
 
 #include "lis3dh.h"
+#include "Battery.hpp"
 #include "ElocSystem.hpp"
 #include "ManualWakeup.hpp"
 
@@ -674,8 +675,11 @@ I2SSampler *input;
 gpio_set_level(STATUS_LED, 0);
 gpio_set_level(BATTERY_LED, 0);
 
-ESP_LOGI(TAG, "Setting up System...");
+ESP_LOGI(TAG, "Setting up HW System...");
 ElocSystem::GetInstance();
+
+ESP_LOGI(TAG, "Setting up Battery...");
+Battery::GetInstance();
 
 
 //delay(30000);

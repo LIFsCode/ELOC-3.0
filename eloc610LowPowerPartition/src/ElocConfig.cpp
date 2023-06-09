@@ -80,6 +80,7 @@ static const elocConfig_T C_ElocConfig_Default {
     .bluetoothEnableAtStart = false,
     .bluetoothEnableOnTapping = true,
     .bluetoothEnableDuringRecord = true,
+    .bluetoothOffTimeoutSeconds = -1,
     .testI2SClockInput = false
 };
 elocConfig_T gElocConfig = C_ElocConfig_Default;
@@ -158,6 +159,7 @@ void loadConfig(const JsonObject& config) {
     gElocConfig.bluetoothEnableAtStart      = config["bluetoothEnableAtStart"]      | C_ElocConfig_Default.bluetoothEnableAtStart;  
     gElocConfig.bluetoothEnableOnTapping    = config["bluetoothEnableOnTapping"]    | C_ElocConfig_Default.bluetoothEnableOnTapping; 
     gElocConfig.bluetoothEnableDuringRecord = config["bluetoothEnableDuringRecord"] | C_ElocConfig_Default.bluetoothEnableDuringRecord;
+    gElocConfig.bluetoothOffTimeoutSeconds  = config["bluetoothOffTimeoutSeconds"]  | C_ElocConfig_Default.bluetoothOffTimeoutSeconds;
 }
 
 void loadMicInfo(const JsonObject& micInfo) {
@@ -265,6 +267,7 @@ void buildConfigFile(JsonDocument& doc) {
     config["bluetoothEnableAtStart"]      = gElocConfig.bluetoothEnableAtStart;
     config["bluetoothEnableOnTapping"]    = gElocConfig.bluetoothEnableOnTapping;
     config["bluetoothEnableDuringRecord"] = gElocConfig.bluetoothEnableDuringRecord;
+    config["bluetoothOffTimeoutSeconds"]  = gElocConfig.bluetoothOffTimeoutSeconds;
     
     JsonObject micInfo = doc.createNestedObject("mic");
     micInfo["MicType"]                     = gMicInfo.MicType.c_str();

@@ -83,7 +83,11 @@ static bool gBluetoothEnabled = false;
 static String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
 static long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
 
+// the last time a BT node was connected
+static int lastBtConnectionTimeS = 0;
+
 static esp_err_t disableBluetooth() {
+    gBluetoothEnabled = false;
     SerialBT.end();
     return ESP_OK;
 }
@@ -95,6 +99,7 @@ static esp_err_t enableBluetooth() {
     vTaskDelay(pdMS_TO_TICKS(100));
     if (SerialBT.isReady()) {
         ESP_LOGI(TAG, "SerialBT is ready ------------------------------------------------------ ");
+        lastBtConnectionTimeS = esp_timer_get_time()/1000/1000;
     } else {
         ESP_LOGW(TAG, "SerialBT is NOT ready --------------------------------------------------- ");
         ESP_LOGI(TAG, "Disable BT again!");
@@ -443,6 +448,7 @@ void wait_for_bt_command() {
     }
 
     if (SerialBT.connected()) {
+        lastBtConnectionTimeS = esp_timer_get_time()/1000/1000;
         if (!sentRecord && gRecording) {
             btwrite("recording");
             vTaskDelay(pdMS_TO_TICKS(200));
@@ -610,6 +616,13 @@ void wait_for_bt_command() {
         sentSettings = false;
         sentElocStatus = false;
         sentRecord = false;
+        if (getConfig().bluetoothOffTimeoutSeconds >= 0) { // if bluetoothOffTimeoutMs <=0 it is ignored per definition
+            int timeDiff = esp_timer_get_time()/1000/1000 - lastBtConnectionTimeS;
+            if (timeDiff >= getConfig().bluetoothOffTimeoutSeconds) {
+                ESP_LOGI(TAG, "%d seconds without bluetooth connection, exceeding max. of %d sec! Shutting down Bluetooth.", timeDiff, getConfig().bluetoothOffTimeoutSeconds);
+                disableBluetooth();
+            }
+        }
     }
 }
 
@@ -648,7 +661,6 @@ void wakeup_task (void *pvParameters)
             float voltage = Battery::GetInstance().getVoltage();
             ESP_LOGI(TAG, "Bat Voltage %.3f\n", voltage);
 
-            //TODO: check for config to enable bluetooth
             if (!gBluetoothEnabled && getConfig().bluetoothEnableOnTapping) {
                 ESP_LOGI(TAG, " two following are heap size, total and max alloc ");
                 ESP_LOGI(TAG, "     %u", ESP.getFreeHeap());

@@ -58,6 +58,7 @@ typedef struct {
     bool bluetoothEnableAtStart;
     bool bluetoothEnableOnTapping;
     bool bluetoothEnableDuringRecord;
+    int bluetoothOffTimeoutSeconds;
     bool testI2SClockInput;
 }elocConfig_T;
 

@@ -60,7 +60,6 @@ int gRawSampleBlockSize=1000;
 int gSampleBlockSize=16000; //must be factor of 1000   in samples
 int gBufferLen=1000; //in samples
 int gBufferCount=18;   // so 6*4000 = 24k buf len
-float gVoltage[] = {0.0f, 0.0f, 0.0f, 0.0f};
 //always keep these in same order
 int gbitShift;
 bool gDisableBluetoothWhenRecording=false;
@@ -77,12 +76,6 @@ int64_t gTotalUPTimeSinceReboot=esp_timer_get_time();  //esp_timer_get_time retu
 int64_t gTotalRecordTimeSinceReboot=0;
 int64_t gSessionRecordTime=0;
 
-//voltage
-bool gVoltageCalibrationDone=false;
-float gVoltageOffset=10.0; //read this in on startup
-float gvOff=2.7;
-float gvFull=3.3;
-float gvLow=3.18;
 int gMinutesWaitUntilDeepSleep=60; //change to 1 or 2 for testing
 
 
@@ -132,7 +125,6 @@ void readSettings();
 void writeSettings(String settings);
 void freeSpace();
 void doDeepSleep();
-float getVoltage();
 void setTime(long epoch, int ms);
 
 // idf-wav-sdcard/lib/sd_card/src/SDCard.cpp   m_host.max_freq_khz = 18000;
@@ -192,14 +184,6 @@ void readConfig() {
           position = strstr(line, ":");
           gbitShift = atoi(position + 1);
           ESP_LOGI(TAG, "gain override: %d", gbitShift);
-        }
-
-        position = strstr(line, "VoltageOffset:");
-        if (position != NULL)
-        {
-          position = strstr(line, ":");
-          gVoltageOffset = atof(position + 1);
-          ESP_LOGI(TAG, "voltage offset  override: %f", gVoltageOffset);
         }
 
         position = strstr(line, "SecondsPerFile:");
@@ -574,14 +558,14 @@ void wait_for_button_push()
   //digitalWrite(BATTERY_LED,LOW);
   //bool gBatteryLEDToggle=false;
   float currentvolts;
-  currentvolts= getVoltage()+ gVoltageOffset;
+  currentvolts= Battery::GetInstance().getVoltage();
   
   gRecording=false;
-  //getVoltage();
+  //Battery::GetInstance().getVoltage();
   boolean sentElocStatus=false;
   int loopcounter=0;
   Serial.println( "waiting for button or bluetooth");
-  Serial.println( "voltage is "+String(getVoltage()+gVoltageOffset));
+  Serial.println( "voltage is "+String(Battery::GetInstance().getVoltage()));
   
   
   int64_t timein= getSystemTimeMS();
@@ -599,7 +583,7 @@ void wait_for_button_push()
  
   while (!gotrecord)
   {
-      //getVoltage();
+      //Battery::GetInstance().getVoltage();
       //gotrecord=false;
       //Serial.println( "waiting for buttonpress");
       //btwrite("Waiting for record button");    
@@ -791,8 +775,9 @@ void wait_for_button_push()
       vTaskDelay(pdMS_TO_TICKS(30)); //so if we get record, max 10ms off
      
 
+      /**************** NOTE: Status LED blinking must be handled in a separate task 
          if (loopcounter==0) {
-                currentvolts= getVoltage()+ gVoltageOffset;
+                currentvolts= Battery::GetInstance().getVoltage();
                 //currentvolts=0.1;
                 if ((getSystemTimeMS()-timein) > (60000*gMinutesWaitUntilDeepSleep)) doDeepSleep(); // one hour to deep sleep 
                 if (currentvolts <= gvOff) doDeepSleep();
@@ -807,6 +792,7 @@ void wait_for_button_push()
                 if (!SerialBT.connected()) digitalWrite(STATUS_LED,LOW);
                 if (currentvolts <= gvLow) digitalWrite(BATTERY_LED,LOW);
            }
+        ****************************************************************************/
   }
  
  //mountSDCard();
@@ -889,67 +875,6 @@ String getProperDateTime() {
 
        return(year+"-"+month+"-"+day+" "+hour+":"+minute+":"+second);
 
-}
-
-
-float IRAM_ATTR getVoltage() {
-    //Statements;
-    //printf(" two following are heap size, total and max alloc ");
-    // Note: ADC2 pins cannot be used when Wi-Fi is used. So, if you’re using Wi-Fi and you’re having trouble 
-    //getting the value from an ADC2 GPIO, you may consider using an ADC1 GPIO instead, that should solve your problem.
-    
-    
-    // we want to measure up to 4 volts. 
-    //ed's stuff    https://www.youtube.com/watch?v=5srvxIm1mcQ 470k      1.47meg
-
-//so the new vrange = 3.96v 
-
-
-//3.25v on en pin corresponds to 1.83v on gpio34
-//so voltage = pinread/4095 *X   where x is the multiplier varies from device to device and on input current.
-//3.29v =2979 
-//so 3.29= 2979/4095 *3.96*X            3.29 =2.88*X   so X = 1.142
-    //pinMode(VOLTAGE_PIN,INPUT);
-    //analogSetPinAttenuation(VOLTAGE_PIN, ADC_11db);
-     //vTaskDelay(pdMS_TO_TICKS(500));
-      //analogRead(VOLTAGE_PIN)
-    
-     // return(2.6);
-    
-     //uint16_t value=analogRead(VOLTAGE_PIN);
-
-     float accum=0.0; 
-     float avg;
-     for (int i=0;  i<5;i++) {
-       accum+= gpio_get_level(VOLTAGE_PIN);
-     } 
-      //return((float)accum/5.0);
-      avg=accum/5.0;
-      
-      
-      // printf("voltage raw, calc" );
-      //  printf(value);
-      //   printf("    ");
-      //  printf(((float)value/4095)*3.96*1.142 ); //see above calc
-      //   printf("    ");
-         
-       //printf(analogReadMilliVolts(VOLTAGE_PIN));
-       //delay(500);
-
-   return(10.0);                    //comment
-  //return((avg/4095)*3.96*1.142); //uncomment for field versions
-
-}
-
-
-float calculateVoltageOffset() {
-  //gvoltageoffset will always be ADDED
-  // assume battery is currently at voff =2.7
-  // 
-  float temp= getVoltage()-gvLow; //if v = 2.6 offset will be neg so need to be added  if 2.8, pos, so need to be sub 
-  gVoltageOffset=temp*-1.0;
-  Serial.println ("voltage offset is "+String(gVoltageOffset));
-  return gVoltageOffset;
 }
 
 void doDeepSleep(){
@@ -1086,8 +1011,9 @@ void record(I2SSampler *input) {
                 
                  //voltage check
                 if ((loopCounter % 50)==0 ) {
-                   ESP_LOGI(TAG, "LOOPCOUNTER MOD 50 is 0" );
-                   if ((getVoltage()+gVoltageOffset)<gvOff) {
+                   ESP_LOGI(TAG, "Checking battery state" );
+                   Battery::GetInstance().getVoltage();
+                   if ((Battery::GetInstance().isEmpty())) {
                      stopit=true; loopCounter=10000001L;
                      ESP_LOGI(TAG, "Voltage LOW-OFF. Stopping record. " );
                      deepSleep=true;
@@ -1357,13 +1283,13 @@ void sendElocStatus() {  //compiles and sends eloc config
       
       sendstring=sendstring+   "!1!"+          gFirmwareVersion                    + "\n" ; //firmware
       
-      float tempvolts= getVoltage()+gVoltageOffset;
+      float tempvolts= Battery::GetInstance().getVoltage();
       String temptemp= "FULL";
-      if (tempvolts <gvFull) temptemp="";
-      if (tempvolts <gvLow) temptemp="!!! LOW !!!";
-      if (tempvolts <gvOff) temptemp="turn off";
+      if (!Battery::GetInstance().isFull()) temptemp="";
+      if (Battery::GetInstance().isLow()) temptemp="!!! LOW !!!";
+      if (Battery::GetInstance().isEmpty()) temptemp="turn off";
 
-      if (gVoltageCalibrationDone) {
+      if (Battery::GetInstance().isCalibrationDone()) {
           sendstring=sendstring+   "!2!" +String(tempvolts)+ " v # "+temptemp+"\n" ;                     //battery voltage
       } else {
            sendstring=sendstring+   "!2!" +String(tempvolts)+ " v "+temptemp+"\n" ;  
@@ -1515,25 +1441,7 @@ readMicInfo();
 
 
   readCurrentSession();
-  
-  
-  
-// read the voltage offset
-      FILE* f = fopen("/spiffs/voltageoffset.txt", "r");
-      char line[128]="";
-    if (f == NULL) {
-          ESP_LOGI(TAG, "no voltage offset");
-          //return;
-    } else {
-      fgets(line, sizeof(line), f);
-      gVoltageOffset=atof(line);
-      ESP_LOGI(TAG, "voltage offset %f", gVoltageOffset );
-    }
-
-    fclose(f);
-
-
-   
+ 
  
 
 

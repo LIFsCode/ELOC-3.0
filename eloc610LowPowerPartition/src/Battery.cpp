@@ -98,6 +98,7 @@ float Battery::getVoltage() {
         }
     } 
 
+    // TODO: add calculation of the voltage divider
     mVoltage=accum/5.0;
       
 
@@ -105,6 +106,8 @@ float Battery::getVoltage() {
         if (esp_err_t err = setChargingEnable(mChargingEnabled)) 
             ESP_LOGI(TAG, "Failed to enable charging %s", esp_err_to_name(err));
     }
+    //TODO: set battery 
+
     return mVoltage;
 }
 
@@ -160,5 +163,12 @@ esp_err_t Battery::setDefaultChargeEn(bool enable)
 {
     mChargingEnabled = enable;
     return setChargingEnable(enable);
+}
+
+bool Battery::isCalibrationDone() const {
+    //TODO: check what kind of calibration to perform with ELOC
+    //TODO: check if calibration is necessary of if it can be applied to
+    //      the esp32 internal calibration --> esp_adc_cal_check_efuse()
+    return false;
 }
 

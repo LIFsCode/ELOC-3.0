@@ -65,6 +65,8 @@ public:
 
     virtual esp_err_t setDefaultChargeEn(bool enable); 
     bool isBatteryPresent();
+
+    bool isCalibrationDone() const;
 };
 
 

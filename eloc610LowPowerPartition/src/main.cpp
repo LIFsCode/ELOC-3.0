@@ -1248,7 +1248,7 @@ void saveStatusToSD() {
     
       sendstring=sendstring+   "File Header:  "+     gLocation                         + "\n" ; //file header
   
-      sendstring=sendstring+   "Bluetooh on when Record?:   " +gMicBluetoothOnOrOff              + "\n" ;
+      sendstring=sendstring+   "Bluetooh on when Record?:   " +getMicInfo().MicBluetoothOnOrOff              + "\n" ;
   
       sendstring=sendstring+   "Sample Rate:  " +String(gSampleRate)               + "\n" ;
       sendstring=sendstring+   "Seconds Per File:  " +String(gSecondsPerFile)               + "\n" ;
@@ -1256,9 +1256,9 @@ void saveStatusToSD() {
       
   
        //sendstring=sendstring+   "Voltage Offset:  " +String(gVoltageOffset)                  + "\n" ;
-       sendstring=sendstring+   "Mic Type:  " +gMicType                  + "\n" ;
+       sendstring=sendstring+   "Mic Type:  " +getMicInfo().MicType                  + "\n" ;
         sendstring=sendstring+   "SD Card Free GB:   "+ String(gFreeSpaceGB)                  + "\n" ;
-       sendstring=sendstring+   "Mic Gain:  " +gMicBitShift                  + "\n" ;
+       sendstring=sendstring+   "Mic Gain:  " +getMicInfo().MicBitShift                  + "\n" ;
        sendstring=sendstring+   "GPS Location:  " +gLocationCode                + "\n" ;
       sendstring=sendstring+    "GPS Accuracy:  " +gLocationAccuracy                + " m\n" ;
      
@@ -1380,7 +1380,7 @@ void sendElocStatus() {  //compiles and sends eloc config
        
        sendstring=sendstring+   "!7!" +String(gRecording)              + "\n" ;
   
-      sendstring=sendstring+   "!8!" +gMicBluetoothOnOrOff              + "\n" ;
+      sendstring=sendstring+   "!8!" +getMicInfo().MicBluetoothOnOrOff              + "\n" ;
   
       sendstring=sendstring+   "!9!" +String(gSampleRate)               + "\n" ;
       sendstring=sendstring+   "!10!" +String(gSecondsPerFile)               + "\n" ;
@@ -1388,9 +1388,9 @@ void sendElocStatus() {  //compiles and sends eloc config
       
   
        sendstring=sendstring+   "!11!"+ String(gFreeSpaceGB)                  + "\n" ;
-       sendstring=sendstring+   "!12!" +gMicType                  + "\n" ;
+       sendstring=sendstring+   "!12!" +getMicInfo().MicType                  + "\n" ;
   
-       sendstring=sendstring+   "!13!" +gMicBitShift                  + "\n" ;
+       sendstring=sendstring+   "!13!" +getMicInfo().MicBitShift                  + "\n" ;
        sendstring=sendstring+   "!14!" +gLocationCode                + "\n" ;
       sendstring=sendstring+   "!15!" +gLocationAccuracy                + " m\n" ;
 

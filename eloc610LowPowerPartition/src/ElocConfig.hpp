@@ -28,17 +28,20 @@
 
 //BUGME: encapsulate these in a struct & implement a getter
 #include "WString.h"
-extern String gMicType;
-extern String gMicBitShift;
-extern String gMicGPSCoords;
-extern String gMicPointingDirectionDegrees;
-extern String gMicHeight;
-extern String gMicMountType;
-extern String gMicBluetoothOnOrOff;
+typedef struct {
+    String MicType;
+    String MicBitShift;
+    String MicGPSCoords;
+    String MicPointingDirectionDegrees;
+    String MicHeight;
+    String MicMountType;
+    String MicBluetoothOnOrOff;
+}micInfo_t;
 
 
 void writeMicInfo();
 void readMicInfo();
+const micInfo_t& getMicInfo();
 
 //BUGME: encapsulate these in a struct & implement a getter
 extern uint32_t gSampleRate;

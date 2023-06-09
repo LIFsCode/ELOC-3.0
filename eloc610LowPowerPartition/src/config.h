@@ -57,6 +57,13 @@
         #define I2S_DMA_BUFFER_COUNT 18
         #define I2S_DMA_BUFFER_LEN   1000
         #define I2S_DEFAULT_SAMPLE_RATE 20000
+
+        
+        // sdcard (unused, as SDIO is fixed to its Pins)
+        #define PIN_NUM_MISO GPIO_NUM_2
+        #define PIN_NUM_CLK GPIO_NUM_14
+        #define PIN_NUM_MOSI GPIO_NUM_15
+        #define PIN_NUM_CS GPIO_NUM_14
   
         // i2c config
         #define USE_I2C

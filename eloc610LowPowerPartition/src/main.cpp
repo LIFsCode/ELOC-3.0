@@ -107,10 +107,7 @@ uint32_t  gFreeSpaceKB=0;
  #endif
 
 
-void mountSDCard();
-void sendElocStatus();
 void writeSettings(String settings);
-void freeSpace();
 void doDeepSleep();
 void setTime(long epoch, int ms);
 
@@ -456,23 +453,6 @@ void doDeepSleep(){
 
 }
 
-esp_err_t checkSDCard() {
-
-    if (!gMountedSDCard) {
-        return ESP_ERR_NOT_FOUND;
-    }
-    // getupdated free space
-    freeSpace();
-    if ((gFreeSpaceGB > 0.0) && (gFreeSpaceGB < 0.5)) {
-        //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
-        //  btwrite("SD Card full. Cannot record");
-        //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
-        ESP_LOGE(TAG, "SD card is full, Free space %.3f GB", gFreeSpaceGB);
-        return ESP_ERR_NO_MEM;
-    }
-    return ESP_OK;
-}
-
 void record(I2SSampler *input) {
   
   gRecording=true;
@@ -636,7 +616,7 @@ void record(I2SSampler *input) {
 
 
 
-void mountSDCard() {
+bool mountSDCard() {
     gMountedSDCard=false;
     #ifdef USE_SPI_VERSION
           ESP_LOGI(TAG, "TRYING to mount SDCArd, SPI ");
@@ -656,6 +636,7 @@ void mountSDCard() {
             }
         }
     #endif
+    return gMountedSDCard;
 }
 
 void freeSpace() {
@@ -677,6 +658,26 @@ void freeSpace() {
 
     gFreeSpaceKB = fre_sect / 2;
     printf("\n %u KB free\n", gFreeSpaceKB);
+}
+
+esp_err_t checkSDCard() {
+
+    if (!gMountedSDCard) {
+        // in case SD card is not yet mounted, mout it now, e.g. not inserted durint boot
+        if (!mountSDCard()) {
+            return ESP_ERR_NOT_FOUND;
+        }
+    }
+    // getupdated free space
+    freeSpace();
+    if ((gFreeSpaceGB > 0.0) && (gFreeSpaceGB < 0.5)) {
+        //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
+        //  btwrite("SD Card full. Cannot record");
+        //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
+        ESP_LOGE(TAG, "SD card is full, Free space %.3f GB", gFreeSpaceGB);
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
 }
 
 
@@ -793,6 +794,13 @@ void app_main(void) {
     gpio_sleep_sel_dis(I2S_MIC_SERIAL_CLOCK);
     gpio_sleep_sel_dis(I2S_MIC_LEFT_RIGHT_CLOCK);
     gpio_sleep_sel_dis(I2S_MIC_SERIAL_DATA);
+
+    
+    gpio_sleep_sel_dis(PIN_NUM_MISO);
+    gpio_sleep_sel_dis(PIN_NUM_CLK);
+    gpio_sleep_sel_dis(PIN_NUM_MOSI);
+    gpio_sleep_sel_dis(PIN_NUM_CS);
+
 
     gpio_set_direction(GPIO_BUTTON, GPIO_MODE_INPUT); //
     gpio_set_pull_mode(GPIO_BUTTON, GPIO_PULLUP_ONLY);

@@ -376,7 +376,7 @@ extern bool gMountedSDCard;
 int gbitShift;
 bool TestI2SClockInput=false;
 bool gTimingFix=false;
-bool gListenOnly=true;
+bool gListenOnly=false;
 bool gUseAPLL=true;
 int gMaxFrequencyMHZ=80;    // SPI this fails for anyting below 80   //
 int gMinFrequencyMHZ=10;

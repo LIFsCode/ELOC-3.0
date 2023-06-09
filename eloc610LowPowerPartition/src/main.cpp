@@ -1,6 +1,7 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include <rom/ets_sys.h>
 #include "esp_pm.h"
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
@@ -57,8 +58,8 @@ int32_t *graw_samples;
 
 int gRawSampleBlockSize=1000;
 int gSampleBlockSize=16000; //must be factor of 1000   in samples
-int gBufferLen=1000; //in samples
-int gBufferCount=18;   // so 6*4000 = 24k buf len
+int gBufferLen=I2S_DMA_BUFFER_LEN; //in samples
+int gBufferCount=I2S_DMA_BUFFER_COUNT;   // so 6*4000 = 24k buf len
 //always keep these in same order
 
 
@@ -83,7 +84,6 @@ String gSessionIdentifier="";
 //String gBluetoothMAC="";
 String gFirmwareVersion=VERSION;
 
-BluetoothSerial SerialBT;
 ESP32Time timeObject;
 //WebServer server(80);
 //bool updateFinished=false;
@@ -256,6 +256,7 @@ static  void IRAM_ATTR buttonISR(void *args) {
   //ESP_LOGI(TAG, "button pressed");
   //delay(5000);
   rec_req_t rec_req = gRecording ? REC_REQ_STOP : REC_REQ_START;
+  //ets_printf("button pressed");
   xQueueSendFromISR(rec_req_evt_queue, &rec_req, NULL);
      
      //detachInterrupt(GPIO_BUTTON);
@@ -380,7 +381,6 @@ String getProperDateTime() {
 
 void doDeepSleep(){
    
-       esp_sleep_enable_ext0_wakeup(OTHER_GPIO_BUTTON, 0); //then try changing between 0 and 1.
 
       esp_sleep_enable_ext0_wakeup(GPIO_BUTTON, 0); //try commenting this out
      
@@ -451,8 +451,6 @@ void record(I2SSampler *input) {
 
  
  
-   static char sBuffer[ 240 ]; // 40 B per task
-  
   bool stopit = false;
   
 
@@ -693,182 +691,192 @@ void saveStatusToSD() {
 }
 
 
-
-
-
-void app_main(void)
-{  
-  ESP_LOGI(TAG, "\n\n---------VERSION %s\n\n", VERSIONTAG);
-  initArduino();
-  ESP_LOGI(TAG, "initArduino done");
-  
-  ESP_LOGI(TAG, "\nSETUP--start\n");
-
-  changeBootPartition(); // so if reboots, always boot into the bluetooth partition
- 
- printRevision();
-
-resetPeripherals();
- 
-I2SSampler *input;
-
- #ifdef USE_SPI_VERSION
-      gpio_set_direction(STATUS_LED, GPIO_MODE_OUTPUT);
-      gpio_set_direction(BATTERY_LED, GPIO_MODE_OUTPUT);
-
-      gpio_set_direction(PIN_NUM_MISO, GPIO_MODE_INPUT);
-      gpio_set_pull_mode(PIN_NUM_MISO, GPIO_PULLUP_ONLY);
-      
-      gpio_set_direction(PIN_NUM_CLK, GPIO_MODE_INPUT);
-      gpio_set_pull_mode(PIN_NUM_CLK, GPIO_PULLUP_ONLY);
-
-      gpio_set_direction(PIN_NUM_MOSI, GPIO_MODE_INPUT);
-      gpio_set_pull_mode(PIN_NUM_MOSI, GPIO_PULLUP_ONLY);
-
-
-      gpio_set_direction(PIN_NUM_CS, GPIO_MODE_INPUT);
-      gpio_set_pull_mode(PIN_NUM_CS, GPIO_PULLUP_ONLY);
-      
-      //new
-      gpio_set_direction(GPIO_BUTTON, GPIO_MODE_INPUT);   //
-      gpio_set_pull_mode(GPIO_BUTTON, GPIO_PULLUP_ONLY);
-      //end new
-      gpio_sleep_sel_dis(GPIO_BUTTON);
-      gpio_sleep_sel_dis(OTHER_GPIO_BUTTON);
-      gpio_sleep_sel_dis(PIN_NUM_MISO);
-      gpio_sleep_sel_dis(PIN_NUM_CLK);
-      gpio_sleep_sel_dis(PIN_NUM_MOSI);
-      gpio_sleep_sel_dis(PIN_NUM_CS);
-      gpio_sleep_sel_dis(I2S_MIC_SERIAL_CLOCK);
-      gpio_sleep_sel_dis(I2S_MIC_LEFT_RIGHT_CLOCK);
-      gpio_sleep_sel_dis(I2S_MIC_SERIAL_DATA);
-
-     gpio_set_intr_type(OTHER_GPIO_BUTTON, GPIO_INTR_POSEDGE); 
-     gpio_set_intr_type(GPIO_BUTTON, GPIO_INTR_POSEDGE);
-
-
-#endif
-
-  #ifdef USE_SDIO_VERSION
-      gpio_set_direction(STATUS_LED, GPIO_MODE_OUTPUT);
-      gpio_set_direction(BATTERY_LED, GPIO_MODE_OUTPUT);
-
-       //new
-      gpio_set_direction(GPIO_BUTTON, GPIO_MODE_INPUT);   //
-      gpio_set_pull_mode(GPIO_BUTTON, GPIO_PULLUP_ONLY);
-      //end new
-      
-      gpio_sleep_sel_dis(GPIO_BUTTON);
-      gpio_sleep_sel_dis(OTHER_GPIO_BUTTON);
-      gpio_sleep_sel_dis(I2S_MIC_SERIAL_CLOCK);
-      gpio_sleep_sel_dis(I2S_MIC_LEFT_RIGHT_CLOCK);
-      gpio_sleep_sel_dis(I2S_MIC_SERIAL_DATA);
-
-      gpio_set_intr_type(GPIO_BUTTON, GPIO_INTR_POSEDGE);
-      gpio_set_intr_type(OTHER_GPIO_BUTTON, GPIO_INTR_POSEDGE);
-
-#endif
-
-gpio_set_level(STATUS_LED, 0);
-gpio_set_level(BATTERY_LED, 0);
-
-ESP_LOGI(TAG, "Setting up HW System...");
-ElocSystem::GetInstance();
-
-ESP_LOGI(TAG, "Setting up Battery...");
-Battery::GetInstance();
-
-
-//delay(30000);
-
-printMemory();
-
-  
-  if(!SPIFFS.begin(true, "/spiffs")){
-      ESP_LOGI(TAG, "An Error has occurred while mounting SPIFFS");
-      //return;
-  }
-  delay(50);
-//resetPeripherals(); does not help.
-delay(50);
-SerialBT.begin(readNodeName(),false);
-delay(100);
-if (SerialBT.isReady())  {
-      ESP_LOGI(TAG, "SerialBT is ready ------------------------------------------------------ ");
-} else {
-       ESP_LOGI(TAG, "SerialBT is NOT ready --------------------------------------------------- ");
-}
-
-
-readSettings();
-readMicInfo();
-
-rec_req_evt_queue = xQueueCreate(10, sizeof(rec_req_t));
-ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
-
-ESP_LOGI(TAG, "Creating LIS3DH wakeup task...");
-if (esp_err_t err = BluetoothServerSetup(false)) {
-  ESP_LOGI(TAG, "ManualWakeupConfig %s", esp_err_to_name(err));
-}
-
- 
-ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)GPIO_BUTTON));
-ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_BUTTON));
-
-
-
-  bool firstRecordLoopAlreadyStarted=false;
-  //BUGME: remove this loop!
-  while (true) 
-  {
-      
-      while (firstRecordLoopAlreadyStarted) { //ugly hack
-          delay(5);
-
-      }
-      
-      firstRecordLoopAlreadyStarted=true;
-
-  
-  mountSDCard();
-  freeSpace();
-      
-  readConfig();
-
-       esp_pm_config_esp32_t cfg = {
-        .max_freq_mhz = gMaxFrequencyMHZ,
-        .min_freq_mhz = gMinFrequencyMHZ,
-        .light_sleep_enable = gEnableLightSleep
-        };
-  esp_pm_configure(&cfg);   
-
- 
-
-
-    input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config,gTimingFix); //the true at the end is the timing fix
-    if (TestI2SClockInput) testInput();
-
-
-    
-    while (true) {  
-      
-      ESP_LOGI(TAG,  "waiting for button or bluetooth");
-      ESP_LOGI(TAG,  "voltage is %.3f", Battery::GetInstance().getVoltage());
-      rec_req_t rec_req = REC_REQ_NONE;
-      if (xQueueReceive(rec_req_evt_queue, &rec_req, portMAX_DELAY))
-      {
-        if (rec_req == REC_REQ_START) {
-          if (esp_err_t err = checkSDCard() != ESP_OK) {
-            ESP_LOGE(TAG, "Cannot start recording due to SD error %s", esp_err_to_name(err));
-            //TODO: set status here
-          }
-          else {
-            record(input);
-          }
-        }
-      }
-      vTaskDelay(pdMS_TO_TICKS(500));
+i2s_config_t getI2sConfig() {
+    // update the config with the updated parameters
+    ESP_LOGI(TAG, "Sample rate = %d", gSampleRate);
+    i2s_mic_Config.sample_rate = gSampleRate; //fails when hardcoded to 22050
+    i2s_mic_Config.use_apll = gUseAPLL; //not getting set. gUseAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
+    if (i2s_mic_Config.sample_rate == 0) {
+        ESP_LOGI(TAG, "Resetting invalid sample rate to default = %d", I2S_DEFAULT_SAMPLE_RATE);
+        i2s_mic_Config.sample_rate = I2S_DEFAULT_SAMPLE_RATE;
     }
- 
-  }
+        // ESP_LOGI(TAG, "i2s_mic_Config = "
+        //             "\n\tmode = %d"
+        //             "\n\tsample_rate = %d"
+        //             "\n\tbits_per_sample = %d"
+        //             "\n\tbits_per_chan = %d"
+        //             "\n\tchannel_format = %d"
+        //             "\n\tcommunication_format = %d"
+        //             "\n\tintr_alloc_flags = %d"
+        //             "\n\tdma_buf_count = %d"
+        //             "\n\tdma_buf_len = %d"
+        //             "\n\tuse_apll = %s"
+        //             "\n\ttx_desc_auto_clear = %s"
+        //             "\n\tfixed_mclk = %d",
+        //             i2s_mic_Config.mode,
+        //             i2s_mic_Config.sample_rate,
+        //             i2s_mic_Config.bits_per_sample,
+        //             i2s_mic_Config.bits_per_chan,
+        //             i2s_mic_Config.channel_format,
+        //             i2s_mic_Config.communication_format,
+        //             i2s_mic_Config.intr_alloc_flags,
+        //             i2s_mic_Config.dma_buf_count,
+        //             i2s_mic_Config.dma_buf_len,
+        //             i2s_mic_Config.use_apll ? "True":"false",
+        //             i2s_mic_Config.tx_desc_auto_clear ? "True":"false",
+        //             i2s_mic_Config.fixed_mclk
+        //             );
+    return i2s_mic_Config;
+}
+
+void app_main(void) {
+
+    ESP_LOGI(TAG, "\n\n---------VERSION %s\n\n", VERSIONTAG);
+    initArduino();
+    ESP_LOGI(TAG, "initArduino done");
+
+    ESP_LOGI(TAG, "\nSETUP--start\n");
+
+    changeBootPartition(); // so if reboots, always boot into the bluetooth partition
+
+    printRevision();
+
+    resetPeripherals();
+
+#ifdef USE_SPI_VERSION
+    gpio_set_direction(STATUS_LED, GPIO_MODE_OUTPUT);
+    gpio_set_direction(BATTERY_LED, GPIO_MODE_OUTPUT);
+
+    gpio_set_direction(PIN_NUM_MISO, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(PIN_NUM_MISO, GPIO_PULLUP_ONLY);
+
+    gpio_set_direction(PIN_NUM_CLK, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(PIN_NUM_CLK, GPIO_PULLUP_ONLY);
+
+    gpio_set_direction(PIN_NUM_MOSI, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(PIN_NUM_MOSI, GPIO_PULLUP_ONLY);
+
+    gpio_set_direction(PIN_NUM_CS, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(PIN_NUM_CS, GPIO_PULLUP_ONLY);
+
+    // new
+    gpio_set_direction(GPIO_BUTTON, GPIO_MODE_INPUT); //
+    gpio_set_pull_mode(GPIO_BUTTON, GPIO_PULLUP_ONLY);
+    // end new
+    gpio_sleep_sel_dis(GPIO_BUTTON);
+    gpio_sleep_sel_dis(OTHER_GPIO_BUTTON);
+    gpio_sleep_sel_dis(PIN_NUM_MISO);
+    gpio_sleep_sel_dis(PIN_NUM_CLK);
+    gpio_sleep_sel_dis(PIN_NUM_MOSI);
+    gpio_sleep_sel_dis(PIN_NUM_CS);
+    gpio_sleep_sel_dis(I2S_MIC_SERIAL_CLOCK);
+    gpio_sleep_sel_dis(I2S_MIC_LEFT_RIGHT_CLOCK);
+    gpio_sleep_sel_dis(I2S_MIC_SERIAL_DATA);
+
+    gpio_set_intr_type(OTHER_GPIO_BUTTON, GPIO_INTR_POSEDGE);
+    gpio_set_intr_type(GPIO_BUTTON, GPIO_INTR_POSEDGE);
+
+#endif
+
+#ifdef USE_SDIO_VERSION
+    gpio_set_direction(STATUS_LED, GPIO_MODE_OUTPUT);
+    gpio_set_direction(BATTERY_LED, GPIO_MODE_OUTPUT);
+
+    gpio_sleep_sel_dis(I2S_MIC_SERIAL_CLOCK);
+    gpio_sleep_sel_dis(I2S_MIC_LEFT_RIGHT_CLOCK);
+    gpio_sleep_sel_dis(I2S_MIC_SERIAL_DATA);
+
+    gpio_set_direction(GPIO_BUTTON, GPIO_MODE_INPUT); //
+    gpio_set_pull_mode(GPIO_BUTTON, GPIO_PULLUP_ONLY);
+    gpio_set_intr_type(GPIO_BUTTON, GPIO_INTR_POSEDGE);
+    gpio_sleep_sel_dis(GPIO_BUTTON);
+
+#endif
+
+    gpio_set_level(STATUS_LED, 0);
+    gpio_set_level(BATTERY_LED, 0);
+
+    ESP_LOGI(TAG, "Setting up HW System...");
+    ElocSystem::GetInstance();
+
+    ESP_LOGI(TAG, "Setting up Battery...");
+    Battery::GetInstance();
+
+    // delay(30000);
+
+    printMemory();
+
+    if (!SPIFFS.begin(true, "/spiffs")) {
+        ESP_LOGI(TAG, "An Error has occurred while mounting SPIFFS");
+        // return;
+    }
+    mountSDCard();
+    freeSpace();
+
+    //BUGME: do not read settings from SPIFFS because there is currently no useable default handling
+    //       in case the file is corrupted or does not exist
+    // readSettings();
+    readMicInfo();
+
+    rec_req_evt_queue = xQueueCreate(10, sizeof(rec_req_t));
+    xQueueReset(rec_req_evt_queue);
+    ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
+
+    ESP_LOGI(TAG, "Creating Bluetooth  task...");
+    if (esp_err_t err = BluetoothServerSetup(false)) {
+        ESP_LOGI(TAG, "BluetoothServerSetup failed with %s", esp_err_to_name(err));
+    }
+
+    // setup button as interrupt
+    ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)GPIO_BUTTON));
+    //ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_BUTTON));
+
+    readConfig();
+
+    /** Setup Power Management */
+    esp_pm_config_esp32_t cfg = {
+        .max_freq_mhz = gMaxFrequencyMHZ, 
+        .min_freq_mhz = gMinFrequencyMHZ, 
+        .light_sleep_enable = gEnableLightSleep
+    };
+    esp_pm_configure(&cfg);
+    // calling gpio_sleep_sel_dis must be done after esp_pm_configure() otherwise they will get overwritten
+    // interrupt must be enabled during sleep otherwise they might continously trigger (missing pullup)
+    // or won't work at all
+    gpio_sleep_sel_dis(GPIO_BUTTON);
+    gpio_sleep_sel_dis(LIS3DH_INT_PIN);
+    // now setup GPIOs as wakeup source. This is required to wake up the recorder in tickless idle
+    //BUGME: this could cause problems with the interrupt, as gpio_wakeup_enable() only allows level
+    //       interrupts but not edge triggered interrupts. If LIS3DH_INT_PIN should be used for wakeup
+    //       then the config must be modifed to .latch = false, so that te INTR pin is not hold. 
+    //       Also the interrupt handler must be adjusted, so that it does no fire continuously
+    //ESP_ERROR_CHECK(gpio_wakeup_enable(LIS3DH_INT_PIN, GPIO_INTR_HIGH_LEVEL));
+    ESP_ERROR_CHECK(gpio_wakeup_enable(GPIO_BUTTON, GPIO_INTR_LOW_LEVEL));
+    ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
+
+    if (TestI2SClockInput)
+        testInput();
+
+    ESP_LOGI(TAG, "waiting for button or bluetooth");
+    ESP_LOGI(TAG, "voltage is %.3f", Battery::GetInstance().getVoltage());
+    while (true) {
+
+        rec_req_t rec_req = REC_REQ_NONE;
+        // wait_for_button_push();
+        // record(input);
+        if (xQueueReceive(rec_req_evt_queue, &rec_req, pdMS_TO_TICKS(500))) {
+            ESP_LOGI(TAG,"REC_REQ = %d", rec_req);
+            if (rec_req == REC_REQ_START) {
+                if (esp_err_t err = checkSDCard() != ESP_OK) {
+                    ESP_LOGE(TAG, "Cannot start recording due to SD error %s", esp_err_to_name(err));
+                    // TODO: set status here and let LED flash as long as the device is in error state
+                    LEDflashError();
+                } else {
+                    getI2sConfig(); 
+                    I2SMEMSSampler input (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, gTimingFix); // the true at the end is the timing fix
+                    record(&input);
+                }
+            }
+        }
+    }
 }

@@ -62,6 +62,5 @@ void writeSettings(String settings);
 void readSettings();
 //TODO: why are there 2 different kind of configs?
 void readConfig();
-void readCurrentSession();
 
 #endif // ELOCCONFIG_HPP_

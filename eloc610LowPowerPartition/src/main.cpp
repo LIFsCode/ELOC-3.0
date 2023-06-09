@@ -1199,12 +1199,6 @@ if (SerialBT.isReady())  {
 readSettings();
 readMicInfo();
 
-
-  readCurrentSession();
- 
- 
-
-
 ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
 
 ESP_LOGI(TAG, "Creating LIS3DH wakeup task...");

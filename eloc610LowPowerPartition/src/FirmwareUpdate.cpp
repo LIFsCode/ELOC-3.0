@@ -38,7 +38,11 @@
 #include <time.h>
 #include <sys/time.h>
 
+#include "utils/ffsutils.h"
+
 static const char *TAG = "UPDATE";
+
+static const char* UPDATE_TRIGGER_FILE = "/sdcard/eloc/doUpdate.txt";
 
 //for update
 typedef struct binary_data_t {
@@ -221,4 +225,14 @@ bool updateFirmware() {
         LEDflashError();
         return false;
     }
+}
+
+void checkForFirmwareUpdateFile() {
+
+    if (ffsutil::fileExist(UPDATE_TRIGGER_FILE)) {
+        ESP_LOGI(TAG, "%s exists: Doing Firmware update now...", UPDATE_TRIGGER_FILE);
+        // TODO: store the update.bin filename in the update file and read it in here
+        updateFirmware();
+    }
+    return;
 }

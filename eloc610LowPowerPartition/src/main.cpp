@@ -49,6 +49,7 @@
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
 #include "BluetoothServer.hpp"
+#include "FirmwareUpdate.hpp"
 
 static const char *TAG = "main";
 
@@ -822,6 +823,9 @@ void app_main(void) {
     ffsutil::printListDir("/sdcard/eloc");
     
     readConfig();
+
+    // check if a firmware update is triggered via SD card
+    checkForFirmwareUpdateFile();
 
     rec_req_evt_queue = xQueueCreate(10, sizeof(rec_req_t));
     xQueueReset(rec_req_evt_queue);

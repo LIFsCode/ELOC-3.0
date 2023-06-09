@@ -27,5 +27,7 @@
 
 bool updateFirmware();
 
+void checkForFirmwareUpdateFile();
+
 
 #endif // FIRMWAREUPDATE_HPP_

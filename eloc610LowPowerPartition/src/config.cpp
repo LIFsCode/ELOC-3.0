@@ -1,13 +1,9 @@
 #include "config.h"
-extern int gBufferLen,gBufferCount;
-extern uint32_t gSampleRate;
-extern bool gUseAPLL;
-
 
 // i2s config for reading from I2S
 i2s_config_t i2s_mic_Config = {
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
-    .sample_rate = gSampleRate, //fails when hardcoded to 22050
+    .sample_rate = I2S_DEFAULT_SAMPLE_RATE, //fails when hardcoded to 22050
     .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,
     #ifdef USE_SPI_VERSION
     .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT, //bug! should be left? for 5.2.0 eave this for both spi and sdio
@@ -20,7 +16,7 @@ i2s_config_t i2s_mic_Config = {
     .intr_alloc_flags = I2S_INTR_PIRO,
     .dma_buf_count = I2S_DMA_BUFFER_COUNT,  //so 2000 sample  buffer at 16khz sr gives us 125ms to do our writing
     .dma_buf_len = I2S_DMA_BUFFER_LEN,  // 8 buffers gives us half  second
-    .use_apll = gUseAPLL, //not getting set. gUseAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
+    .use_apll = true, //not getting set. getConfig().useAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
     .tx_desc_auto_clear = false,
     .fixed_mclk = 0,
     //.mclk_multiple =I2S_MCLK_MULTIPLE_DEFAULT,   // I2S_MCLK_MULTIPLE_DEFAULT= 0,       /*!< Default value. mclk = sample_rate * 256 */

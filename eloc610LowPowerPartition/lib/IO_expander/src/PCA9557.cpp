@@ -29,39 +29,39 @@
 #include "driver/i2c.h"
 #include "PCA9557.hpp"
 
-void PCA9557_IOEXP::portConfig_Invert_I (uint32_t portMask) {
+esp_err_t PCA9557_IOEXP::portConfig_Invert_I (uint32_t portMask) {
 	uint8_t reg;
 	reg = i2c.ReadRegister (IO_I2C_SLAVEADDRESS, IO_POLARITY_INV_REG);
 	uint8_t sendBuf = reg | portMask;
-	i2c.WriteRegister (IO_I2C_SLAVEADDRESS, IO_POLARITY_INV_REG, sendBuf);
+	return i2c.WriteRegister (IO_I2C_SLAVEADDRESS, IO_POLARITY_INV_REG, sendBuf);
 }
 
-void PCA9557_IOEXP::portConfig_I (uint32_t portMask) {
+esp_err_t PCA9557_IOEXP::portConfig_I (uint32_t portMask) {
 	uint8_t reg;
 	reg = i2c.ReadRegister (IO_I2C_SLAVEADDRESS, IO_CONFIGURATION_REG);
 	uint8_t sendBuf = reg | portMask;
-	i2c.WriteRegister (IO_I2C_SLAVEADDRESS, IO_CONFIGURATION_REG, sendBuf);
+	return i2c.WriteRegister (IO_I2C_SLAVEADDRESS, IO_CONFIGURATION_REG, sendBuf);
 }
 
-void PCA9557_IOEXP::portConfig_O (uint32_t portMask) {
+esp_err_t PCA9557_IOEXP::portConfig_O (uint32_t portMask) {
 	uint8_t reg;
 	reg = i2c.ReadRegister (IO_I2C_SLAVEADDRESS, IO_CONFIGURATION_REG);
 	uint8_t sendBuf = reg & ~portMask;
-	i2c.WriteRegister (IO_I2C_SLAVEADDRESS, IO_CONFIGURATION_REG, sendBuf);
+	return i2c.WriteRegister (IO_I2C_SLAVEADDRESS, IO_CONFIGURATION_REG, sendBuf);
 }
 
-void PCA9557_IOEXP::setOutputPort (uint32_t portMask) {
+esp_err_t PCA9557_IOEXP::setOutputPort (uint32_t portMask) {
 	uint8_t reg;
 	reg = i2c.ReadRegister (IO_I2C_SLAVEADDRESS, IO_OUTPUT_PORT_REG);
 	uint8_t sendBuf = reg | portMask;
-	i2c.WriteRegister (IO_I2C_SLAVEADDRESS, IO_OUTPUT_PORT_REG, sendBuf);
+	return i2c.WriteRegister (IO_I2C_SLAVEADDRESS, IO_OUTPUT_PORT_REG, sendBuf);
 }
 
-void PCA9557_IOEXP::clearOutputPort (uint32_t portMask) {
+esp_err_t PCA9557_IOEXP::clearOutputPort (uint32_t portMask) {
 	uint8_t reg;
 	reg = i2c.ReadRegister (IO_I2C_SLAVEADDRESS, IO_OUTPUT_PORT_REG);
 	uint8_t sendBuf = reg & ~portMask;
-	i2c.WriteRegister (IO_I2C_SLAVEADDRESS, IO_OUTPUT_PORT_REG, sendBuf);
+	return i2c.WriteRegister (IO_I2C_SLAVEADDRESS, IO_OUTPUT_PORT_REG, sendBuf);
 }
 
 uint8_t PCA9557_IOEXP::readInput () {

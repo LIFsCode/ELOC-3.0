@@ -51,15 +51,15 @@ public:
 		return i2c.checkPresence(IO_I2C_SLAVEADDRESS);
 	}
 
-	void portConfig_Invert_I(uint32_t portMask);
+	esp_err_t portConfig_Invert_I(uint32_t portMask);
 
-	void portConfig_I (uint32_t portMask);
+	esp_err_t portConfig_I (uint32_t portMask);
 
-	void portConfig_O (uint32_t portMask);
+	esp_err_t portConfig_O (uint32_t portMask);
 
-	void setOutputPort (uint32_t portMask);
+	esp_err_t setOutputPort (uint32_t portMask);
 
-	void clearOutputPort (uint32_t portMask);
+	esp_err_t clearOutputPort (uint32_t portMask);
 
 	uint8_t readInput ();
 };

@@ -25,6 +25,7 @@
 #ifndef ELOC_IOEXP_HPP_
 #define ELOC_IOEXP_HPP_
 
+#include "esp_err.h"
 #include "PCA9557.hpp"
 
 /* PCA9557PW (IO-Expander)  */
@@ -43,17 +44,23 @@ public:
 	static const uint32_t NC_IO7		= 0x80;
 
 private:
-	void init();
+	esp_err_t init();
 	// shadows the state of the IO expander output port
 	// consistency is covered since only setOutputBit() is accessible to alter the output states due to private inheritance of PCA6408_IOEXP
 	uint8_t outputReg;
+	esp_err_t mErrorCode;
 public:
+	/// @brief Read the last error code
+	/// @return error code of the last executed operation
+	inline esp_err_t getErrorCode() const{
+		return mErrorCode;
+	}
 
 	explicit ELOC_IOEXP(CPPI2C::I2c& i2cInstance);
 
-	void setOutputBit(uint32_t bit, bool enable);
-	void toggleOutputBit(uint32_t bit);
-	void chargeBattery(bool enable);
+	esp_err_t setOutputBit(uint32_t bit, bool enable);
+	esp_err_t toggleOutputBit(uint32_t bit);
+	esp_err_t chargeBattery(bool enable);
 	bool hasLiIonBattery();
 
 };

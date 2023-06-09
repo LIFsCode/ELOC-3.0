@@ -21,50 +21,57 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include "esp_err.h"
 #include "esp_log.h"
 #include "ELOC_IOEXP.hpp"
 
 #define TAG "ELOC_IOEXP"
 
-void ELOC_IOEXP::init() {
+esp_err_t ELOC_IOEXP::init() {
     if (!this->checkPresence()) {
         ESP_LOGI(TAG, "Cannot finde PCA9557 at addres 0x%02X, check address pins or I2C connection!", this->IO_I2C_SLAVEADDRESS);
-        return;
+        mErrorCode = ESP_ERR_NOT_FOUND;
+        return mErrorCode;
     }
-    portConfig_I(LiION_DETECT);
-    portConfig_O (LED_STATUS | LED_BATTERY | CHARGE_EN);
+    if ((mErrorCode = portConfig_I(LiION_DETECT))) return mErrorCode;
+    if ((mErrorCode = portConfig_O (LED_STATUS | LED_BATTERY | CHARGE_EN))) return mErrorCode;
     // set outputs to default values
-    setOutputPort(LED_STATUS);
-    clearOutputPort(LED_BATTERY | CHARGE_EN);
+    if ((mErrorCode = setOutputPort(LED_STATUS))) return mErrorCode;
+    if ((mErrorCode = clearOutputPort(LED_BATTERY | CHARGE_EN))) return mErrorCode;
     outputReg = LED_STATUS;
 
     ESP_LOGI(TAG, "PCA9557 initialized");
+    return ESP_OK;
 }
 
-ELOC_IOEXP::ELOC_IOEXP(CPPI2C::I2c& i2cInstance) : PCA9557_IOEXP(i2cInstance, 0x00){
-    init();
+ELOC_IOEXP::ELOC_IOEXP(CPPI2C::I2c& i2cInstance) : 
+    PCA9557_IOEXP(i2cInstance, 0x00), outputReg(0x00), mErrorCode(ESP_OK){
+    mErrorCode = init();
 };
 
-void ELOC_IOEXP::setOutputBit(uint32_t bit, bool enable) {
+esp_err_t ELOC_IOEXP::setOutputBit(uint32_t bit, bool enable) {
     if (enable) {
         if (!(outputReg & bit)) {
             outputReg |= bit;
-            setOutputPort (bit);
+            mErrorCode = setOutputPort (bit);
         }
     }
     else {
         if (outputReg & bit) {
             outputReg &= ~bit;
-            clearOutputPort (bit);
+            mErrorCode = clearOutputPort (bit);
         }
     }
+    return mErrorCode;
 }
-void ELOC_IOEXP::toggleOutputBit(uint32_t bit) {
-    setOutputBit(bit, !(outputReg & bit)); // invert the output bit
+esp_err_t ELOC_IOEXP::toggleOutputBit(uint32_t bit) {
+    mErrorCode = setOutputBit(bit, !(outputReg & bit)); // invert the output bit
+    return mErrorCode;
 }
 
-void ELOC_IOEXP::chargeBattery(bool enable) {
-    setOutputBit(CHARGE_EN, enable);
+esp_err_t ELOC_IOEXP::chargeBattery(bool enable) {
+    mErrorCode = setOutputBit(CHARGE_EN, enable);
+    return mErrorCode;
 }
 bool ELOC_IOEXP::hasLiIonBattery() {
     return this->readInput() & LiION_DETECT;

@@ -23,7 +23,11 @@
 
 #include "esp_err.h"
 
-esp_err_t ManualWakeupConfig();
+/// @brief ManualWakeupConfig will setup LIS3DH for waking up ESP on double tap event
+/// @param installGpioIsr : true: ManualWakeupConfig will call gpio_install_isr_service()
+///                       : false: ManualWakeupConfig() will expect gpio isr to be already installed
+/// @return 
+esp_err_t ManualWakeupConfig(bool installGpioIsr);
 
 
 

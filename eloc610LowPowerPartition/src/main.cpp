@@ -29,6 +29,11 @@
 #include "esp_sleep.h"
 #include "rtc_wdt.h"
 //#include "soc/efuse_reg.h"
+
+#include "lis3dh.h"
+#include "ElocSystem.hpp"
+#include "ManualWakeup.hpp"
+
 static const char *TAG = "main";
 
 
@@ -667,6 +672,8 @@ I2SSampler *input;
 gpio_set_level(STATUS_LED, 0);
 gpio_set_level(BATTERY_LED, 0);
 
+ESP_LOGI(TAG, "Setting up System...");
+ElocSystem::GetInstance();
 
 
 //delay(30000);
@@ -791,9 +798,14 @@ printMemory();
  
 
 
+ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
+
+ESP_LOGI(TAG, "Creating LIS3DH wakeup task...");
+if (esp_err_t err = ManualWakeupConfig(false)) {
+  ESP_LOGI(TAG, "ManualWakeupConfig %s", esp_err_to_name(err));
+}
+
  
- 
-ESP_ERROR_CHECK(gpio_install_isr_service(0));
 ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)GPIO_BUTTON));
 ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_BUTTON));
 

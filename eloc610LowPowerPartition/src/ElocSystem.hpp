@@ -37,7 +37,7 @@ private:
     ELOC_IOEXP* mIOExpInstance;
     LIS3DH* mLis3DH;
 public:
-    inline static ElocSystem& Get() {
+    inline static ElocSystem& GetInstance() {
         static ElocSystem System;
         return System;
     }
@@ -53,6 +53,15 @@ public:
     inline LIS3DH& getLIS3DH() {
         assert(mLis3DH != NULL);
         return *mLis3DH;
+    }
+    inline bool hasI2C() const {
+        return mI2CInstance != NULL;
+    }
+    inline bool hasIoExpander() const {
+        return mIOExpInstance != NULL;
+    }
+    inline bool hasLIS3DH() const {
+        return mLis3DH != NULL;
     }
 };
 

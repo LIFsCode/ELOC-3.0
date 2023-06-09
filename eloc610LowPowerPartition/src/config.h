@@ -1,5 +1,6 @@
 #include <freertos/FreeRTOS.h>
 #include <driver/i2s.h>
+#include "lis3dh_types.h"
 
 
 
@@ -39,6 +40,9 @@
         #define GPIO_BUTTON GPIO_NUM_0
         #define OTHER_GPIO_BUTTON GPIO_NUM_0
         #define VOLTAGE_PIN GPIO_NUM_34
+
+        /** Interrupt definitions*/
+        #define GPIO_INTR_PRIO ESP_INTR_FLAG_LEVEL1
         
   
         
@@ -46,18 +50,21 @@
         #define I2S_MIC_SERIAL_CLOCK GPIO_NUM_18     
         #define I2S_MIC_SERIAL_DATA   GPIO_NUM_19        
   
-		// i2c config
-		#define USE_I2C
+        // i2c config
+        #define USE_I2C
 
-		#define I2C_PORT I2C_NUM_0
-		#define I2C_SDA_PIN GPIO_NUM_23
-		#define I2C_SCL_PIN GPIO_NUM_22
-		#define I2C_SPEED_HZ 100000
+        #define I2C_PORT I2C_NUM_0
+        #define I2C_SDA_PIN GPIO_NUM_23
+        #define I2C_SCL_PIN GPIO_NUM_22
+        #define I2C_SPEED_HZ 100000
 
-		/* LIS3DH Config*/
-		#define LIS3DH_INT_PIN GPIO_NUM_12
-		extern lis3dh_config_t lis3dh_config;
-		extern lis3dh_int_click_config_t lis3dh_click_config;
+        /* LIS3DH Config*/
+        #define LIS3DH_INT_PIN GPIO_NUM_12
+        extern lis3dh_config_t lis3dh_config;
+        extern lis3dh_int_click_config_t lis3dh_click_config;
+
+        /* Buzzer Config */
+        #define BUZZER_PIN GPIO_NUM_13
 
 
 #endif

@@ -70,7 +70,7 @@ void wakeup_task (void *pvParameters)
             lis3dh_int_click_source_t click_src = {};
 
             // get the source of the interrupt and reset *INTx* signals
-            ElocSystem::Get().getLIS3DH().lis3dh_get_int_click_source (&click_src);
+            ElocSystem::GetInstance().getLIS3DH().lis3dh_get_int_click_source (&click_src);
 
 
             // in case of click detection interrupt   
@@ -82,9 +82,9 @@ void wakeup_task (void *pvParameters)
 }
 
 
-esp_err_t ManualWakeupConfig() {
+esp_err_t ManualWakeupConfig(bool installGpioIsr) {
 
-    LIS3DH& lis3dh = ElocSystem::Get().getLIS3DH();
+    LIS3DH& lis3dh = ElocSystem::GetInstance().getLIS3DH();
 
     /** --- INTERRUPT CONFIGURATION PART ---- */
     
@@ -103,8 +103,10 @@ esp_err_t ManualWakeupConfig() {
 
     xTaskCreate(wakeup_task, "Click Sense Wakeup", 2048, NULL, 1, NULL);
 
-    gpio_install_isr_service(ESP_INTR_FLAG_LEVEL1);
-    gpio_isr_handler_add(LIS3DH_INT_PIN, int_signal_handler, (void *)LIS3DH_INT_PIN);
+    if (installGpioIsr) {
+        ESP_ERROR_CHECK(GPIO_INTR_PRIO);
+    }
+    ESP_ERROR_CHECK(gpio_isr_handler_add(LIS3DH_INT_PIN, int_signal_handler, (void *)LIS3DH_INT_PIN));
 
     lis3dh.lis3dh_set_int_click_config (&lis3dh_click_config);
     lis3dh.lis3dh_enable_int (lis3dh_int_click, lis3dh_int1_signal, true);

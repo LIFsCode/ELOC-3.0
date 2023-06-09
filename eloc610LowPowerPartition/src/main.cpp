@@ -80,7 +80,6 @@ int gMinutesWaitUntilDeepSleep=60; //change to 1 or 2 for testing
 //session stuff
 String gSessionIdentifier="";
 
-bool gSentSettings=false;
 //String gBluetoothMAC="";
 String gFirmwareVersion=VERSION;
 
@@ -89,15 +88,10 @@ ESP32Time timeObject;
 //WebServer server(80);
 //bool updateFinished=false;
 bool gWillUpdate=false;
-bool gGPIOButtonPressed=false;
 float gFreeSpaceGB=0.0;
 uint32_t  gFreeSpaceKB=0;
-long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
-String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
-String gLocationCode="unknown";
-String gLocationAccuracy="99";
+
 //String gTimeDifferenceCode; //see getTimeDifferenceCode() below
-bool gBlueToothISDisabled=false;
 
  #ifdef USE_SPI_VERSION
     SDCard *theSDCardObject;
@@ -109,10 +103,7 @@ bool gBlueToothISDisabled=false;
 
 
 void mountSDCard();
-void btwrite(String theString);
 void sendElocStatus();
-void sendSettings();
-void readSettings();
 void writeSettings(String settings);
 void freeSpace();
 void doDeepSleep();
@@ -257,18 +248,15 @@ int64_t getSystemTimeMS() {
 }
 
 
+
+QueueHandle_t rec_req_evt_queue = NULL;
+
 static  void IRAM_ATTR buttonISR(void *args) {
   //return;
   //ESP_LOGI(TAG, "button pressed");
   //delay(5000);
-   if (gRecording)  {
-    
-        gGPIOButtonPressed=true;
-     
-    } else {
-      gGPIOButtonPressed=false;
-
-    }
+  rec_req_t rec_req = gRecording ? REC_REQ_STOP : REC_REQ_START;
+  xQueueSendFromISR(rec_req_evt_queue, &rec_req, NULL);
      
      //detachInterrupt(GPIO_BUTTON);
 
@@ -312,254 +300,6 @@ long getTimeFromTimeObjectMS() {
 }
 
 
-void wait_for_button_push()
-{
- 
-  //digitalWrite(BATTERY_LED,LOW);
-  //bool gBatteryLEDToggle=false;
-  float currentvolts;
-  currentvolts= Battery::GetInstance().getVoltage();
-  
-  gRecording=false;
-  //Battery::GetInstance().getVoltage();
-  boolean sentElocStatus=false;
-  int loopcounter=0;
-  ESP_LOGI(TAG,  "waiting for button or bluetooth");
-  ESP_LOGI(TAG,  "voltage is %.3f", Battery::GetInstance().getVoltage());
-  
-  
-  int64_t timein= getSystemTimeMS();
-
-
-  int gotrecord=false;
-  int leddelay;
-  String serialIN;
- 
-  ESP_LOGI(TAG, " two following are heap size, total and max alloc ");
-  ESP_LOGI(TAG, "     %u", ESP.getFreeHeap());
-  ESP_LOGI(TAG, "     %u", ESP.getMaxAllocHeap()); 
-  //mountSDCard();
-  //freeSpace();
- 
-  while (!gotrecord)
-  {
-      //Battery::GetInstance().getVoltage();
-      //gotrecord=false;
-      //ESP_LOGI(TAG,  "waiting for buttonpress");
-      //btwrite("Waiting for record button");    
-      if (SerialBT.connected()) {
-        if (!gSentSettings) {
-
-
-
-          //vTaskDelay(pdMS_TO_TICKS(200));
-          mountSDCard();
-          vTaskDelay(pdMS_TO_TICKS(200));
-          sendSettings();
-          vTaskDelay(pdMS_TO_TICKS(200));
-          freeSpace();
-          vTaskDelay(pdMS_TO_TICKS(200));
-          btwrite("getClk\n");
-          //vTaskDelay(pdMS_TO_TICKS(50));
-          //vTaskDelay(pdMS_TO_TICKS(800));
-          //sendElocStatus();
-          //if (gFreeSpaceGB!=0.0) btwrite("SD card free: "+String(gFreeSpaceGB)+" GB");
-          //vTaskDelay(pdMS_TO_TICKS(100));
-
-          //btwrite(SD);
-          gSentSettings=true;
-          //vTaskDelay(pdMS_TO_TICKS(200));
-
-          //btwrite("#"+String(gSampleRate)+"#"+String(gSecondsPerFile)+"#"+gLocation); 
-        } 
-      } else {
-          gSentSettings=false; 
-          sentElocStatus=false;
-      }
-      //gotCommand=false;
-      if (SerialBT.available()) {
-        // handle case for sending initial default setup to app
-        serialIN=SerialBT.readString();
-        //ESP_LOGI(TAG, serialIN);
-          //if (serialIN.startsWith("settingsRequest")) {
-          //   btwrite("#"+String(gSampleRate)+"#"+String(gSecondsPerFile)+"#"+gLocation); 
-          //}
-          
-          
-           if (serialIN.startsWith("record")) {
-              btwrite("\n\nYou are using an old version of the Android app. Please upgrade\n\n");
-
-           }
-          
-          if (serialIN.startsWith( "_setClk_")) {
-                   ESP_LOGI(TAG, "setClk starting");
-                  //string will look like _setClk_G__120____32456732728  //if google, 12 mins since last phone sync 
-                  //                   or _setClk_P__0____43267832648  //if phone, 0 min since last phone sync
-                  
-                  
-                  String everything = serialIN.substring(serialIN.indexOf("___")+3,serialIN.length());
-                  everything.trim();
-                  String seconds = everything.substring(0,10); //was 18
-                  String milliseconds=everything.substring(10,everything.length()); 
-                  String tmp = "timestamp in from android GMT "+everything    +"  sec: "+seconds + "   millisec: "+milliseconds;
-                  ESP_LOGI(TAG, "%s", tmp.c_str());
-                  String minutesSinceSync=serialIN.substring(11,serialIN.indexOf("___"));
-                  gSyncPhoneOrGoogle=serialIN.substring(8,9);
-                  //ESP_LOGI(TAG, minutesSinceSync);
-                // ESP_LOGI(TAG, "GorP: "+GorP);
-                //delay(8000);
-                // ESP_LOGI(TAG, test);
-                  //ESP_LOGI(TAG, seconds);
-                  //ESP_LOGI(TAG, milliseconds);
-                  milliseconds.trim();
-                  if (milliseconds.length()<2) milliseconds="0";
-                  timeObject.setTime(atol(seconds.c_str())+(TIMEZONE_OFFSET*60L*60L),  (atol(milliseconds.c_str()))*1000    );
-                  //timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
-                  // timestamps coming in from android are always GMT (minus 7 hrs)
-                  // if I not add timezone then timeobject is off 
-                  // so timeobject does not seem to be adding timezone to system time.
-                  // timestamps are in gmt+0, so timestamp convrters
-                
-                  struct timeval tv_now;
-                  gettimeofday(&tv_now, NULL);
-                  int64_t time_us = (     (int64_t)tv_now.tv_sec      * 1000000L) + (int64_t)tv_now.tv_usec;
-                  time_us=time_us/1000;
-                  
-                  //ESP_LOGI(TAG, "atol(minutesSinceSync.c_str()) *60L*1000L "+String(atol(minutesSinceSync.c_str()) *60L*1000L));
-                  gLastSystemTimeUpdate=getTimeFromTimeObjectMS() -(      atol(minutesSinceSync.c_str()) *60L*1000L);
-                  timein= getSystemTimeMS();
-                  //ESP_LOGI(TAG, "timestamp in from android GMT "+everything    +"  sec: "+seconds + "   millisec: "+milliseconds);
-                  //ESP_LOGI("d", "new timestamp from new sys time (local time) %lld", time_us  ); //this is 7 hours too slow!
-                  //ESP_LOGI("d","new timestamp from timeobJect (local time) %lld",gLastSystemTimeUpdate);
-                  
-
-                  
-                  //btwrite("time: "+timeObject.getDateTime()+"\n");
-                   if (!sentElocStatus) {
-                      sentElocStatus=true;
-                      sendElocStatus();
-                   }
-                   ESP_LOGI(TAG, "setClk ending");
-          }          
-    
-    
-          if (serialIN.startsWith( "setGPS")) {
-               // read the location on startup? 
-               //only report recorded location status? 
-               // need to differentiate between manual set and record set.
-              gLocationCode=  serialIN.substring(serialIN.indexOf("^")+1,serialIN.indexOf("#") );
-              gLocationCode.trim();
-              gLocationAccuracy= serialIN.substring(serialIN.indexOf("#")+1,serialIN.length() );
-              gLocationAccuracy.trim();
-              ESP_LOGI(TAG, "loc: %s   acc %s", gLocationCode.c_str(), gLocationAccuracy.c_str());
-              
-              File file = SPIFFS.open("/gps.txt", FILE_WRITE); 
-              file.println(gLocationCode);
-              file.println(gLocationAccuracy);
-               gotrecord=true;
- 
-              //btwrite("GPS Location set");
-
-          }         
-
-          if (serialIN.startsWith("_record_")) {
- 
-            gotrecord=true;
-            } else {
-                //const char *converted=serialIN.c_str();
-               /* if (serialIN.startsWith( "8k")){gSampleRate=8000;btwrite("sample rate changed to 8k");gotCommand=true;}
-                if (serialIN.startsWith( "16k")){gSampleRate=16000;btwrite("sample rate changed to 16k");gotCommand=true;}
-                if (serialIN.startsWith( "22k")){gSampleRate=22000;btwrite("sample rate changed to 22k");gotCommand=true;}
-                if (serialIN.startsWith( "32k")){gSampleRate=32000;btwrite("sample rate changed to 32k");gotCommand=true;}
-                if (serialIN.startsWith( "10s")){gSecondsPerFile=10;btwrite("10 secs per file");gotCommand=true;}
-                if (serialIN.startsWith( "1m")){gSecondsPerFile=60;btwrite("1 minute per file");gotCommand=true;}
-                if (serialIN.startsWith( "5m")){gSecondsPerFile=300;btwrite("5 minutes per file");gotCommand=true;}
-                if (serialIN.startsWith( "1h")){gSecondsPerFile=3600;btwrite("1 hour per file");gotCommand=true;}
-                if (serialIN.startsWith( "settingsRequest")){gotCommand=true;}
-                if (!gotCommand) btwrite("command not found. options are 8k 16k 22k 32k  and 10s 1m 5m 1h");
-                */
-
-                    
-               
-                
-
-              
-                if (serialIN.startsWith( "#settings")) {
-                    writeSettings(serialIN);
-                    vTaskDelay(pdMS_TO_TICKS(200));
-                    readSettings();
-                    vTaskDelay(pdMS_TO_TICKS(200));
-                    btwrite("settings updated");
-                     vTaskDelay(pdMS_TO_TICKS(500));
-                     sendElocStatus();
-
-                }
-
- 
-
-
- 
-
-              
-            }
-
-
-
-      }
-    
-      
-      if (gotrecord) {
-        mountSDCard();
-        if (!gMountedSDCard) { 
-          //mountSDCard();
-          LEDflashError();
-          gotrecord=false;
-          sendSettings();
-        }
-
-          if ((gFreeSpaceGB > 0.0)&& (gFreeSpaceGB < 0.5) ) {
-            btwrite("!!!!!!!!!!!!!!!!!!!!!");
-            btwrite("SD Card full. Cannot record");
-            btwrite("!!!!!!!!!!!!!!!!!!!!!");
-            LEDflashError();
-            gotrecord=false;
-            sendSettings();
-
-
-          }      
-      
-      
-      }
-      
-      loopcounter++;
-      if (loopcounter==30) loopcounter=0;
-      vTaskDelay(pdMS_TO_TICKS(30)); //so if we get record, max 10ms off
-     
-
-      /**************** NOTE: Status LED blinking must be handled in a separate task 
-         if (loopcounter==0) {
-                currentvolts= Battery::GetInstance().getVoltage();
-                //currentvolts=0.1;
-                if ((getSystemTimeMS()-timein) > (60000*gMinutesWaitUntilDeepSleep)) doDeepSleep(); // one hour to deep sleep 
-                if (currentvolts <= gvOff) doDeepSleep();
-                 digitalWrite(STATUS_LED,HIGH);
-                
-                
-                digitalWrite(BATTERY_LED,LOW);
-                if (currentvolts <= gvLow) digitalWrite(BATTERY_LED,HIGH);
-                if (currentvolts >= gvFull) digitalWrite(BATTERY_LED,HIGH);
-                
-           } else {
-                if (!SerialBT.connected()) digitalWrite(STATUS_LED,LOW);
-                if (currentvolts <= gvLow) digitalWrite(BATTERY_LED,LOW);
-           }
-        ****************************************************************************/
-  }
- 
- //mountSDCard();
- gSentSettings=false; 
-
-}
 
 
 
@@ -656,15 +396,22 @@ void doDeepSleep(){
 
 }
 
+esp_err_t checkSDCard() {
 
-
-
-
-
-
-
-
-
+    if (!gMountedSDCard) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    // getupdated free space
+    freeSpace();
+    if ((gFreeSpaceGB > 0.0) && (gFreeSpaceGB < 0.5)) {
+        //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
+        //  btwrite("SD Card full. Cannot record");
+        //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
+        ESP_LOGE(TAG, "SD card is full, Free space %.3f GB", gFreeSpaceGB);
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
 
 void record(I2SSampler *input) {
   
@@ -706,7 +453,6 @@ void record(I2SSampler *input) {
  
    static char sBuffer[ 240 ]; // 40 B per task
   
-  gGPIOButtonPressed=false;
   bool stopit = false;
   
 
@@ -759,7 +505,17 @@ void record(I2SSampler *input) {
                   ESP_LOGI(TAG, "Wrote %d samples in %lld ms. Longest: %lld. buffer (ms): %f underrun: %lld loop:%lld",   samples_read,writeTimeMillis,longestWriteTimeMillis,bufferTimeMillis,bufferUnderruns,looptime/1000);
             }
             //if (gListenOnly)  ESP_LOGI(TAG, "Listening only...");
-            if (gGPIOButtonPressed)  {stopit=true; loopCounter=10000001L; ESP_LOGI(TAG,"gpio button pressed");}
+            rec_req_t rec_req = REC_REQ_NONE;
+            if (xQueueReceive(rec_req_evt_queue, &rec_req, 0))  { // 0 waiting time
+                if (rec_req == REC_REQ_STOP) {
+                  stopit=true; 
+                  loopCounter=10000001L; 
+                  ESP_LOGI(TAG,"stop recording requested");
+                }
+                else {
+                  ESP_LOGI(TAG,"REC_REQ = %d", rec_req);
+                }
+            }
 
             if ((esp_timer_get_time() - recordupdate  ) > 9000000 ) { //9 seconds for the next loop
                 ESP_LOGI(TAG,"record in second loop--voltage check");
@@ -845,17 +601,8 @@ void mountSDCard() {
 
 
 
-void btwrite(String theString){
- //FILE *fp;
-  if (gBlueToothISDisabled) return;
-
-  //SerialBT.
-  if (SerialBT.connected()) {
-    SerialBT.println(theString);
-  }
-}
-
 void freeSpace() {
+
     // FATFS *fs;
     // uint32_t fre_clust, fre_sect, tot_sect;
     // FRESULT res;
@@ -894,36 +641,6 @@ bool folderExists(const char* folder)
     }
   return false;
 }
-
-
-String readNodeName() {
-
-      // int a =gDeleteMe.length();
-      // if (a==2) {a=1;}
-      if(!(SPIFFS.exists("/nodename.txt"))){
-  
-        ESP_LOGI(TAG, "No nodename set. Returning ELOC_NONAME");
-        return("ELOC_NONAME");
-          
-
-      }
- 
-
-  File file2 = SPIFFS.open("/nodename.txt", FILE_READ);
-  
-  //String temp = file2.readStringUntil('\n');
-
-  String temp = file2.readString();
-  temp.trim();
-  file2.close();
-  ESP_LOGI(TAG, "node name: %s", temp.c_str());
-  return(temp);
- //return("");
-
-}
-
-
-
 
 
 void saveStatusToSD() {
@@ -975,123 +692,6 @@ void saveStatusToSD() {
 
 }
 
-void sendElocStatus() {  //compiles and sends eloc config
-      /*
-        
-
-        will be based on 
-
-
-
-      //what kind of things we want to send?
-      // distinguish between record now,  no-record and previous record
-      - mac address
-      - gfirmwareVersion
-      - eloc_name
-      - android appver
-      - timeofday (phone time)
-      - ID of ranger who did it
-      - bat voltage
-      - o sdcard size
-      - sdcard free space
-      - gLocation
-      - gps location
-
-      /// mic info
-        - gMicType
-        - 
-
-
-      - buffer underruns etc of last record
-
-
-      // info of last record session: ?
-          -buffer underruns
-          - record time
-          - record type , samplerate, gain, etc
-          - max/avg file write time.
-
-
-
-      ///////// timings since last boot ////
-          - total uptime  
-          - record time no bluetooth
-          - record time bluetooth
-
-      /////// timing since last bat change ////
-          - total uptime  
-          - record time no bluetooth
-          - record time bluetooth 
-
-
-      //// if recording was started  ///
-          - time of day
-          - secondsperfile
-          - samplerate
-          - gMicBitShift
-          - gps coords
-          - gps accuracy
-          - record type (bluetooth on or off)
-          - other record parameters, e.g. cpu freq, apll, etc buffer sizes?
-          
-
-
-      */ 
-
-
-       String sendstring= "statusupdate\n";
-       sendstring=sendstring+   "Time:  "    +getProperDateTime()          + "\n" ;
-       sendstring=sendstring+  "Ranger:  "    +"_@b$_"           + "\n" ;
-       //sendstring=sendstring+ "\n\n";
-       sendstring=sendstring+   "!0!"+          readNodeName()                     + "\n" ; //dont change
-
-      
-      sendstring=sendstring+   "!1!"+          gFirmwareVersion                    + "\n" ; //firmware
-      
-      float tempvolts= Battery::GetInstance().getVoltage();
-      String temptemp= "FULL";
-      if (!Battery::GetInstance().isFull()) temptemp="";
-      if (Battery::GetInstance().isLow()) temptemp="!!! LOW !!!";
-      if (Battery::GetInstance().isEmpty()) temptemp="turn off";
-
-      if (Battery::GetInstance().isCalibrationDone()) {
-          sendstring=sendstring+   "!2!" +String(tempvolts)+ " v # "+temptemp+"\n" ;                     //battery voltage
-      } else {
-           sendstring=sendstring+   "!2!" +String(tempvolts)+ " v "+temptemp+"\n" ;  
-      }
-      sendstring=sendstring+   "!3!"+     gLocation                         + "\n" ; //file header
-      
-  
-       //was uint64tostring
-      sendstring=sendstring+   "!4!"    +      String((float)esp_timer_get_time()/1000/1000/60/60)    + " h"           + "\n" ;
-      sendstring=sendstring+   "!5!"      +    String(((float)gTotalRecordTimeSinceReboot+gSessionRecordTime)/1000/1000/60/60)  +" h"           + "\n" ;
-      sendstring=sendstring+   "!6!"      +    String((float)gSessionRecordTime/1000/1000/60/60 )  +" h"           + "\n" ;
-        
-       
-       
-       sendstring=sendstring+   "!7!" +String(gRecording)              + "\n" ;
-  
-      sendstring=sendstring+   "!8!" +getMicInfo().MicBluetoothOnOrOff              + "\n" ;
-  
-      sendstring=sendstring+   "!9!" +String(gSampleRate)               + "\n" ;
-      sendstring=sendstring+   "!10!" +String(gSecondsPerFile)               + "\n" ;
- 
-      
-  
-       sendstring=sendstring+   "!11!"+ String(gFreeSpaceGB)                  + "\n" ;
-       sendstring=sendstring+   "!12!" +getMicInfo().MicType                  + "\n" ;
-  
-       sendstring=sendstring+   "!13!" +getMicInfo().MicBitShift                  + "\n" ;
-       sendstring=sendstring+   "!14!" +gLocationCode                + "\n" ;
-      sendstring=sendstring+   "!15!" +gLocationAccuracy                + " m\n" ;
-
-     
-      sendstring=sendstring+   "!16!"+gSessionIdentifier                         + "\n" ;
-
-      Serial.print(sendstring);
-      btwrite(sendstring);
-      
-} 
 
 
 
@@ -1203,6 +803,7 @@ if (SerialBT.isReady())  {
 readSettings();
 readMicInfo();
 
+rec_req_evt_queue = xQueueCreate(10, sizeof(rec_req_t));
 ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
 
 ESP_LOGI(TAG, "Creating LIS3DH wakeup task...");
@@ -1213,6 +814,8 @@ if (esp_err_t err = BluetoothServerSetup(false)) {
  
 ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)GPIO_BUTTON));
 ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_BUTTON));
+
+
 
   bool firstRecordLoopAlreadyStarted=false;
   //BUGME: remove this loop!
@@ -1228,6 +831,7 @@ ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_
 
   
   mountSDCard();
+  freeSpace();
       
   readConfig();
 
@@ -1246,10 +850,23 @@ ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_
 
 
     
-    while (true) {   
-      wait_for_button_push();
+    while (true) {  
       
-      record(input);
+      ESP_LOGI(TAG,  "waiting for button or bluetooth");
+      ESP_LOGI(TAG,  "voltage is %.3f", Battery::GetInstance().getVoltage());
+      rec_req_t rec_req = REC_REQ_NONE;
+      if (xQueueReceive(rec_req_evt_queue, &rec_req, portMAX_DELAY))
+      {
+        if (rec_req == REC_REQ_START) {
+          if (esp_err_t err = checkSDCard() != ESP_OK) {
+            ESP_LOGE(TAG, "Cannot start recording due to SD error %s", esp_err_to_name(err));
+            //TODO: set status here
+          }
+          else {
+            record(input);
+          }
+        }
+      }
       vTaskDelay(pdMS_TO_TICKS(500));
     }
  

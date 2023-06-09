@@ -95,6 +95,10 @@ void readMicInfo() {
 uint32_t gSampleRate;
 int gSecondsPerFile= 60;
 String gLocation = "not_set";
+String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
+String gLocationCode="unknown";
+String gLocationAccuracy="99";
+long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
 
 //BUGME: these function should be part of some bluetooth handler
 //       settings should only return settings as string, not directly send it 
@@ -342,6 +346,27 @@ void readSettings() {
 
 /**************************************************************************************************/
 
+String readNodeName() {
+
+    // int a =gDeleteMe.length();
+    // if (a==2) {a=1;}
+    if (!(SPIFFS.exists("/nodename.txt"))) {
+
+        ESP_LOGI(TAG, "No nodename set. Returning ELOC_NONAME");
+        return ("ELOC_NONAME");
+    }
+
+    File file2 = SPIFFS.open("/nodename.txt", FILE_READ);
+
+    // String temp = file2.readStringUntil('\n');
+
+    String temp = file2.readString();
+    temp.trim();
+    file2.close();
+    ESP_LOGI(TAG, "node name: %s", temp.c_str());
+    return (temp);
+    // return("");
+}
 
 /*************************** Global settings via config file **************************************/
 //BUGME: handle this through file system

@@ -41,8 +41,11 @@
         #define OTHER_GPIO_BUTTON GPIO_NUM_0
         #define VOLTAGE_PIN GPIO_NUM_34
 
-        /** Interrupt definitions*/
+        /** Interrupt definitions
+         *  lower levels are lower priorities
+        */
         #define GPIO_INTR_PRIO ESP_INTR_FLAG_LEVEL1
+        #define I2S_INTR_PIRO ESP_INTR_FLAG_LEVEL2
         
   
         

@@ -18,8 +18,8 @@ i2s_config_t i2s_mic_Config = {
 
     .communication_format = I2S_COMM_FORMAT_I2S,
     .intr_alloc_flags = I2S_INTR_PIRO,
-    .dma_buf_count = gBufferCount,  //so 2000 sample  buffer at 16khz sr gives us 125ms to do our writing
-    .dma_buf_len = gBufferLen,  // 8 buffers gives us half  second
+    .dma_buf_count = I2S_DMA_BUFFER_COUNT,  //so 2000 sample  buffer at 16khz sr gives us 125ms to do our writing
+    .dma_buf_len = I2S_DMA_BUFFER_LEN,  // 8 buffers gives us half  second
     .use_apll = gUseAPLL, //not getting set. gUseAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
     .tx_desc_auto_clear = false,
     .fixed_mclk = 0,

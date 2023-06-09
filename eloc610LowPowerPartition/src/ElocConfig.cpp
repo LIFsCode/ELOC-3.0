@@ -92,7 +92,7 @@ void readMicInfo() {
 
 /*************************** Global settings via BT Config ****************************************/
 //BUGME: encapsulate these in a struct & implement a getter
-uint32_t gSampleRate;
+uint32_t gSampleRate = I2S_DEFAULT_SAMPLE_RATE;
 int gSecondsPerFile= 60;
 String gLocation = "not_set";
 String gSyncPhoneOrGoogle; //will be either G or P (google or phone).

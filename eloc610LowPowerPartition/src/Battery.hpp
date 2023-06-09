@@ -61,7 +61,6 @@ private:
     Battery();
     esp_err_t init();
 
-    const char* getBatType() const;
 public:
     virtual ~Battery();
     static Battery& GetInstance() {
@@ -71,13 +70,14 @@ public:
 
     virtual float getVoltage();
     virtual float getSoC();
+    const char* getState();
+    const char* getBatType() const;
 
     bool isLow();
     bool isFull();
     bool isEmpty();
 
     virtual esp_err_t setDefaultChargeEn(bool enable); 
-    bool isBatteryPresent();
 
     bool isCalibrationDone() const;
 };

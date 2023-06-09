@@ -159,6 +159,18 @@ float Battery::getSoC()
     }
     return 0.0f;
 }
+const char* Battery::getState() {
+    if (isFull()) {
+        return "Full";
+    }
+    else if (isLow()) {
+        return "Low";
+    }
+    else if (isEmpty()) {
+        return "Empty";
+    }
+    return "";
+}
 bool Battery::isLow()
 {
     if (mBatteryType == BAT_NONE) {

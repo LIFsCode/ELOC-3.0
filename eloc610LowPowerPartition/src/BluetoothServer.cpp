@@ -140,6 +140,31 @@ extern ESP32Time timeObject;
 //BUGME: global constant from config.h
 extern String gFirmwareVersion;
 
+void printStatus(String& buf) {
+
+    StaticJsonDocument<512> doc;
+    JsonObject battery = doc.createNestedObject("battery");
+    battery["type"]                = Battery::GetInstance().getBatType();
+    battery["state"]               = Battery::GetInstance().getState();
+    battery["SoC[%]"]              = Battery::GetInstance().getSoC();
+    battery["voltage[V]"]          = Battery::GetInstance().getVoltage();
+
+    JsonObject session = doc.createNestedObject("session");
+    session["identifier"]                = gSessionIdentifier;
+    session["recordingState"]            = String(gRecording);
+    session["recordingTime[h]"]          = String((float)gSessionRecordTime / 1000 / 1000 / 60 / 60);
+    
+    JsonObject device = doc.createNestedObject("device");
+    device["firmware"]                   = gFirmwareVersion;
+    device["timeStamp"]                  = String((float)esp_timer_get_time() / 1000 / 1000 / 60 / 60);
+    device["totalRecordingTime[h]"]      = String(((float)gTotalRecordTimeSinceReboot + gSessionRecordTime) / 1000 / 1000 / 60 / 60);
+    device["SdCardFreeSpace[GB]"]        = String(gFreeSpaceGB);
+
+    if (serializeJsonPretty(doc, buf) == 0) {
+        ESP_LOGE(TAG, "Failed serialize JSON config!");
+    }
+}
+
 void sendElocStatus() { // compiles and sends eloc config
     /*
     will be based on
@@ -504,6 +529,11 @@ void wait_for_bt_command() {
             if (serialIN.startsWith("delConfig")) {
                 clearConfig();
                 btwrite("E00000: config file deleted, starting with default");
+            }
+            if (serialIN.startsWith("getStatus")) {
+                String status;
+                printStatus(status);
+                btwrite(status);
             }
 
             if (serialIN.startsWith("_setClk_")) {

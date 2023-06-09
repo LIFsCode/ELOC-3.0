@@ -44,7 +44,7 @@
 #define __LIS3DH_H__
 
 // Uncomment one of the following defines to enable debug output
-// #define LIS3DH_DEBUG_LEVEL_1    // only error messages
+ #define LIS3DH_DEBUG_LEVEL_1    // only error messages
 // #define LIS3DH_DEBUG_LEVEL_2    // debug and error messages
 
 // LIS3DH addresses (also used for LIS2DH, LIS2DH12 and LIS2DE12)
@@ -93,31 +93,38 @@
 
 #include "lis3dh_platform.h"
 #include "lis3dh_types.h"
+#include "esp_err.h"
 
-#ifdef __cplusplus
-extern "C"
+#include "CPPI2C/cppi2c.h"
+
+class LIS3DH
 {
-#endif
+private:
+	CPPI2C::I2c& mI2c;
+    lis3dh_sensor_t mDev;
+    bool mInitDone;
+public:
+    /**
+     * @brief   Initialize the sensor
+     *
+     * Reset the sensor and switch to power down mode. All registers are reset to 
+     * default values. FIFO is cleared.
+     *
+     * @param   bus     I2C or SPI bus at which LIS3DH sensor is connected
+     * @param   addr    I2C addr of the LIS3DH sensor, 0 for using SPI
+     * @param   cs      SPI CS GPIO, ignored for I2C
+     * @return          pointer to sensor data structure, or NULL on error
+     */
+    LIS3DH(CPPI2C::I2c& i2c, uint8_t addr);
 
+    esp_err_t lis3dh_init_sensor();
 
-/**
- * @brief   Initialize the sensor
- *
- * Reset the sensor and switch to power down mode. All registers are reset to 
- * default values. FIFO is cleared.
- *
- * @param   bus     I2C or SPI bus at which LIS3DH sensor is connected
- * @param   addr    I2C addr of the LIS3DH sensor, 0 for using SPI
- * @param   cs      SPI CS GPIO, ignored for I2C
- * @return          pointer to sensor data structure, or NULL on error
- */
-lis3dh_sensor_t* lis3dh_init_sensor (uint8_t bus, uint8_t addr, uint8_t cs);
+// lis3dh_sensor_t* lis3dh_init_sensor (uint8_t bus, uint8_t addr, uint8_t cs);
 
 
 /**
  * @brief   Set sensor mode
  *
- * @param   dev     pointer to the sensor device data structure
  * @param   odr     sensor output data rate (ODR)
  * @param   res     sensor resolution
  * @param   x       true enable x-axis, false disable x-axis
@@ -125,19 +132,17 @@ lis3dh_sensor_t* lis3dh_init_sensor (uint8_t bus, uint8_t addr, uint8_t cs);
  * @param   z       true enable z-axis, false disable z-axis
  * @return          true on success, false on error
  */
-bool lis3dh_set_mode (lis3dh_sensor_t* dev, 
-                      lis3dh_odr_mode_t odr, lis3dh_resolution_t res,
+bool lis3dh_set_mode (lis3dh_odr_mode_t odr, lis3dh_resolution_t res,
                       bool x, bool y, bool z);
                        
 
 /**
  * @brief   Set scale (full scale range)
  *
- * @param   dev     pointer to the sensor device data structure
  * @param   scale   full range scale
  * @return          true on success, false on error
  */
-bool lis3dh_set_scale (lis3dh_sensor_t* dev, lis3dh_scale_t scale);
+bool lis3dh_set_scale (lis3dh_scale_t scale);
                               
                               
 /**
@@ -147,23 +152,21 @@ bool lis3dh_set_scale (lis3dh_sensor_t* dev, lis3dh_scale_t scale);
  * exceeds the value. It is ignored in bypass mode. 
  * 
  *
- * @param   dev     pointer to the sensor device data structure
  * @param   mode    FIFO mode
  * @param   thresh  FIFO watermark (ignored in bypass mode)
  * @param   trigger interrupt signal used as trigger (only in Stream-to-FIFO)
  * @return          true on success, false on error
  */
-bool lis3dh_set_fifo_mode (lis3dh_sensor_t* dev, lis3dh_fifo_mode_t mode, 
+bool lis3dh_set_fifo_mode (lis3dh_fifo_mode_t mode, 
                            uint8_t thresh, lis3dh_int_signal_t trigger);
                             
 
 /**
  * @brief   Test whether new data samples are available
  *
- * @param   dev     pointer to the sensor device data structure
  * @return          true on new data, otherwise false
  */
-bool lis3dh_new_data (lis3dh_sensor_t* dev);
+bool lis3dh_new_data ();
 
 
 /**
@@ -172,12 +175,10 @@ bool lis3dh_new_data (lis3dh_sensor_t* dev);
  * Function works only in bypass mode and fails in FIFO modes. In FIFO modes,
  * function *lis3dh_get_float_data_fifo* has to be used instead to get data.
  *
- * @param   dev     pointer to the sensor device data structure
  * @param   data    pointer to float data structure filled with g values
  * @return          true on success, false on error
  */
-bool lis3dh_get_float_data (lis3dh_sensor_t* dev,
-                            lis3dh_float_data_t* data);
+bool lis3dh_get_float_data (lis3dh_float_data_t* data);
 
 
 /**
@@ -185,12 +186,10 @@ bool lis3dh_get_float_data (lis3dh_sensor_t* dev,
  *
  * In bypass mode, it returns only one sensor data sample.
  *
- * @param   dev     pointer to the sensor device data structure
  * @param   data    array of 32 float data structures filled with g values
  * @return          number of data sets read from fifo on success or 0 on error
  */
-uint8_t lis3dh_get_float_data_fifo (lis3dh_sensor_t* dev,
-                                    lis3dh_float_data_fifo_t data);
+uint8_t lis3dh_get_float_data_fifo (lis3dh_float_data_fifo_t data);
 
 
 /**
@@ -199,11 +198,10 @@ uint8_t lis3dh_get_float_data_fifo (lis3dh_sensor_t* dev,
  * Function works only in bypass mode and fails in FIFO modes. In FIFO modes,
  * function *lis3dh_get_raw_data_fifo* has to be used instead to get data.
  *
- * @param   dev     pointer to the sensor device data structure
  * @param   raw     pointer to raw data structure filled with values
  * @return          true on success, false on error
  */
-bool lis3dh_get_raw_data (lis3dh_sensor_t* dev, lis3dh_raw_data_t* raw);
+bool lis3dh_get_raw_data (lis3dh_raw_data_t* raw);
 
 
 /**
@@ -211,37 +209,31 @@ bool lis3dh_get_raw_data (lis3dh_sensor_t* dev, lis3dh_raw_data_t* raw);
  *
  * In bypass mode, it returns only one raw data sample.
  *
- * @param   dev     pointer to the sensor device data structure
  * @param   raw     array of 32 raw data structures
  * @return          number of data sets read from fifo on success or 0 on error
  */
-uint8_t lis3dh_get_raw_data_fifo (lis3dh_sensor_t* dev,
-                                  lis3dh_raw_data_fifo_t raw);
+uint8_t lis3dh_get_raw_data_fifo (lis3dh_raw_data_fifo_t raw);
                                    
 
 /**
  * @brief   Enable / disable an interrupt on signal INT1 or INT2
  *
- * @param   dev     pointer to the sensor device data structure
  * @param   type    interrupt to be enabled or disabled
  * @param   signal  interrupt signal that is activated for the interrupt
  * @param   value   true to enable or false to disable the interrupt
  * @return          true on success, false on error
  */
-bool lis3dh_enable_int (lis3dh_sensor_t* dev, 
-                        lis3dh_int_type_t type, 
+bool lis3dh_enable_int (lis3dh_int_type_t type, 
                         lis3dh_int_signal_t signal, bool value);
                                    
 
 /**
  * @brief   Get the source of data ready and FIFO interrupts on INT1
  *
- * @param   dev      pointer to the sensor device data structure
  * @param   source   pointer to the interrupt source
  * @return           true on success, false on error
  */
-bool lis3dh_get_int_data_source (lis3dh_sensor_t* dev, 
-                                 lis3dh_int_data_source_t* source);
+bool lis3dh_get_int_data_source (lis3dh_int_data_source_t* source);
 
 
 /**
@@ -252,13 +244,11 @@ bool lis3dh_get_int_data_source (lis3dh_sensor_t* dev,
  * higher or lower than a defined threshold and one of the following event is
  * recognized: axis movement / wake up, free fall, 6D/4D orientation detection.
  *
- * @param   dev      pointer to the sensor device data structure
  * @param   config   pointer to the interrupt generator configuration
  * @param   gen      interrupt generator to which the function is applied
  * @return           true on success, false on error
  */
-bool lis3dh_set_int_event_config (lis3dh_sensor_t* dev,
-                                  lis3dh_int_event_config_t* config,
+bool lis3dh_set_int_event_config (lis3dh_int_event_config_t* config,
                                   lis3dh_int_event_gen_t gen);
 
 
@@ -270,13 +260,11 @@ bool lis3dh_set_int_event_config (lis3dh_sensor_t* dev,
  * higher or lower than a defined threshold and one of the following event is
  * recognized: axis movement / wake up, free fall, 6D/4D orientation detection.
  *
- * @param   dev      pointer to the sensor device data structure
  * @param   config   pointer to the interrupt generator configuration
  * @param   gen      interrupt generator to which the function is applied
  * @return           true on success, false on error
  */
-bool lis3dh_get_int_event_config (lis3dh_sensor_t* dev,
-                                  lis3dh_int_event_config_t* config,
+bool lis3dh_get_int_event_config (lis3dh_int_event_config_t* config,
                                   lis3dh_int_event_gen_t gen);
 
 
@@ -286,13 +274,11 @@ bool lis3dh_get_int_event_config (lis3dh_sensor_t* dev,
  * Returns a byte with flags that indicate the event which triggered
  * the interrupt signal (see INTx_SRC register in datasheet for details)
  *
- * @param   dev      pointer to the sensor device data structure
  * @param   source   pointer to the interrupt source data structure
  * @param   gen      interrupt generator to which the function is applied
  * @return           true on success, false on error
  */
-bool lis3dh_get_int_event_source (lis3dh_sensor_t* dev,
-                                  lis3dh_int_event_source_t* source,
+bool lis3dh_get_int_event_source (lis3dh_int_event_source_t* source,
                                   lis3dh_int_event_gen_t gen);
 
 
@@ -302,12 +288,10 @@ bool lis3dh_get_int_event_source (lis3dh_sensor_t* dev,
  * Set the configuration for interrupts that are generated when single or
  * double clicks are detected.
  *
- * @param   dev      pointer to the sensor device data structure
  * @param   config   pointer to the interrupt generator configuration
  * @return           true on success, false on error
  */
-bool lis3dh_set_int_click_config (lis3dh_sensor_t* dev,
-                                  lis3dh_int_click_config_t* config);
+bool lis3dh_set_int_click_config (lis3dh_int_click_config_t* config);
 
 /**
  * @brief   Get the configuration of the click detection interrupt generator
@@ -315,12 +299,10 @@ bool lis3dh_set_int_click_config (lis3dh_sensor_t* dev,
  * Set the configuration for interrupts that are generated when single or
  * double clicks are detected.
  *
- * @param   dev      pointer to the sensor device data structure
  * @param   config   pointer to the interrupt generator configuration
  * @return           true on success, false on error
  */
-bool lis3dh_get_int_click_config (lis3dh_sensor_t* dev,
-                                  lis3dh_int_click_config_t* config);
+bool lis3dh_get_int_click_config (lis3dh_int_click_config_t* config);
 
 
 /**
@@ -329,29 +311,24 @@ bool lis3dh_get_int_click_config (lis3dh_sensor_t* dev,
  * Returns a byte with flags that indicate the activity which triggered
  * the interrupt signal (see CLICK_SRC register in datasheet for details)
  *
- * @param   dev      pointer to the sensor device data structure
  * @param   source   pointer to the interrupt source
  * @return           true on success, false on error
  */
-bool lis3dh_get_int_click_source (lis3dh_sensor_t* dev, 
-                                  lis3dh_int_click_source_t* source);
+bool lis3dh_get_int_click_source (lis3dh_int_click_source_t* source);
                                      
 
 /**
  * @brief   Set signal configuration for INT1 and INT2 signals
  *
- * @param   dev      pointer to the sensor device data structure
  * @param   level    define interrupt signal as low or high active
  * @return           true on success, false on error
  */
-bool lis3dh_config_int_signals (lis3dh_sensor_t* dev,
-                                lis3dh_int_signal_level_t level);
+bool lis3dh_config_int_signals (lis3dh_int_signal_level_t level);
 
                               
 /**
  * @brief   Config HPF (high pass filter)
  *
- * @param   dev      pointer to the sensor device data structure
  * @param   mode     filter mode
  * @param   cutoff   filter cutoff frequency (depends on ODR) [0 ... 3]
  * @param   data     if true, use filtered data as sensor output
@@ -360,8 +337,7 @@ bool lis3dh_config_int_signals (lis3dh_sensor_t* dev,
  * @param   int2     if true, use filtered data for interrupt INT2 generation
  * @return           true on success, false on error
  */
-bool lis3dh_config_hpf (lis3dh_sensor_t* dev, 
-                        lis3dh_hpf_mode_t mode,  uint8_t cutoff,
+bool lis3dh_config_hpf (lis3dh_hpf_mode_t mode,  uint8_t cutoff,
                         bool data, bool click, bool int1, bool int2);
 
                               
@@ -372,11 +348,10 @@ bool lis3dh_config_hpf (lis3dh_sensor_t* dev,
  * Used to reset the HPF in autoreset mode *lis3dh_hpf_autoreset*.
  * Reference is given as two's complement.
  *
- * @param   dev      pointer to the sensor device data structure
  * @param   ref      reference *lis3dh_hpf_reference* mode, otherwise ignored
  * @return           true on success, false on error
  */
-bool lis3dh_set_hpf_ref (lis3dh_sensor_t* dev, int8_t ref);
+bool lis3dh_set_hpf_ref (int8_t ref);
 
 
 /**
@@ -384,33 +359,29 @@ bool lis3dh_set_hpf_ref (lis3dh_sensor_t* dev, int8_t ref);
  *
  * Used to reset the HPF in normal mode *lis3dh_hpf_normal*.
  *
- * @param   dev      pointer to the sensor device data structure
  * @return           HPF reference as two's complement
  */
-int8_t lis3dh_get_hpf_ref (lis3dh_sensor_t* dev);
+int8_t lis3dh_get_hpf_ref ();
 
 /**
  * @brief   Enable / disable ADC or temperature sensor
  *
- * @param   dev      pointer to the sensor device data structure
  * @param   enable   if true, ADC inputs are enabled 
  * @param   temp     if true, ADC input 3 is the output of temperature sensor
  * @return           true on success, false on error
  */
-int8_t lis3dh_enable_adc (lis3dh_sensor_t* dev, bool enable, bool temp);
+int8_t lis3dh_enable_adc (bool enable, bool temp);
 
 
 /**
  * @brief   Get ADC input or temperature
  *
- * @param   dev      pointer to the sensor device data structure
  * @param   adc1     ADC input 1
  * @param   adc2     ADC input 2
  * @param   adc3     ADC input 3 or temperature in degree if enabled
  * @return           true on success, false on error
  */
-bool lis3dh_get_adc (lis3dh_sensor_t* dev,
-                     uint16_t* adc1, uint16_t* adc2, uint16_t* adc3);
+bool lis3dh_get_adc (uint16_t* adc1, uint16_t* adc2, uint16_t* adc3);
 
 
 // ---- Low level interface functions -----------------------------
@@ -429,8 +400,7 @@ bool lis3dh_get_adc (lis3dh_sensor_t* dev,
  * @param   len      number of bytes to be written to the register
  * @return           true on success, false on error
  */
-bool lis3dh_reg_write (lis3dh_sensor_t* dev, 
-                       uint8_t reg, uint8_t *data, uint16_t len);
+bool lis3dh_reg_write (uint8_t reg, uint8_t *data, uint16_t len);
 
 /**
  * @brief   Direct read from register
@@ -446,11 +416,19 @@ bool lis3dh_reg_write (lis3dh_sensor_t* dev,
  * @param   len      number of bytes to be read from the register
  * @return           true on success, false on error
  */
-bool lis3dh_reg_read (lis3dh_sensor_t* dev, 
-                      uint8_t reg, uint8_t *data, uint16_t len);
+bool lis3dh_reg_read (uint8_t reg, uint8_t *data, uint16_t len);
 
-#ifdef __cplusplus
-}
-#endif /* End of CPP guard */
+private:
+/**
+ * @brief   Check the chip ID to test whether sensor is available
+ */
+bool lis3dh_is_available ();
+bool lis3dh_reset();
+bool lis3dh_spi_read(uint8_t reg, uint8_t *data, uint16_t len);
+bool lis3dh_spi_write(uint8_t reg, uint8_t *data, uint16_t len);
+bool lis3dh_i2c_read(uint8_t reg, uint8_t *data, uint16_t len);
+bool lis3dh_i2c_write(uint8_t reg, uint8_t *data, uint16_t len);
+}; // LIS3DH
+
 
 #endif /* __LIS3DH_H__ */

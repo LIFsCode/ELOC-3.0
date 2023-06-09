@@ -48,6 +48,7 @@ typedef struct Sound {
 
 typedef std::vector<Sound> Melody;
 
+//TODO create 2 versions of Buzzer (blocking & non-blocking)
 class BuzzerBase
 {
 private:
@@ -64,14 +65,37 @@ private:
 	unsigned int mFreq;
 	bool mSpeedModeHighLow;
 
-public:
-
-
+   unsigned int mOnDurationMs;
+   unsigned int mOffDurationMs;
+   unsigned int mBeeps;
 
    esp_err_t ledcWriteTone(uint32_t freq,uint32_t duration); 
    esp_err_t ledcWriteNote(note_t note, uint8_t octave, uint32_t duration);
+
+public:
+
+	/* Beep continuously until stopBeep() is called. */
+	void beep(unsigned int frequency);
+	/* Beep at a given frequency an specific number of times. */
+	void beep(unsigned int frequency, unsigned int beeps);
+	/* Beep sequence at a given frequency. */
+	void beep(unsigned int frequency, unsigned int const onDurationMs, unsigned int const offDurationMs, unsigned int const beeps);
+	/* Beep at a given frequency, for an specific duration in ms. */
+	void singleBeep(unsigned int frequency, unsigned int durationMs);
+	/* Stop beeping. */
+	void stopBeep();
+	/* Set On duration in ms used for all beep. */
+	void setOnDurationMs(unsigned int durationMs);
+	/* Set Off duration in ms used for all beeps. */
+	void setOffDurationMs(unsigned int durationMs);
+
+   /* play the given sound with the given duration */
+   void playSound(const Sound& sound);
+   /* play the given sequence of sounds */
+   void playMelody(const Melody& melody);
+
    BuzzerBase(unsigned int pin);
-   BuzzerBase(unsigned int channel, unsigned int resolution, unsigned int pin, unsigned int defaultFreq, bool speedModeHighLow);
+   BuzzerBase(unsigned int pin, unsigned int channel, unsigned int resolution, unsigned int pin, unsigned int defaultFreq, bool speedModeHighLow);
    ~BuzzerBase();
 };
 

@@ -56,17 +56,16 @@
 
 const int GPIO_SENSE_BIT = BIT0;
 
-BuzzerBase::BuzzerBase(unsigned int channel, unsigned int resolution, unsigned int pin, unsigned int defaultFreq, bool speedModeHighLow) :
+BuzzerBase::BuzzerBase(unsigned int pin, unsigned int channel, unsigned int resolution, unsigned int pin, unsigned int defaultFreq, bool speedModeHighLow) :
     mPin(pin), mChannel(channel), mResolution(resolution), mFreq(defaultFreq), mSpeedModeHighLow(speedModeHighLow)
 {
     this->init();
 }
 
 BuzzerBase::BuzzerBase(unsigned int pin) :
-    mPin(pin), mChannel(DEFAULT_CHANNEL), mResolution(DEFAULT_RESOLUTION), mFreq(DEFAULT_FREQ), mSpeedModeHighLow(true)
+    mPin(pin), mChannel(DEFAULT_CHANNEL), mResolution(DEFAULT_RESOLUTION), mFreq(DEFAULT_FREQ), mSpeedModeHighLow(true),
+    mOnDurationMs(200), mOffDurationMs(200),mBeeps(1)
 {
-    
-
     this->init();
 }
 
@@ -77,6 +76,8 @@ BuzzerBase::~BuzzerBase() {
 
 esp_err_t BuzzerBase::init() {
     ESP_LOGI(TAG, "initialize");
+
+    // TODO: store the timer_conf and ledc_conf in the buzzer class
 
     //gpio_set_direction(static_cast<gpio_num_t>(mPin), GPIO_MODE_OUTPUT);
 
@@ -184,3 +185,59 @@ esp_err_t BuzzerBase::ledcWriteNote(note_t note, uint8_t octave, uint32_t durati
     return ledcWriteTone(noteFreq, duration);
 }
 
+
+/* Start beeping continuously at a given frequency. */
+void BuzzerBase::beep(unsigned int frequency)
+{
+	beep(frequency, 1, 0, 1);
+}
+/* Beep at a given frequency an specific number of beeps. */
+void BuzzerBase::beep(unsigned int frequency, unsigned int beeps)
+{
+	beep(frequency, mOnDurationMs, mOffDurationMs, beeps);
+}
+/* Beep sequence at a given frequency. */
+void BuzzerBase::beep(unsigned int frequency, unsigned int const onDurationMs, unsigned int const offDurationMs, unsigned int const beeps)
+{
+	mFreq = frequency;
+	mOnDurationMs = onDurationMs;
+	mOffDurationMs = offDurationMs;
+	mBeeps = beeps;
+    for (int i=0; i< mBeeps; i++) {
+        ledcWriteTone(mFreq, mOnDurationMs);
+        vTaskDelay(mOffDurationMs/portTICK_PERIOD_MS);
+    }
+}
+
+/* Start beeping at a given frequency, for an specific duration. */
+void BuzzerBase::singleBeep(unsigned int frequency, unsigned int duration)
+{
+	beep(frequency, duration, mOffDurationMs, 1);
+}
+/* Stop beeping. */
+void BuzzerBase::stopBeep()
+{
+    stop();
+}
+
+/* Set On duration. */
+void BuzzerBase::setOnDurationMs(unsigned int durationMs)
+{
+	mOnDurationMs = durationMs;
+}
+/* Set Off duration. */
+void BuzzerBase::setOffDurationMs(unsigned int durationMs)
+{
+	mOffDurationMs = durationMs;
+}
+
+
+void BuzzerBase::playSound(const Sound& sound) {
+    ledcWriteNote(sound.note, sound.octave, sound.duration);
+}
+void BuzzerBase::playMelody(const Melody& melody) {
+    for(Melody::const_iterator it = melody.begin(); it != melody.end(); ++it) {
+        playSound(*it);
+        vTaskDelay(it->pauseDuration/portTICK_PERIOD_MS);
+    }
+}

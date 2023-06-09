@@ -46,6 +46,13 @@
         #define I2S_MIC_SERIAL_CLOCK GPIO_NUM_18     
         #define I2S_MIC_SERIAL_DATA   GPIO_NUM_19        
   
+		// i2c config
+		#define USE_I2C
+
+		#define I2C_PORT I2C_NUM_0
+		#define I2C_SDA_PIN GPIO_NUM_23
+		#define I2C_SCL_PIN GPIO_NUM_22
+		#define I2C_SPEED_HZ 100000
 
 
 #endif

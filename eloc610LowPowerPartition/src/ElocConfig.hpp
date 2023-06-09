@@ -40,4 +40,12 @@ extern String gMicBluetoothOnOrOff;
 void writeMicInfo();
 void readMicInfo();
 
+//BUGME: encapsulate these in a struct & implement a getter
+extern uint32_t gSampleRate;
+extern int gSecondsPerFile;
+extern String gLocation;
+
+void writeSettings(String settings);
+void readSettings();
+
 #endif // ELOCCONFIG_HPP_

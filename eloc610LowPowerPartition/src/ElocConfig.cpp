@@ -21,10 +21,14 @@
  * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
+#include <esp_log.h>
 
-
+#include "Esp.h"
 #include <FS.h>
 #include "SPIFFS.h"
+#include "ElocConfig.hpp"
+
+const char* TAG = "CONFIG";
 
 //BUGME: encapsulate these in a struct & implement a getter
 String gMicType="ns";
@@ -35,55 +39,311 @@ String gMicHeight="ns";
 String gMicMountType="ns";
 String gMicBluetoothOnOrOff="on";
 
-
-
 void writeMicInfo() {
-  File file2 = SPIFFS.open("/micinfo.txt", FILE_WRITE);
-  
-  file2.print(gMicType+'\n');
-  file2.print(gMicBitShift+'\n');
-  file2.print(gMicGPSCoords+'\n');
-  file2.print(gMicPointingDirectionDegrees+'\n');
-  file2.print(gMicHeight+'\n');
-  file2.print(gMicMountType+'\n');
-  file2.print(gMicBluetoothOnOrOff+'\n');
-  file2.close();
-  Serial.println("micinfo: "+gMicType+"  "+gMicBitShift+"  "+gMicGPSCoords+"  "+gMicPointingDirectionDegrees+" "+gMicHeight+" "+gMicMountType+" "+gMicBluetoothOnOrOff);
+    File file2 = SPIFFS.open("/micinfo.txt", FILE_WRITE);
 
-
-
-
-
+    file2.print(gMicType + '\n');
+    file2.print(gMicBitShift + '\n');
+    file2.print(gMicGPSCoords + '\n');
+    file2.print(gMicPointingDirectionDegrees + '\n');
+    file2.print(gMicHeight + '\n');
+    file2.print(gMicMountType + '\n');
+    file2.print(gMicBluetoothOnOrOff + '\n');
+    file2.close();
+    Serial.println("micinfo: " + gMicType + "  " + gMicBitShift + "  " + gMicGPSCoords + "  " + gMicPointingDirectionDegrees + " " + gMicHeight + " " + gMicMountType + " " + gMicBluetoothOnOrOff);
 }
 
-
-void readMicInfo() {
-     if(!(SPIFFS.exists("/micinfo.txt"))){
-
-      printf("micinfo.txt not exist");
-      writeMicInfo();
-      
-        
-
+void readMicInfo()
+{
+    if (!(SPIFFS.exists("/micinfo.txt"))) {
+        printf("micinfo.txt not exist");
+        writeMicInfo();
     }
     File file2 = SPIFFS.open("/micinfo.txt", FILE_READ);
-    gMicType=file2.readStringUntil('\n');
+    gMicType = file2.readStringUntil('\n');
     gMicType.trim();
-    gMicBitShift=file2.readStringUntil('\n');
+    gMicBitShift = file2.readStringUntil('\n');
     gMicBitShift.trim();
-    gMicGPSCoords=file2.readStringUntil('\n');
+    gMicGPSCoords = file2.readStringUntil('\n');
     gMicGPSCoords.trim();
-    gMicPointingDirectionDegrees=file2.readStringUntil('\n');
+    gMicPointingDirectionDegrees = file2.readStringUntil('\n');
     gMicPointingDirectionDegrees.trim();
-    gMicHeight=file2.readStringUntil('\n');
+    gMicHeight = file2.readStringUntil('\n');
     gMicHeight.trim();
-    gMicMountType=file2.readStringUntil('\n');
+    gMicMountType = file2.readStringUntil('\n');
     gMicMountType.trim();
-    gMicBluetoothOnOrOff=file2.readStringUntil('\n');
+    gMicBluetoothOnOrOff = file2.readStringUntil('\n');
     gMicBluetoothOnOrOff.trim();
 
     file2.close();
-    Serial.println("micinfo: "+gMicType+"  "+gMicBitShift+"  "+gMicGPSCoords+"  "+gMicPointingDirectionDegrees+" "+gMicHeight+" "+gMicMountType+" "+gMicBluetoothOnOrOff);
+    Serial.println("micinfo: " + gMicType + "  " + gMicBitShift + "  " + gMicGPSCoords + "  " + gMicPointingDirectionDegrees + " " + gMicHeight + " " + gMicMountType + " " + gMicBluetoothOnOrOff);
+}
+
+//BUGME: encapsulate these in a struct & implement a getter
+uint32_t gSampleRate;
+int gSecondsPerFile= 60;
+String gLocation = "not_set";
+
+//BUGME: these function should be part of some bluetooth handler
+//       settings should only return settings as string, not directly send it 
+void btwrite(String theString);
+void sendElocStatus();
+
+void sendSettings()
+{
+    btwrite("#" + String(gSampleRate) + "#" + String(gSecondsPerFile) + "#" + gLocation);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    // btwrite("elocName: "+readNodeName() + " "+gFirmwareVersion);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    // btwrite(String(gFreeSpace)+ " GB free");
+}
+
+void writeSettings(String settings)
+{
+    settings.trim();
+
+    if (settings.endsWith("getstats"))
+    {
+      btwrite("\n\n");
+      sendElocStatus();
+      btwrite("\n\n");
+      delay(500);
+      sendSettings();
+      return;
+    }
+
+    if (settings.endsWith("vcal"))
+    {
+      ESP_LOGW(TAG, "vcal is not supported! Usefullness is questionable");
+      /*********** vcal is not supported currently ***********
+       *  If reintroduced it must be calibrated against a defined value, e.g. by measuring with a external multimeter
+
+      btwrite("\n\nCalibrating voltage with VLow="+String(gvLow)+ " volts\n");
+      calculateVoltageOffset();
+       btwrite("voltage offset is now "+String(gVoltageOffset));
+
+      File file = SPIFFS.open("/voltageoffset.txt", FILE_WRITE);
+      file.print(gVoltageOffset);
+      file.close();
+      gVoltageCalibrationDone=true;
+      delay(5000);
+      **************************************************************/
+      sendSettings();
+      return;
+    }
+
+    if (settings.endsWith("bton"))
+    {
+      gMicBluetoothOnOrOff = "on";
+      btwrite("\n\nbluetooth ON while recording. Use phone to stop record.\n\n");
+      writeMicInfo();
+      sendSettings();
+      return;
+    }
+
+    if (settings.endsWith("btoff"))
+    {
+      gMicBluetoothOnOrOff = "off";
+      btwrite("\n\nbluetooth OFF while recording. Use button to stop record.\n\n");
+
+      writeMicInfo();
+      sendSettings();
+      return;
+    }
+
+    if (settings.endsWith("micinfo"))
+    {
+
+      btwrite("****** micinfo: ******** \nTYPE: " + gMicType + "\nGAIN: " + gMicBitShift + "\nGPSCoords: " + gMicGPSCoords + "\nDIRECTION: " + gMicPointingDirectionDegrees + "\nHEIGHT: " + gMicHeight + "\nMOUNT: " + gMicMountType + "\nBluetooth when record: " + gMicBluetoothOnOrOff);
+      btwrite("\n");
+      sendSettings();
+      return;
+    }
+
+    if (settings.endsWith("help"))
+    {
+
+      // btwrite("\n***commands***\nXXsetgain (11=forest, 14=Mahout)\nXXXXsettype (set mic type)\nXXXXsetname (set eloc bt name)\nupdate (reboot + upgrade firmware)\nbtoff BT off when record\nbton BT on when record\ndelete (don't use)\n\n");
+      sendSettings();
+      return;
+    }
+
+    if (settings.endsWith("settype"))
+    {
+      gMicType = settings.substring(settings.lastIndexOf('#') + 1, settings.length() - 7);
+      gMicType.trim();
+      if (gMicType.length() == 0)
+        gMicType = "ns";
+      writeMicInfo();
+      btwrite("Mic Type is now " + gMicType);
+      sendSettings();
+      return;
+    }
+
+    if (settings.endsWith("setgain"))
+    {
+      gMicBitShift = settings.substring(settings.lastIndexOf('#') + 1, settings.length() - 7);
+      gMicBitShift.trim();
+      btwrite(gMicBitShift);
+      if (gMicBitShift == "11" || gMicBitShift == "12" || gMicBitShift == "13" || gMicBitShift == "14" || gMicBitShift == "15" || gMicBitShift == "16")
+      {
+      }
+      else
+      {
+        btwrite("Error, mic gain out of range. (11 to 16) ");
+        gMicBitShift = "11";
+      }
+
+      writeMicInfo();
+      // int temp=gMicBitShift.toInt();
+      btwrite("Mic gain is now " + gMicBitShift);
+      sendSettings();
+      return;
+    }
+
+    if (settings.endsWith("update"))
+    {
+      // updateFirmware();
+      File temp = SPIFFS.open("/update.txt", "w");
+      temp.close();
+
+      btwrite("\nEloc will restart for firmware update. Please re-connect in 1 minute.\n");
+      delay(1000);
+      ESP.restart();
+      return;
+    }
+
+    if (settings.endsWith("setname"))
+    {
+      String temp;
+      temp = settings.substring(settings.lastIndexOf('#') + 1, settings.length() - 7);
+      temp.trim();
+      // temp=settings.lastIndexOf('#');
+
+      File file = SPIFFS.open("/nodename.txt", FILE_WRITE);
+      file.print(temp);
+
+      file.close();
+      Serial.println("new name: " + temp);
+      btwrite("new name " + temp + "\n\n--- Restarting ELOC ----");
+      vTaskDelay(pdMS_TO_TICKS(100));
+      sendSettings();
+      // readSettings();
+      vTaskDelay(pdMS_TO_TICKS(500));
+      ESP.restart();
+      return;
+    }
+
+    //   if (settings.endsWith("sync")) {
+
+    //       // btwrite("syncnow");
+    //       // btwrite("syncing with time.google.com");
+    //       // vTaskDelay(pdMS_TO_TICKS(5200));
+    //       sendSettings();
+
+    //        return;
+    // }
+
+    if (settings.endsWith("delete"))
+    {
+
+      // SPIFFS.
+      SPIFFS.remove("/settings.txt");
+      SPIFFS.remove("/nodename.txt");
+      SPIFFS.remove("/micinfo.txt");
+
+      btwrite("spiffs settings removed");
+      vTaskDelay(pdMS_TO_TICKS(100));
+      sendSettings();
+
+      return;
+    }
+
+    File file = SPIFFS.open("/settings.txt", FILE_WRITE);
+
+    if (!file)
+    {
+      printf("There was an error opening the file for writing");
+      return;
+    }
+
+    /*if(file.print(settings)){
+        printf("File was written");;
+    } else {
+        printf("File write failed");
+    }*/
+
+    file.print(settings);
+
+    file.close();
+}
+
+String getSubstring(String data, char separator, int index) {
+    int found = 0;
+    int strIndex[] = { 0, -1 };
+    int maxIndex = data.length() - 1;
+
+    for (int i = 0; i <= maxIndex && found <= index; i++) {
+        if (data.charAt(i) == separator || i == maxIndex) {
+            found++;
+            strIndex[0] = strIndex[1] + 1;
+            strIndex[1] = (i == maxIndex) ? i+1 : i;
+        }
+    }
+    return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+
+void readSettings() {
+  
+  //SPIFFS.remove("/settings.txt");
+  //vTaskDelay(pdMS_TO_TICKS(100));
+
+  if (!(SPIFFS.exists("/settings.txt"))) {
+    writeSettings("#settings#"+String(gSampleRate)+"#"+String(gSecondsPerFile)+"#"+gLocation);
+    printf("wrote settings to spiffs");
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+  }
+
+  
+  File file2 = SPIFFS.open("/settings.txt");
+ 
+    if(!file2){
+ 
+      printf("Failed to open file for reading");
+      return;
+        
+
+    }
  
 
+
+  //String temp = file2.readStringUntil('\n');
+
+  String temp = file2.readString();
+  temp.trim();
+
+
+  gSampleRate=getSubstring(temp, '#', 2).toInt();
+  //temp 
+  //if (gSampleRate==44100) gSampleRate=48000;
+  gSecondsPerFile=getSubstring(temp, '#', 3).toInt();
+  gLocation= getSubstring(temp, '#', 4);
+  gLocation.trim();
+
+  Serial.println("settings read: "+temp);
+
+    /*printf("File Content:");
+ 
+    while(file2.available()){
+ 
+        Serial.write(file2.read());
+    }*/
+
+ 
+    file2.close();
+
 }
+
+

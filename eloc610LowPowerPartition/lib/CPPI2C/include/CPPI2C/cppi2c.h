@@ -2,6 +2,8 @@
 
 #include "driver/i2c.h"
 #include "esp_intr_alloc.h"
+#include <vector>
+#include <stdint.h>
 
 namespace CPPI2C
 {
@@ -25,6 +27,22 @@ namespace CPPI2C
                              bool sda_pullup_en = false,
                              bool scl_pullup_en = false,
                              uint32_t clk_flags = I2C_SCLK_SRC_FLAG_FOR_NOMAL);
+
+        /**
+         * @brief Checks if the given I2C address is accessible
+         * 
+         * @param dev_addr I2C address
+         * @return true : found device
+         * @return false : not found
+         */
+        bool checkPresence(uint8_t dev_addr);
+        /**
+         * @brief Scans i2c bus for all addresses
+         * 
+         * @param dev_addr Contains the list of all found i2c addresses. vector cleared first
+         * @return uint32_t number of found devices
+         */
+        uint32_t scan(std::vector<uint8_t>& dev_addr);
 
         uint8_t ReadRegister(uint8_t dev_addr, uint8_t reg_addr);        
         esp_err_t WriteRegister(uint8_t dev_addr, uint8_t reg_addr, uint8_t txData);

@@ -37,6 +37,29 @@ namespace CPPI2C
 
     }
 
+    bool I2c::checkPresence(uint8_t dev_addr) {
+        int ret;
+        i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+        i2c_master_start(cmd);
+        i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_WRITE, 1);
+        i2c_master_stop(cmd);
+        ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, pdMS_TO_TICKS(100));
+        i2c_cmd_link_delete(cmd);
+        return (ret == ESP_OK);
+    }
+
+    uint32_t I2c::scan(std::vector<uint8_t>& dev_addr) {
+        printf("i2c scan: \n");
+        dev_addr.clear();
+        for (uint8_t i = 1; i < 127; i++) {
+            if (this->checkPresence(i)) {
+                printf("Found device at: 0x%2x\n", i);
+                dev_addr.push_back(i);
+            }
+        }
+        return dev_addr.size();
+    }
+
     uint8_t I2c::ReadRegister(uint8_t dev_addr, uint8_t reg_addr)
     {
         uint8_t rxBuf{};

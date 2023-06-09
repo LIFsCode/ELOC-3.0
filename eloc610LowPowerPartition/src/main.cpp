@@ -669,6 +669,10 @@ void record(I2SSampler *input) {
   
   gRecording=true;
   char fname[100];
+  
+  //BUGME: this is very dirty: I2SMEMSSampler directly accesses global variable gbitShift
+  //        the high power partition uses gMicBitShift (WTF?) but its never set through config
+  gbitShift=getMicInfo().MicBitShift.toInt();
 
     input->start();
   gRealSampleRate=(int32_t)(i2s_get_clk(I2S_NUM_0));

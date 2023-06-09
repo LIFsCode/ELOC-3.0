@@ -56,7 +56,7 @@
 
 const int GPIO_SENSE_BIT = BIT0;
 
-BuzzerBase::BuzzerBase(unsigned int pin, unsigned int channel, unsigned int resolution, unsigned int pin, unsigned int defaultFreq, bool speedModeHighLow) :
+BuzzerBase::BuzzerBase(unsigned int pin, unsigned int channel, unsigned int resolution, unsigned int defaultFreq, bool speedModeHighLow) :
     mPin(pin), mChannel(channel), mResolution(resolution), mFreq(defaultFreq), mSpeedModeHighLow(speedModeHighLow)
 {
     this->init();

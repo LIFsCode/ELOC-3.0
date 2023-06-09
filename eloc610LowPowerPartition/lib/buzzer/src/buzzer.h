@@ -95,7 +95,7 @@ public:
    void playMelody(const Melody& melody);
 
    BuzzerBase(unsigned int pin);
-   BuzzerBase(unsigned int pin, unsigned int channel, unsigned int resolution, unsigned int pin, unsigned int defaultFreq, bool speedModeHighLow);
+   BuzzerBase(unsigned int pin, unsigned int channel, unsigned int resolution, unsigned int defaultFreq, bool speedModeHighLow);
    ~BuzzerBase();
 };
 

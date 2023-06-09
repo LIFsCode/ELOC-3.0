@@ -268,7 +268,7 @@ static  void IRAM_ATTR buttonISR(void *args) {
 
 
 
-void LEDflashError() {
+static void LEDflashError() {
       ESP_LOGI(TAG, "-----fast flash------------");
       for (int i=0;i<10;i++){
        gpio_set_level(STATUS_LED, 1);
@@ -279,21 +279,29 @@ void LEDflashError() {
 }
 
 
-void changeBootPartition() {  ///will always set boot partition back to partition0 except if it 
+void printPartitionInfo() {  ///will always set boot partition back to partition0 except if it 
     
     
-    const esp_partition_t *partition = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, "partition0");
-    //ESP_LOGI(TAG, "%d  address", partition->address);
-    
-    if (partition==NULL) {
-           ESP_LOGE(TAG, "\npartition0 not found. Are you sure you built/flashed it correctly? \n");
-           delay(2000);
-    } else {
-      esp_ota_set_boot_partition(partition);
-       ESP_LOGI(TAG, "changed boot partition to  partition0");
-      //vTaskDelay(pdMS_TO_TICKS(5000));
-      //esp_restart();
+    esp_partition_iterator_t it;
 
+    ESP_LOGI(TAG, "Iterating through app partitions...");
+    it = esp_partition_find(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, NULL);
+
+    // Loop through all matching partitions, in this case, all with the type 'data' until partition with desired
+    // label is found. Verify if its the same instance as the one found before.
+    for (; it != NULL; it = esp_partition_next(it)) {
+        const esp_partition_t *part = esp_partition_get(it);
+        ESP_LOGI(TAG, "\tfound partition '%s' at offset 0x%" PRIx32 " with size 0x%" PRIx32, part->label, part->address, part->size);
+    }
+    // Release the partition iterator to release memory allocated for it
+    esp_partition_iterator_release(it);
+
+    ESP_LOGI(TAG, "Currently running partitions: ");
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    ESP_LOGI(TAG, "\t '%s' at offset 0x%" PRIx32 " with size 0x%" PRIx32, running->label, running->address, running->size);
+    esp_app_desc_t running_app_info;
+    if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK) {
+        ESP_LOGI(TAG, "Running firmware version: %s", running_app_info.version);
     }
 
 }
@@ -693,7 +701,7 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "\nSETUP--start\n");
 
-    changeBootPartition(); // so if reboots, always boot into the bluetooth partition
+    printPartitionInfo(); // so if reboots, always boot into the bluetooth partition
 
     printRevision();
 

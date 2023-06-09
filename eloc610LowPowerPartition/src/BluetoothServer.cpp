@@ -39,6 +39,7 @@
 #include "lis3dh.h"
 #include "utils/strutils.h"
 #include "BluetoothServer.hpp"
+#include "FirmwareUpdate.hpp"
 #include "ElocConfig.hpp"
 #include "ElocSystem.hpp"
 
@@ -349,14 +350,17 @@ void writeSettings(String settings) {
     }
 
     if (settings.endsWith("update")) {
-        // updateFirmware();
-        File temp = SPIFFS.open("/update.txt", "w");
-        temp.close();
-
-        btwrite("\nEloc will restart for firmware update. Please re-connect in 1 minute.\n");
-        delay(1000);
-        ESP.restart();
-        return;
+        if (!updateFirmware()) {
+            ESP_LOGE(TAG, "Failed to update firmware!");
+            btwrite("\nERROR: firmwae update failed!");
+            return;
+        }
+        else {
+            btwrite("\nEloc will restart for firmware update. Please re-connect in 1 minute.\n");
+            delay(1000);
+            ESP.restart();
+            return;
+        }
     }
 
     if (settings.endsWith("setname")) {

@@ -31,13 +31,13 @@
 
 #include "config.h"
 #include "lis3dh.h"
-#include "ManualWakeup.hpp"
+#include "BluetoothServer.hpp"
 #include "ElocSystem.hpp"
 
 #include "Battery.hpp"
 
 
-static const char *TAG = "ManualWakeup";
+static const char *TAG = "BluetoothServer";
 
 /**
  * In this case, any of the possible interrupts on interrupt signal *INT1* is
@@ -87,7 +87,7 @@ void wakeup_task (void *pvParameters)
 }
 
 
-esp_err_t ManualWakeupConfig(bool installGpioIsr) {
+esp_err_t BluetoothServerSetup(bool installGpioIsr) {
 
     LIS3DH& lis3dh = ElocSystem::GetInstance().getLIS3DH();
 

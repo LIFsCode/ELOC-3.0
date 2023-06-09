@@ -21,14 +21,18 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#ifndef BLUETOOTHSERVER_HPP_
+#define BLUETOOTHSERVER_HPP_
+
 #include "esp_err.h"
 
-/// @brief ManualWakeupConfig will setup LIS3DH for waking up ESP on double tap event
-/// @param installGpioIsr : true: ManualWakeupConfig will call gpio_install_isr_service()
-///                       : false: ManualWakeupConfig() will expect gpio isr to be already installed
+/// @brief BluetoothServerSetup will setup LIS3DH for waking up ESP on double tap event
+/// @param installGpioIsr : true: BluetoothServerSetup will call gpio_install_isr_service()
+///                       : false: BluetoothServerSetup() will expect gpio isr to be already installed
 /// @return 
-esp_err_t ManualWakeupConfig(bool installGpioIsr);
+esp_err_t BluetoothServerSetup(bool installGpioIsr);
 
+#endif // BLUETOOTHSERVER_HPP_
 
 
 

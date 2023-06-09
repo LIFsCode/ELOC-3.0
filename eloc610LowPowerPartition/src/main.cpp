@@ -44,7 +44,7 @@
 #include "Battery.hpp"
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
-#include "ManualWakeup.hpp"
+#include "BluetoothServer.hpp"
 
 static const char *TAG = "main";
 
@@ -1206,7 +1206,7 @@ readMicInfo();
 ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
 
 ESP_LOGI(TAG, "Creating LIS3DH wakeup task...");
-if (esp_err_t err = ManualWakeupConfig(false)) {
+if (esp_err_t err = BluetoothServerSetup(false)) {
   ESP_LOGI(TAG, "ManualWakeupConfig %s", esp_err_to_name(err));
 }
 

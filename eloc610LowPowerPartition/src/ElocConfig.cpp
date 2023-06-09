@@ -59,47 +59,6 @@ void setMicType(String MicType) {
 const micInfo_t& getMicInfo() {
     return gMicInfo;
 }
-void writeMicInfo() {
-
-    File file2 = SPIFFS.open("/micinfo.txt", FILE_WRITE);
-
-    file2.print(gMicInfo.MicType + '\n');
-    file2.print(String(gMicInfo.MicBitShift) + '\n');
-    file2.print(gMicInfo.MicGPSCoords + '\n');
-    file2.print(gMicInfo.MicPointingDirectionDegrees + '\n');
-    file2.print(gMicInfo.MicHeight + '\n');
-    file2.print(gMicInfo.MicMountType + '\n');
-    // file2.print(gMicInfo.MicBluetoothOnOrOff + '\n');
-    file2.close();
-    // String info = "micinfo: " + gMicInfo.MicType + "  " + String(gMicInfo.MicBitShift) + "  " + gMicInfo.MicGPSCoords + "  " + gMicInfo.MicPointingDirectionDegrees + " " + gMicInfo.MicHeight + " " + gMicInfo.MicMountType + " " + gMicInfo.MicBluetoothOnOrOff;
-    // ESP_LOGI(TAG, "%s", info.c_str());
-}
-
-void readMicInfo() {
-
-    if (!(SPIFFS.exists("/micinfo.txt"))) {
-        printf("micinfo.txt not exist");
-        writeMicInfo();
-    }
-    File file2 = SPIFFS.open("/micinfo.txt", FILE_READ);
-    gMicInfo.MicType = file2.readStringUntil('\n');
-    gMicInfo.MicType.trim();
-    gMicInfo.MicBitShift = file2.readStringUntil('\n').toInt();
-    gMicInfo.MicGPSCoords = file2.readStringUntil('\n');
-    gMicInfo.MicGPSCoords.trim();
-    gMicInfo.MicPointingDirectionDegrees = file2.readStringUntil('\n');
-    gMicInfo.MicPointingDirectionDegrees.trim();
-    gMicInfo.MicHeight = file2.readStringUntil('\n');
-    gMicInfo.MicHeight.trim();
-    gMicInfo.MicMountType = file2.readStringUntil('\n');
-    gMicInfo.MicMountType.trim();
-    // gMicInfo.MicBluetoothOnOrOff = file2.readStringUntil('\n');
-    // gMicInfo.MicBluetoothOnOrOff.trim();
-
-    file2.close();
-    // String info = "micinfo: " + gMicInfo.MicType + "  " + gMicInfo.MicBitShift + "  " + gMicInfo.MicGPSCoords + "  " + gMicInfo.MicPointingDirectionDegrees + " " + gMicInfo.MicHeight + " " + gMicInfo.MicMountType + " " + gMicInfo.MicBluetoothOnOrOff;
-    // ESP_LOGI(TAG, "%s", info.c_str());
-}
 /**************************************************************************************************/
 
 
@@ -175,33 +134,9 @@ bool setNodeName(const String& nodeName) {
 
 /**************************************************************************************************/
 
-String readNodeName() {
-
-    // int a =gDeleteMe.length();
-    // if (a==2) {a=1;}
-    if (!(SPIFFS.exists("/nodename.txt"))) {
-
-        ESP_LOGI(TAG, "No nodename set. Returning ELOC_NONAME");
-        return ("ELOC_NONAME");
-    }
-
-    File file2 = SPIFFS.open("/nodename.txt", FILE_READ);
-
-    // String temp = file2.readStringUntil('\n');
-
-    String temp = file2.readString();
-    temp.trim();
-    file2.close();
-    ESP_LOGI(TAG, "node name: %s", temp.c_str());
-    return (temp);
-    // return("");
-}
-
 /*************************** Global settings via config file **************************************/
 //BUGME: handle this through file system
 extern bool gMountedSDCard;
-
-
 
 
 void loadDevideInfo(const JsonObject& device) {
@@ -368,4 +303,9 @@ bool writeConfig() {
         return false;
     }
     return true;
+}
+
+void clearConfig() {
+    //TODO: set config to default
+    remove(CFG_FILE);
 }

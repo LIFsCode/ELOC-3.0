@@ -85,7 +85,7 @@ static esp_err_t disableBluetooth() {
 }
 
 static esp_err_t enableBluetooth() {
-    String nodeName = readNodeName();
+    String nodeName = getDeviceInfo().nodeName;
     ESP_LOGI(TAG, "Enable BT with node %s", nodeName.c_str());
     SerialBT.begin(nodeName, false);
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -189,7 +189,7 @@ void sendElocStatus() { // compiles and sends eloc config
     sendstring = sendstring + "Time:  " + getProperDateTime() + "\n";
     sendstring = sendstring + "Ranger:  " + "_@b$_" + "\n";
     // sendstring=sendstring+ "\n\n";
-    sendstring = sendstring + "!0!" + readNodeName() + "\n"; // dont change
+    sendstring = sendstring + "!0!" + getDeviceInfo().nodeName + "\n"; // dont change
 
     sendstring = sendstring + "!1!" + gFirmwareVersion + "\n"; // firmware
 
@@ -281,7 +281,7 @@ void writeSettings(String settings) {
     if (settings.endsWith("bton")) {
         setBluetoothOnOrOffDuringRecord(true);
         btwrite("\n\nbluetooth ON while recording. Use phone to stop record.\n\n");
-        writeMicInfo();
+        writeConfig();
         sendSettings();
         return;
     }
@@ -290,7 +290,7 @@ void writeSettings(String settings) {
         setBluetoothOnOrOffDuringRecord(false);
         btwrite("\n\nbluetooth OFF while recording. Use button to stop record.\n\n");
 
-        writeMicInfo();
+        writeConfig();
         sendSettings();
         return;
     }
@@ -320,7 +320,7 @@ void writeSettings(String settings) {
         if (MicType.length() == 0)
             MicType = "ns";
         setMicType(MicType);
-        writeMicInfo();
+        writeConfig();
         btwrite("Mic Type is now " + getMicInfo().MicType);
         sendSettings();
         return;
@@ -338,7 +338,7 @@ void writeSettings(String settings) {
         }
         setMicBitShift(MicBitShift.toInt());
 
-        writeMicInfo();
+        writeConfig();
         // int temp=gMicInfo.MicBitShift.toInt();
         btwrite("Mic gain is now " + getMicInfo().MicBitShift);
         sendSettings();
@@ -362,10 +362,8 @@ void writeSettings(String settings) {
         temp.trim();
         // temp=settings.lastIndexOf('#');
 
-        File file = SPIFFS.open("/nodename.txt", FILE_WRITE);
-        file.print(temp);
-
-        file.close();
+        setNodeName(temp);
+        writeConfig();
         ESP_LOGI(TAG, "new name: %s", temp.c_str());
         btwrite("new name " + temp + "\n\n--- Restarting ELOC ----");
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -388,10 +386,7 @@ void writeSettings(String settings) {
 
     if (settings.endsWith("delete")) {
 
-        // SPIFFS.
-        SPIFFS.remove("/settings.txt");
-        SPIFFS.remove("/nodename.txt");
-        SPIFFS.remove("/micinfo.txt");
+        clearConfig();
 
         btwrite("spiffs settings removed");
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -400,62 +395,21 @@ void writeSettings(String settings) {
         return;
     }
 
-    File file = SPIFFS.open("/settings.txt", FILE_WRITE);
-
-    if (!file) {
-        printf("There was an error opening the file for writing");
-        return;
-    }
-
-    /*if(file.print(settings)){
-        printf("File was written");;
-    } else {
-        printf("File write failed");
-    }*/
-
-    file.print(settings);
-
-    file.close();
-}
-void readSettings() {
-
-    // SPIFFS.remove("/settings.txt");
-    // vTaskDelay(pdMS_TO_TICKS(100));
-
-    if (!(SPIFFS.exists("/settings.txt"))) {
-        writeSettings("#settings#" + String(getMicInfo().MicSampleRate) + "#" + String(getConfig().secondsPerFile) + "#" + getDeviceInfo().location);
-        printf("wrote settings to spiffs");
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-    File file2 = SPIFFS.open("/settings.txt");
-    if (!file2) {
-        printf("Failed to open file for reading");
-        return;
-    }
     // String temp = file2.readStringUntil('\n');
-    String temp = file2.readString();
-    temp.trim();
+    settings.trim();
 
-    int MicSampleRate = getSubstring(temp, '#', 2).toInt();
+    int MicSampleRate = getSubstring(settings, '#', 2).toInt();
     setSampleRate(MicSampleRate);
     // temp
     // if (getMicInfo().MicSampleRate==44100) getMicInfo().MicSampleRate=48000;
-    int secondsPerFile = getSubstring(temp, '#', 3).toInt();
+    int secondsPerFile = getSubstring(settings, '#', 3).toInt();
     setSecondsPerFile(secondsPerFile);
-    String location = getSubstring(temp, '#', 4);
+    String location = getSubstring(settings, '#', 4);
     location.trim();
     setLocationName(location);
 
-    ESP_LOGI(TAG, "settings read: %s", temp.c_str());
+    ESP_LOGI(TAG, "settings read: %s", settings.c_str());
 
-    /*printf("File Content:");
-
-    while(file2.available()){
-
-        Serial.write(file2.read());
-    }*/
-
-    file2.close();
 }
 
 void wait_for_bt_command() {
@@ -623,7 +577,7 @@ void wait_for_bt_command() {
                 if (serialIN.startsWith("#settings")) {
                     writeSettings(serialIN);
                     vTaskDelay(pdMS_TO_TICKS(200));
-                    readSettings();
+                    writeConfig();
                     vTaskDelay(pdMS_TO_TICKS(200));
                     btwrite("settings updated");
                     vTaskDelay(pdMS_TO_TICKS(500));

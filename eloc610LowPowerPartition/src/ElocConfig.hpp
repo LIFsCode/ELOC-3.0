@@ -46,8 +46,6 @@ void setMicBitShift(int MicBitShift);
 void setMicType(String MicType);
 void setBluetoothOnOrOffDuringRecord(bool MicBluetoothOnOrOff);
 
-void writeMicInfo();
-void readMicInfo();
 const micInfo_t& getMicInfo();
 
 /// @brief holds all the device specific configuration settings
@@ -85,11 +83,14 @@ bool setNodeName(const String& nodeName);
 extern String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
 extern long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
 
-String readNodeName();
-
-//TODO: why are there 2 different kind of configs?
+/// @brief load configuration from filesystem
 void readConfig();
 
+/// @brief write current configuration to file system
+/// @return True: success
+///         False: failure
 bool writeConfig();
+
+void clearConfig();
 
 #endif // ELOCCONFIG_HPP_

@@ -677,13 +677,6 @@ void saveStatusToSD() {
       //file.print(sendstring);
       fputs(sendstring.c_str(), fp);
       fclose(fp);
-     
-      File file = SPIFFS.open("/currentsession.txt", FILE_WRITE); 
-      file.print(sendstring);
-      file.close();
-
-
-  
 
 }
 
@@ -809,11 +802,8 @@ void app_main(void) {
     }
     mountSDCard();
     freeSpace();
-
-    //BUGME: do not read settings from SPIFFS because there is currently no useable default handling
-    //       in case the file is corrupted or does not exist
-    // readSettings();
-    readMicInfo();
+    
+    readConfig();
 
     rec_req_evt_queue = xQueueCreate(10, sizeof(rec_req_t));
     xQueueReset(rec_req_evt_queue);
@@ -827,8 +817,6 @@ void app_main(void) {
     // setup button as interrupt
     ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)GPIO_BUTTON));
     //ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_BUTTON));
-
-    readConfig();
 
     /** Setup Power Management */
     esp_pm_config_esp32_t cfg = {

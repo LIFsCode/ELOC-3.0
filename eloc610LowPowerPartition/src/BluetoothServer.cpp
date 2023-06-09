@@ -481,6 +481,11 @@ void wait_for_bt_command() {
             if (serialIN.startsWith("record")) {
                 btwrite("\n\nYou are using an old version of the Android app. Please upgrade\n\n");
             }
+            if (serialIN.startsWith("getConfig")) {
+                String cfg;
+                printConfig(cfg);
+                btwrite(cfg);
+            }
 
             if (serialIN.startsWith("_setClk_")) {
                 ESP_LOGI(TAG, "setClk starting");

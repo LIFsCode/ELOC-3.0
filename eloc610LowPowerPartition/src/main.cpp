@@ -463,7 +463,8 @@ void record(I2SSampler *input) {
   ESP_LOGI(TAG, "I2s REAL clockrate in record  %u", gRealSampleRate  );
 
   
-   bool deepSleep=false;
+  int64_t recordStartTime= esp_timer_get_time();
+    bool deepSleep=false;
   float loops;
   int samples_read;
   int64_t longestWriteTimeMillis=0;
@@ -528,6 +529,7 @@ void record(I2SSampler *input) {
                          //  get the i2s buffer overflow ALWAYS
                          // there is no i2s output when DELAY is active. but get buffer overflow always
             
+            gSessionRecordTime=esp_timer_get_time()-recordStartTime;
              if (!getConfig().listenOnly)  {
                   writestart = esp_timer_get_time();
                   writer->write(samples, samples_read);
@@ -599,13 +601,16 @@ void record(I2SSampler *input) {
   free(samples);
   free(graw_samples);
   
-
-
+  gSessionRecordTime=esp_timer_get_time()-recordStartTime;
+  //int64_t recordEndTime= esp_timer_get_time();
+  gTotalRecordTimeSinceReboot=gTotalRecordTimeSinceReboot+gSessionRecordTime; 
+  ESP_LOGI(TAG, "total record time since boot = %s sec", uint64ToString(gTotalRecordTimeSinceReboot/1000/1000).c_str());
  
 
   ESP_LOGI(TAG, "Finished recording");
   //btwrite("Finished recording");
    gRecording=false;
+   gSessionRecordTime=0;
  
    if (deepSleep) doDeepSleep();
 

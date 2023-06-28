@@ -1,0 +1,19 @@
+{
+  "battery": {
+    "type": "no Battery",
+    "state": "Full",
+    "SoC[%]": 0,
+    "voltage[V]": 0.186493337
+  },
+  "session": {
+    "identifier": "",
+    "recordingState": "0",
+    "recordingTime[h]": "0.00"
+  },
+  "device": {
+    "firmware": "ELOC_V0.1",
+    "timeStamp": "0.01",
+    "totalRecordingTime[h]": "0.00",
+    "SdCardFreeSpace[GB]": "704.55"
+  }
+}

@@ -1,5 +1,5 @@
 /*
- * Created on Sun Apr 16 2023
+ * Created on Fri May 05 2023
  *
  * Project: International Elephant Project (Wildlife Conservation International)
  *
@@ -21,17 +21,22 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "esp_err.h"
+#ifndef UTILS_FFSUTILS_H_
+#define UTILS_FFSUTILS_H_
 
-/// @brief ManualWakeupConfig will setup LIS3DH for waking up ESP on double tap event
-/// @param installGpioIsr : true: ManualWakeupConfig will call gpio_install_isr_service()
-///                       : false: ManualWakeupConfig() will expect gpio isr to be already installed
-/// @return 
-esp_err_t ManualWakeupConfig(bool installGpioIsr);
+namespace ffsutil {
+
+/// @brief Prints a list of files & subdirectories with sizes of a given path
+/// @param path filesystem directory which needs to be printed
+void printListDir(const char *path);
+
+void printSPIFFS_size();
+
+bool fileExist(const char* filename);
+
+bool folderExists(const char* folder);
+
+}
 
 
-
-
-
-
-
+#endif // UTILS_FFSUTILS_H_

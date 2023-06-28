@@ -28,6 +28,23 @@
 #include "ELOC_IOEXP.hpp"
 #include "lis3dh.h"
 
+//TODO: check for a good file to place this
+typedef enum {
+    REC_REQ_NONE = 0,
+    REC_REQ_START,
+    REC_REQ_STOP,
+}rec_req_t;
+
+typedef enum {
+    REC_STAT_IDLE = 0,
+    REC_STAT_RECORDING,
+    REC_STAT_ERR_SD_FULL,
+    REC_STAT_ERR_SD_NA
+}rec_stat_t;
+
+//TODO: handle rec_req_evt_queue at a single point
+extern QueueHandle_t rec_req_evt_queue;
+
 class ElocSystem
 {
 private:

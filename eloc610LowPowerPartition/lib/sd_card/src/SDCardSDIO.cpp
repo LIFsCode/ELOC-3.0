@@ -24,7 +24,7 @@ SDCardSDIO::SDCardSDIO(const char *mount_point)
   // formatted in case when mounting fails.
   esp_vfs_fat_sdmmc_mount_config_t mount_config = {
       .format_if_mount_failed = false,
-      .max_files = 2,
+      .max_files = 5,
       .allocation_unit_size = 16 * 1024};
 
   ESP_LOGI(TAG, "Initializing SD card");

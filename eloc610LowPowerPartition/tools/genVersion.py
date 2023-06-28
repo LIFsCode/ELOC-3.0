@@ -41,6 +41,10 @@ hf = """
   #define BUILD_CHECKEDIN "{}"
 #endif
 
+#ifndef BUILDDATE
+#define BUILDDATE  __DATE__ " " __TIME__""
+#endif
+
 #ifndef VERSIONTAG
 #define VERSIONTAG VERSION "_" BUILD_HASH BUILD_CHECKEDIN " " __DATE__ " " __TIME__""
 #endif

@@ -35,7 +35,7 @@ public:
 	/* K0375 specific */
 	static const uint32_t LED_STATUS	= 0x01;
 	static const uint32_t LED_BATTERY	= 0x02;
-	static const uint32_t CHARGE_EN		= 0x04;
+	static const uint32_t CHARGE_EN_N	= 0x04;
 	static const uint32_t LiION_DETECT	= 0x08;
 	// Bit 4-7 is unconnected (spare)
 	static const uint32_t NC_IO4 		= 0x10;

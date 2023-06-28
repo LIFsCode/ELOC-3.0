@@ -24,32 +24,47 @@
 #ifndef BATTERY_HPP_
 #define BATTERY_HPP_
 
+#include <vector>
+
 #include "CPPANALOG/analogio.h"
 #include "ElocSystem.hpp"
 #include "esp_err.h"
 
 typedef struct {
-    // use LiFePo defaults: just in case bat_limits_t is used uninitialized
-    float Voff = 2.7;
-    float Vlow = 3.18;
-    float Vfull = 3.3;
+    float Voff;
+    float Vlow;
+    float Vfull;
 }bat_limits_t;
+
+typedef struct { double volt; double soc; } socLUT_t;
 
 class Battery
 {
 private:
+    typedef enum {
+        BAT_NONE = 0,
+        BAT_LiFePo,
+        BAT_LiPo,
+    }batType_t;
     bool mChargingEnabled;
     float mVoltageOffset;
     ElocSystem& mSys;
     CPPANALOG::CppAdc1 mAdc;
     float mVoltage;
+    batType_t mBatteryType;
+    int64_t mLastReadingMs;
 
+    const bool mHasIoExpander;
     const uint32_t AVG_WINDOW;
+    const uint32_t UPDATE_INTERVAL_MS;
     
+    void updateVoltage();
     virtual esp_err_t setChargingEnable(bool enable); 
-    bat_limits_t getLimits();
+    const bat_limits_t& getLimits() const;
+    const std::vector<socLUT_t>&  getSocLUT() const;
     Battery();
     esp_err_t init();
+
 public:
     virtual ~Battery();
     static Battery& GetInstance() {
@@ -59,13 +74,16 @@ public:
 
     virtual float getVoltage();
     virtual float getSoC();
+    const char* getState();
+    const char* getBatType() const;
 
     bool isLow();
     bool isFull();
     bool isEmpty();
 
     virtual esp_err_t setDefaultChargeEn(bool enable); 
-    bool isBatteryPresent();
+
+    bool isCalibrationDone() const;
 };
 
 

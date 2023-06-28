@@ -5,5 +5,8 @@
 .vscode/ipch
 .vscode/*
 
+#ignore all log files
+*.log
+
 #ignore auto generated files
 src/version.h

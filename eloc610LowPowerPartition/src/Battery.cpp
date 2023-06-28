@@ -24,7 +24,6 @@
 
 #include <esp_log.h>
 #include <driver/adc.h>
-#include <esp_adc/adc_oneshot.h>
 #include "config.h"
 
 #include "CPPANALOG/analogio.h"
@@ -36,9 +35,9 @@ static const char* TAG = "Battery";
 
 //TODO: adjust these limits for Li-ION
 static const bat_limits_t C_LiION_LIMITS = {
-    .Voff = 2.7,
-    .Vlow = 3.18,
-    .Vfull = 3.3
+    .Voff = 2.7f,
+    .Vlow = 3.18f,
+    .Vfull = 3.3f
 };
 
 static const bat_limits_t C_LiFePo_LIMITS = {
@@ -47,6 +46,48 @@ static const bat_limits_t C_LiFePo_LIMITS = {
     .Vfull = 3.3
 };
 
+// from https://www.researchgate.net/figure/LiPo-Voltage-SOC-state-of-charge-table-SOC-Cell-Voltage-V-2-Cells-Voltage-V-3_tbl1_341375744
+static const std::vector<socLUT_t> C_LiION_SOCs =
+{
+    {3.27,   0},
+    {3.61,   5},
+    {3.69,  10},
+    {3.71,  15},
+    {3.73,  20},
+    {3.75,  25},
+    {3.77,  30},
+    {3.79,  35},
+    {3.80,  40},
+    {3.82,  45},
+    {3.84,  50},
+    {3.85,  55},
+    {3.87,  60},
+    {3.91,  65},
+    {3.95,  70},
+    {3.98,  75},
+    {4.02,  80},
+    {4.08,  85},
+    {4.11,  90},
+    {4.15,  95},
+    {4.20, 100},
+};  
+
+// from https://footprinthero.com/lifepo4-battery-voltage-charts
+static const std::vector<socLUT_t> C_LiFePo_SOCs =
+{
+    {2.50,   0},
+    {3.00,   9},
+    {3.13,  14},
+    {3.20,  17},
+    {3.23,  20},
+    {3.25,  30},
+    {3.28,  40},
+    {3.30,  70},
+    {3.33,  90},
+    {3.35,  99},
+    {3.40, 100},
+};    
+
 
 Battery::Battery() : 
     mChargingEnabled(true),
@@ -54,42 +95,81 @@ Battery::Battery() :
     mSys(ElocSystem::GetInstance()),
     mAdc(BAT_ADC),
     mVoltage(0.0),
-    AVG_WINDOW(5) // TODO make this configureable
+    mBatteryType(BAT_NONE),
+    mLastReadingMs(0),
+    mHasIoExpander(ElocSystem::GetInstance().hasIoExpander()),
+    AVG_WINDOW(5), // TODO make this configureable
+    UPDATE_INTERVAL_MS(2000)
 {
     //TODO: Read from config file if battery charging should be enabled by default
     setChargingEnable(mChargingEnabled);
 
     if (!mAdc.CheckCalFuse()) {
-        ESP_LOGW(TAG, "ADC %d has been uncalibrated!", BAT_ADC);
+        ESP_LOGW(TAG, "ADC %d has not been calibrated!", BAT_ADC);
     }
+    if (mHasIoExpander) {
+        mBatteryType = mSys.getIoExpander().hasLiIonBattery() ? BAT_LiPo : BAT_LiFePo;
+    }
+    if (getVoltage() < 0.5) {
+        mBatteryType = BAT_NONE;
+    }
+    ESP_LOGI(TAG, "Detected %s", getBatType());
 }
 
 Battery::~Battery()
 {
 }
 
-
-bat_limits_t Battery::getLimits()
-{
-    if (mSys.hasIoExpander()) {
-       if (mSys.getIoExpander().hasLiIonBattery()) {
-            return C_LiION_LIMITS;
-       }
-       else {
-            return C_LiFePo_LIMITS;
-       }
+const char* Battery::getBatType() const {
+    switch(mBatteryType) {
+        case BAT_LiPo: 
+            return "LiPo Battery";
+        case BAT_LiFePo: 
+            return "BAT_LiFePo Battery";
+        default:
+             return "no Battery";
     }
-    return bat_limits_t();
 }
 
-float Battery::getVoltage() {
+const bat_limits_t& Battery::getLimits() const {
+    switch(mBatteryType) {
+        case BAT_LiPo: 
+            return C_LiION_LIMITS;
+        case BAT_LiFePo: 
+            return C_LiFePo_LIMITS;
+        default:
+        // use LiFePo as default limits, for a save version
+        return C_LiFePo_LIMITS;
+    }
+}
+
+const std::vector<socLUT_t>& Battery::getSocLUT() const {
+    switch(mBatteryType) {
+        case BAT_LiPo: 
+            return C_LiION_SOCs;
+        case BAT_LiFePo: 
+            return C_LiFePo_SOCs;
+        default:
+        // use LiFePo as default limits, for a save version
+        return C_LiFePo_SOCs;
+    }
+}
+
+void Battery::updateVoltage() {
+
+    int64_t nowMs = (esp_timer_get_time() / 1000ULL);
+    if (((nowMs - mLastReadingMs) <= UPDATE_INTERVAL_MS) && mLastReadingMs) {
+        // reduce load by only updating the battery value once every few seconds
+        return;
+    }
+    mLastReadingMs = nowMs;
+
     // disable charging first
     if (esp_err_t err = setChargingEnable(false)) {
         ESP_LOGI(TAG, "Failed to enable charging %s", esp_err_to_name(err));
     }
     mVoltage = 0.0;
     float accum=0.0; 
-    float avg;
     for (int i=0;  i<AVG_WINDOW;i++) {
         if (mAdc.CheckCalFuse()) {
             accum+= static_cast<float>(mAdc.GetVoltage())/1000.0; // CppAdc1::GetVoltage returns mV
@@ -98,45 +178,77 @@ float Battery::getVoltage() {
             accum+= mAdc.GetRaw();
         }
     } 
+    mVoltage=accum/static_cast<float>(AVG_WINDOW);
 
-    mVoltage=accum/5.0;
+    // scale the voltage according to the voltage divider on ELOC 3.0 HW
+    mVoltage = mVoltage * (1500.0 + 470.0) / (1500.0);
       
+    //ESP_LOGI(TAG, "scaled voltage =%.3fV, avg = %.3f", mVoltage, accum/static_cast<float>(AVG_WINDOW));
 
     if (mChargingEnabled) {
         if (esp_err_t err = setChargingEnable(mChargingEnabled)) 
             ESP_LOGI(TAG, "Failed to enable charging %s", esp_err_to_name(err));
     }
+}
+    //TODO: set battery 
+float Battery::getVoltage() {
+    updateVoltage();
     return mVoltage;
 }
 
 float Battery::getSoC()
 {
     //TODO: Create a table for Voltage - SoC translation per battery type
-    getVoltage();
-    float soc = 0.0;
-    if (mSys.hasIoExpander() && mSys.getIoExpander().hasLiIonBattery()) {
-        if (mVoltage >= 4.2) {
-            soc = 100;
+    updateVoltage();
+
+    const std::vector<socLUT_t>& lut = getSocLUT();
+    if (lut[0].volt > mVoltage) {
+        // voltage below lowest SoC voltage
+        return 0.0;
+    }
+
+    for(int i = 0; i < lut.size()-1; i++ )
+    {
+        if ( lut[i].volt <= mVoltage && lut[i+1].volt >= mVoltage )
+        {
+            double diffx = mVoltage - lut[i].volt;
+            double diffn = lut[i+1].volt - lut[i].volt;
+
+            return lut[i].soc + ( lut[i+1].soc - lut[i].soc ) * diffx / diffn; 
         }
     }
-    else {
-        if (mVoltage >= 3.4) {
-            soc = 100;
-        }
+
+    return 100; // Not in Range
+}
+const char* Battery::getState() {
+    if (isFull()) {
+        return "Full";
     }
-    return 0.0f;
+    else if (isLow()) {
+        return "Low";
+    }
+    else if (isEmpty()) {
+        return "Empty";
+    }
+    return "";
 }
 bool Battery::isLow()
 {
-    //TODO: trigger a voltage measurement if previous measurement is too old
-    if (mVoltage >= getLimits().Vfull) {
+    if (mBatteryType == BAT_NONE) {
+        return false;
+    }
+    updateVoltage();
+    if (mVoltage <= getLimits().Vlow) {
         return true;
     }
     return false;
 }
 bool Battery::isFull()
 {
-    //TODO: trigger a voltage measurement if previous measurement is too old
+    if (mBatteryType == BAT_NONE) {
+        return true;
+    }
+    updateVoltage();
     if (mVoltage >= getLimits().Vfull) {
         return true;
     }
@@ -144,11 +256,18 @@ bool Battery::isFull()
 }
 bool Battery::isEmpty()
 {
+    if (mBatteryType == BAT_NONE) {
+        return false;
+    }
+    updateVoltage();
+    if (mVoltage <= getLimits().Voff) {
+        return true;
+    }
     return false;
 }
 esp_err_t Battery::setChargingEnable(bool enable)
 {
-    if (mSys.hasIoExpander()) {
+    if (mHasIoExpander) {
        if (esp_err_t err = mSys.getIoExpander().chargeBattery(enable)) {
             ESP_LOGI(TAG, "Failed to %s charging %s", enable ? "enable" : "disable", esp_err_to_name(err));
             return err;
@@ -161,5 +280,12 @@ esp_err_t Battery::setDefaultChargeEn(bool enable)
 {
     mChargingEnabled = enable;
     return setChargingEnable(enable);
+}
+
+bool Battery::isCalibrationDone() const {
+    //TODO: check what kind of calibration to perform with ELOC
+    //TODO: check if calibration is necessary of if it can be applied to
+    //      the esp32 internal calibration --> esp_adc_cal_check_efuse()
+    return false;
 }
 

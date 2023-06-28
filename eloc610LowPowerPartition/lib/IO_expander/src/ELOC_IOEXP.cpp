@@ -34,10 +34,10 @@ esp_err_t ELOC_IOEXP::init() {
         return mErrorCode;
     }
     if ((mErrorCode = portConfig_I(LiION_DETECT))) return mErrorCode;
-    if ((mErrorCode = portConfig_O (LED_STATUS | LED_BATTERY | CHARGE_EN))) return mErrorCode;
+    if ((mErrorCode = portConfig_O (LED_STATUS | LED_BATTERY | CHARGE_EN_N))) return mErrorCode;
     // set outputs to default values
     if ((mErrorCode = setOutputPort(LED_STATUS))) return mErrorCode;
-    if ((mErrorCode = clearOutputPort(LED_BATTERY | CHARGE_EN))) return mErrorCode;
+    if ((mErrorCode = clearOutputPort(LED_BATTERY | CHARGE_EN_N))) return mErrorCode;
     outputReg = LED_STATUS;
 
     ESP_LOGI(TAG, "PCA9557 initialized");
@@ -70,7 +70,7 @@ esp_err_t ELOC_IOEXP::toggleOutputBit(uint32_t bit) {
 }
 
 esp_err_t ELOC_IOEXP::chargeBattery(bool enable) {
-    mErrorCode = setOutputBit(CHARGE_EN, enable);
+    mErrorCode = setOutputBit(CHARGE_EN_N, !enable);
     return mErrorCode;
 }
 bool ELOC_IOEXP::hasLiIonBattery() {

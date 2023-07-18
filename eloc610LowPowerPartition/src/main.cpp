@@ -40,7 +40,6 @@
 #include "BluetoothSerial.h"
 /** Arduino libraries END*/
 
-
 #include "version.h"
 
 #include "utils/ffsutils.h"
@@ -51,6 +50,7 @@
 #include "BluetoothServer.hpp"
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
+#include "TensorFlow_ELOC.hpp"
 
 static const char *TAG = "main";
 
@@ -105,7 +105,6 @@ uint32_t  gFreeSpaceKB=0;
 #ifdef USE_SDIO_VERSION
     SDCardSDIO *theSDCardObject;
  #endif
-
 
 void writeSettings(String settings);
 void doDeepSleep();
@@ -831,7 +830,7 @@ void app_main(void) {
     freeSpace();
 
     // print some file system info
-     ESP_LOGI(TAG, "File system loaded: ");
+    ESP_LOGI(TAG, "File system loaded: ");
     ffsutil::printListDir("/spiffs");
     ffsutil::printListDir("/sdcard");
     ffsutil::printListDir("/sdcard/eloc");
@@ -885,6 +884,13 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "waiting for button or bluetooth");
     ESP_LOGI(TAG, "voltage is %.3f", Battery::GetInstance().getVoltage());
+
+    // Leave this till assured that firmware update is not triggered
+    // Requires considerable amount of memory
+    #ifdef USE_TFLITE_ELOC
+        TensorFlow_ELOC tf_Eloc;
+    #endif
+
     while (true) {
 
         rec_req_t rec_req = REC_REQ_NONE;

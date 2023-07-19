@@ -888,7 +888,7 @@ void app_main(void) {
     // Leave this till assured that firmware update is not triggered
     // Requires considerable amount of memory
     #ifdef USE_TFLITE_ELOC
-        TensorFlow_ELOC tf_Eloc;
+        TensorFlow_ELOC tf;
     #endif
 
     while (true) {

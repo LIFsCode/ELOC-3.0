@@ -87,9 +87,12 @@
 // undefine to skipt performance monitor
 #define USE_PERF_MONITOR
 
-
-
 // i2s config for reading from of I2S
 extern i2s_config_t i2s_mic_Config;
 // i2s microphone pins
 extern i2s_pin_config_t i2s_mic_pins;
+
+// Enable Tensorflow Lite features
+#define USE_TFLITE_ELOC
+
+

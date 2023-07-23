@@ -1,8 +1,8 @@
 # tflite-micro
-TensorFlow Lite for Microcontrollers library
+TensorFlow Lite library files for microcontrollers
 
 ## Introduction  
-This is a set of TensorFlow Lite library files for microcontrollers that should build for most devices (known to work for ESP32)
+This is a set of TensorFlow Lite library files for microcontrollers that should build for most devices (known to work for ESP32). Its just tfiles from TF before the dependencies were complicated in later versions
 
 ## To use  
 Modify the path as required but something like

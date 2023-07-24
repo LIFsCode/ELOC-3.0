@@ -58,6 +58,16 @@ TensorFlow_ELOC::TensorFlow_ELOC()
 
 }
 
+TensorFlow_ELOC::load_default_model()
+{
+    ESP_LOGI(TAG, "load_default_model");
+}
+
+TensorFlow_ELOC::load_custom_model()
+{
+    ESP_LOGI(TAG, "load_custom_model");
+}
+
 TensorFlow_ELOC::~TensorFlow_ELOC()
 {
     ESP_LOGI(TAG, "TensorFlow_ELOC destructor");

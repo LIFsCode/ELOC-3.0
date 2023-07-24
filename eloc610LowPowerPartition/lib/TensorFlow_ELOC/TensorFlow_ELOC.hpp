@@ -68,9 +68,35 @@ private:
     // The size of this will depend on the model you're using, and may need to be
     // determined by experimentation.
     uint8_t tensor_arena[kTensorArenaSize] = {0};
+
+    //
+    const tflite::Model* test_model = tflite::GetModel(g_model);
+    const tflite::Model* default_model = tflite::GetModel(koogu_narw);
     
 public:
+
+    /**
+     * @brief Construct a new TensorFlow_ELOC object
+     * 
+    */
     TensorFlow_ELOC();
+
+    /**
+     * @brief Load the model from the flash memory.
+     * @details This model is the normal used for the ELOC device.
+     * @returns true if the model was loaded successfully.
+    */
+    bool load_default_model();
+
+    /**
+     * @brief load test model from flash memory.
+     * @details This model is used for testing purposes only.
+     * @returns true if the model was loaded successfully.
+     * 
+    */
+    bool load_test_model();
+
+
     ~TensorFlow_ELOC();
 };
 

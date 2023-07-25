@@ -37,7 +37,13 @@
 
 // Model files
 #include "../../include/models/koogu_narw_lighter_basic.h"
+
+// Micro-speech test model
 #include "../../include/models/model.h"
+
+// Micro-speech test data
+#include "../../test_data/no_micro_features_data.h"
+#include "../../test_data/yes_micro_features_data.h"
 
 // This sets the memory used by TensorFlow
 // Needs to be set by trial & error
@@ -58,6 +64,7 @@ private:
     // static tflite::MicroMutableOpResolver<4> micro_op_resolver(error_reporter);
     
     tflite::MicroInterpreter *interpreter = nullptr;
+    // std::unique_ptr<tflite::MicroInterpreter> interpreter;
 
     // int8_t *model_input_buffer = nullptr;
     // FeatureProvider *feature_provider;
@@ -67,9 +74,8 @@ private:
     // Create an area of memory to use for input, output, and intermediate arrays.
     // The size of this will depend on the model you're using, and may need to be
     // determined by experimentation.
-    uint8_t tensor_arena[kTensorArenaSize] = {0};
+    alignas(16) uint8_t tensor_arena[kTensorArenaSize] = {0};
 
-    //
     const tflite::Model* test_model = tflite::GetModel(g_model);
     const tflite::Model* default_model = tflite::GetModel(koogu_narw);
     
@@ -96,6 +102,17 @@ public:
     */
     bool load_test_model();
 
+    /**
+     * @brief Allocate loaded model
+     * @returns true if the model was allocated successfully.
+    */
+    bool allocate_model();
+
+    /**
+     * @brief Test the loaded model.
+     * @returns true if the model was tested successfully.
+    */
+    bool test_loaded_model();
 
     ~TensorFlow_ELOC();
 };

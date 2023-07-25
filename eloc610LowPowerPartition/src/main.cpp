@@ -737,8 +737,7 @@ i2s_config_t getI2sConfig() {
     return i2s_mic_Config;
 }
 
-void app_main(void) {
-
+void app_main(void) {    
     ESP_LOGI(TAG, "\nSETUP--start\n");
     initArduino();
     ESP_LOGI(TAG, "initArduino done");
@@ -889,6 +888,9 @@ void app_main(void) {
     // Requires considerable amount of memory
     #ifdef USE_TFLITE_ELOC
         TensorFlow_ELOC tf;
+        tf.load_default_model();
+        tf.allocate_model();
+        tf.test_loaded_model();
     #endif
 
     while (true) {

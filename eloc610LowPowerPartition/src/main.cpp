@@ -648,6 +648,8 @@ void freeSpace() {
     FATFS *fs;
     uint32_t fre_clust, fre_sect, tot_sect;
     FRESULT res;
+    // Avoid compiler warning - unused variable
+    (void)res;
     /* Get volume information and free clusters of drive 0 */
     res = f_getfree("0:", &fre_clust, &fs);
     /* Get total sectors and free sectors */

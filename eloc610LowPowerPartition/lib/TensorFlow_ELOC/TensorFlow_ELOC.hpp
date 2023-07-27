@@ -27,6 +27,8 @@
  *
  **/
 
+// /home/projects/ELOC-3.0/eloc610LowPowerPartition/lib/tflm-tree/tensorflow/lite/micro/micro_interpreter.h
+
 #include "../tflite-micro/tensorflow/lite/micro/micro_interpreter.h"
 #include "../tflite-micro/tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "../tflite-micro/tensorflow/lite/micro/system_setup.h"
@@ -34,6 +36,9 @@
 #include "../tflite-micro/tensorflow/lite/micro/micro_error_reporter.h"
 #include "../tflite-micro/tensorflow/lite/micro/micro_interpreter.h"
 #include "../tflite-micro/tensorflow/lite/micro/all_ops_resolver.h"
+
+#include "../tflite-micro/tensorflow/lite/micro/examples/micro_speech/command_responder.h"
+#include "../tflite-micro/tensorflow/lite/micro/examples/micro_speech/feature_provider.h"
 
 // Model files
 #include "../../include/models/koogu_narw_lighter_basic.h"
@@ -65,11 +70,6 @@ private:
     
     tflite::MicroInterpreter *interpreter = nullptr;
     // std::unique_ptr<tflite::MicroInterpreter> interpreter;
-
-    // int8_t *model_input_buffer = nullptr;
-    // FeatureProvider *feature_provider;
-    // RecognizeCommands *recognizer;
-    //uint8_t feature_buffer[kFeatureElementCount];
     
     // Create an area of memory to use for input, output, and intermediate arrays.
     // The size of this will depend on the model you're using, and may need to be
@@ -78,6 +78,11 @@ private:
 
     const tflite::Model* test_model = tflite::GetModel(g_model);
     const tflite::Model* default_model = tflite::GetModel(koogu_narw);
+
+    // Elements required for inference
+    FeatureProvider *feature_provider;
+    RecognizeCommands *recognizer;
+    int32_t previous_time = 0;
     
 public:
 
@@ -112,7 +117,7 @@ public:
      * @brief Test the loaded model.
      * @returns true if the model was tested successfully.
     */
-    bool test_loaded_model();
+    bool verify_test_model();
 
     ~TensorFlow_ELOC();
 };

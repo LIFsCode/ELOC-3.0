@@ -16,5 +16,10 @@ Modify the path as required but something like
 #include "../tflite-micro/tensorflow/lite/micro/all_ops_resolver.h"
 ```
 
-## To do
-Need to investigate method of building automatically from [source](https://github.com/tensorflow/tflite-micro).  
+## Build library from source
+Follow directions from [here](https://github.com/tensorflow/tflite-micro/blob/main/tensorflow/lite/micro/docs/new_platform_support.md#step-1-build-tflm-static-library-with-reference-kernels)
+
+python3 tensorflow/lite/micro/tools/project_generation/create_tflm_tree.py \
+  -e hello_world \
+  -e micro_speech \
+  /tmp/tflm-tree

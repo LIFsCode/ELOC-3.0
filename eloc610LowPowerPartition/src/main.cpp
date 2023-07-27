@@ -892,7 +892,7 @@ void app_main(void) {
         TensorFlow_ELOC tf;
         tf.load_default_model();
         tf.allocate_model();
-        tf.test_loaded_model();
+        tf.verify_test_model();
     #endif
 
     while (true) {

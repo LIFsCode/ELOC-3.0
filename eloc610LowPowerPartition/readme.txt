@@ -20,7 +20,10 @@ https://community.platformio.org/t/esp-idf-sd-card-problem-with-long-file-names/
 
 
 
+# Minimum chip revision
+To enable PSRAM without silicon chip bug workarounds breaking builds set minimum chip revision:
 
+Menuconfig → Component config → ESP32-specific → Minimum Supported ESP32 Revision -> Rev 3
 
 
 

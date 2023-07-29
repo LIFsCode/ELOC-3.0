@@ -757,6 +757,9 @@ void app_main(void) {
 
     resetPeripherals();
 
+    // Print free memory
+    ESP_LOGI(TAG, "Free memory: %d bytes", esp_get_free_heap_size());
+
 #ifdef USE_SPI_VERSION
     gpio_set_direction(STATUS_LED, GPIO_MODE_OUTPUT);
     gpio_set_direction(BATTERY_LED, GPIO_MODE_OUTPUT);

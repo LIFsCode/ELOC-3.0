@@ -646,7 +646,8 @@ void wait_for_bt_command() {
         sentSettings = false;
         sentElocStatus = false;
         sentRecord = false;
-        if (getConfig().bluetoothOffTimeoutSeconds >= 0) { // if bluetoothOffTimeoutMs <=0 it is ignored per definition
+        // if bluetoothOffTimeoutMs <=0 it is ignored per definition, if no LIS3DH is detected for BT wakeup, BT is continously on
+        if ((getConfig().bluetoothOffTimeoutSeconds >= 0) && ElocSystem::GetInstance().hasLIS3DH()) { 
             int timeDiff = esp_timer_get_time()/1000/1000 - lastBtConnectionTimeS;
             if (timeDiff >= getConfig().bluetoothOffTimeoutSeconds) {
                 ESP_LOGI(TAG, "%d seconds without bluetooth connection, exceeding max. of %d sec! Shutting down Bluetooth.", timeDiff, getConfig().bluetoothOffTimeoutSeconds);
@@ -662,7 +663,7 @@ void wakeup_task (void *pvParameters)
     uint32_t gpio_num;
     int loopcounter = 0;
     //ESP_LOGI(TAG, "wakeup_task starting...");
-    if (getConfig().bluetoothEnableAtStart) {
+    if (getConfig().bluetoothEnableAtStart || !ElocSystem::GetInstance().hasLIS3DH()) {
         if (enableBluetooth() != ESP_OK) {
             ESP_LOGE(TAG, "Failed to enable bluetooth!");
         }
@@ -738,7 +739,6 @@ void wakeup_task (void *pvParameters)
 
 esp_err_t BluetoothServerSetup(bool installGpioIsr) {
 
-    LIS3DH& lis3dh = ElocSystem::GetInstance().getLIS3DH();
 
     /** --- INTERRUPT CONFIGURATION PART ---- */
     
@@ -750,13 +750,20 @@ esp_err_t BluetoothServerSetup(bool installGpioIsr) {
     // a single event is enough, it is only used to trigger the start of BT
     gpio_evt_queue = xQueueCreate(1, sizeof(uint8_t));
 
+    xTaskCreate(wakeup_task, "BT Server", 4096, NULL, 1, NULL);
+
+    if (!ElocSystem::GetInstance().hasLIS3DH()) {
+        ESP_LOGW(TAG, "No LIS3DH avaiable! No possibility to enable BT during runtime! System will enable BT continously to guarantee communication...");
+        return ESP_OK;
+    }
+
+    LIS3DH& lis3dh = ElocSystem::GetInstance().getLIS3DH();
+
     // configure interupt pins for *INT1* and *INT2* signals and set the interrupt handler
     gpio_set_direction(LIS3DH_INT_PIN, GPIO_MODE_INPUT);
     gpio_pulldown_en(LIS3DH_INT_PIN);
     gpio_pullup_dis(LIS3DH_INT_PIN);
     gpio_set_intr_type(LIS3DH_INT_PIN, GPIO_INTR_POSEDGE);
-
-    xTaskCreate(wakeup_task, "BT Server", 4096, NULL, 1, NULL);
 
     if (installGpioIsr) {
         ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));

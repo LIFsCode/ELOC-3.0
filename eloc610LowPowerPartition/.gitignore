@@ -4,6 +4,7 @@
 .vscode/launch.json
 .vscode/ipch
 .vscode/*
+dependencies.lock
 
 #ignore all log files
 *.log

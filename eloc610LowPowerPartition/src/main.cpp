@@ -1,4 +1,5 @@
 
+
 #include "esp_err.h"
 #include "esp_log.h"
 #include <rom/ets_sys.h>
@@ -52,12 +53,16 @@
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
 
-static const char *TAG = "main";
+#ifdef EDGE_IMPULSE_ENABLED
+// If your target is limited in memory remove this macro to save 10K RAM
+#define EIDSP_QUANTIZE_FILTERBANK   0
+#include "trumpet_inferencing.h"
+#endif
 
+static const char *TAG = "main";
 
 bool gMountedSDCard=false;
 bool gRecording=false;
-
 
 int32_t *graw_samples;
 

@@ -751,6 +751,10 @@ void app_main(void) {
         "-- VERSION: %s\n"
         "-----------------------------------------------------------------\n", VERSIONTAG);
 
+#ifdef EDGE_IMPULSE_ENABLED
+    ESP_LOGI(TAG, "Edge Impulse framework enabled\n");
+#endif
+
     initTime();
 
     printRevision();

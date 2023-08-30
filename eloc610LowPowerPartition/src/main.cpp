@@ -54,9 +54,88 @@
 #include "PerfMonitor.hpp"
 
 #ifdef EDGE_IMPULSE_ENABLED
-// If your target is limited in memory remove this macro to save 10K RAM
-#define EIDSP_QUANTIZE_FILTERBANK   0
-#include "trumpet_inferencing.h"
+    // If your target is limited in memory remove this macro to save 10K RAM
+    // But if you do results in errors: '.... insn does not satisfy its constraints'
+    #define EIDSP_QUANTIZE_FILTERBANK   0
+    #include "trumpet_inferencing.h"
+
+    /** Audio buffers, pointers and selectors */
+    typedef struct {
+        int16_t *buffer;
+        uint8_t buf_ready;
+        uint32_t buf_count;
+        uint32_t n_samples;
+    } inference_t;
+
+    static inference_t inference;
+    static const uint32_t sample_buffer_size = 2048;
+    // static signed short sampleBuffer[sample_buffer_size];
+    static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
+    static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
+    static bool record_status = true;
+
+    // TODO: This function MAY be redundant
+    // static void capture_samples(void* arg) {
+    //     const int32_t i2s_bytes_to_read = (uint32_t)arg;
+    //     // Single logical right shift divides a number by 2, throwing out any remainders
+    //     size_t i2s_samples_to_read = i2s_bytes_to_read >> 1;
+
+    //     input->start();
+
+    //     while (record_status) {
+    //         int samples_read = input->read(sampleBuffer, i2s_samples_to_read);
+            
+    //         // Scale the data
+    //         for (int x = 0; x < i2s_samples_to_read; x++) {
+    //             sampleBuffer[x] = (int16_t)(sampleBuffer[x]) * I2S_DATA_SCALING_FACTOR;
+    //         }
+
+    //         if (record_status) {
+    //             audio_inference_callback(i2s_bytes_to_read);
+    //         }
+    //         else {
+    //             break;
+    //         }
+    //     }
+
+    //     input->stop();
+    //     vTaskDelete(NULL);
+    // }
+
+    /**
+     * @brief      Init inferencing struct and setup/start PDM
+     *
+     * @param[in]  n_samples  The n samples
+     *
+     * @return     { description_of_the_return_value }
+     */
+    static bool microphone_inference_start(uint32_t n_samples)
+    {
+        inference.buffer = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+
+        if(inference.buffer == NULL) {
+            return false;
+        }
+
+        inference.buf_count  = 0;
+        inference.n_samples  = n_samples;
+        inference.buf_ready  = 0;
+
+        // This is not necessary, setup elsewhere
+        // if (i2s_init(EI_CLASSIFIER_FREQUENCY)) {
+        //     ei_printf("Failed to start I2S!");
+        // }
+
+        ei_sleep(100);
+
+        record_status = true;
+
+        // TODO: Samples need to be captured in record() function
+        // xTaskCreate(capture_samples, "CaptureSamples", 1024 * 16, (void*)sample_buffer_size, 10, NULL);
+
+        return true;
+    }
+
 #endif
 
 static const char *TAG = "main";
@@ -165,7 +244,6 @@ void delay (int  ms) {
 
   vTaskDelay(pdMS_TO_TICKS(ms));
 
-
 } 
 
 
@@ -193,11 +271,7 @@ void testInput() {
 
 
 void resetESP32() {
-      
-   
-     
 
-    
     ESP_LOGI(TAG, "Resetting in some ms");
     resetPeripherals();
     // esp_task_wdt_init(30, false); //bump it up to 30 econds doesn't work. 
@@ -214,8 +288,6 @@ void resetESP32() {
     //ESP_LOGI(TAG, "deep sleep should never make it here");
     
     delay(1000); //should never get here
-
-
 
 }
 
@@ -314,14 +386,6 @@ long getTimeFromTimeObjectMS() {
     return(timeObject.getEpoch()*1000L+timeObject.getMillis());
 
 }
-
-
-
-
-
-
-
-
 
 
 void time() {
@@ -463,7 +527,7 @@ void record(I2SSampler *input) {
   gRecording=true;
   char fname[100];
   
-    input->start();
+  input->start();
   gRealSampleRate=(int32_t)(i2s_get_clk(I2S_NUM_0));
   ESP_LOGI(TAG, "I2s REAL clockrate in record  %u", gRealSampleRate  );
 
@@ -481,21 +545,13 @@ void record(I2SSampler *input) {
   //BUGME: this should return the session folder name to parse it to createFilename()
   createSessionFolder();
 
-  
-
   graw_samples = (int32_t *)malloc(sizeof(int32_t) * 1000);
   int16_t *samples = (int16_t *)malloc(sizeof(int16_t) *gSampleBlockSize);
  
- 
-  
   FILE *fp=NULL;
   WAVFileWriter *writer=NULL;
 
- 
- 
   bool stopit = false;
-  
-
   
   if (getConfig().listenOnly)  ESP_LOGI(TAG, "Listening only...");
   while (!stopit) {
@@ -618,12 +674,7 @@ void record(I2SSampler *input) {
    gSessionRecordTime=0;
  
    if (deepSleep) doDeepSleep();
-
-  
-
 }
-
-
 
 
 bool mountSDCard() {
@@ -866,6 +917,29 @@ void app_main(void) {
         }
     #endif
 
+    #ifdef EDGE_IMPULSE_ENABLED
+        // summary of inferencing settings (from model_metadata.h)
+        ei_printf("Inferencing settings:\n");
+        ei_printf("\tInterval: ");
+        ei_printf_float((float)EI_CLASSIFIER_INTERVAL_MS);
+        ei_printf(" ms.\n");
+        ei_printf("\tFrame size: %d\n", EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE);
+        ei_printf("\tSample length: %d ms.\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16);
+        ei_printf("\tNo. of classes: %d\n", sizeof(ei_classifier_inferencing_categories) / sizeof(ei_classifier_inferencing_categories[0]));
+
+        // TODO: Remove this
+        ei_printf("\nStarting continious inference in 2 seconds...\n");
+        ei_sleep(2000);
+
+        static_assert((I2S_DEFAULT_SAMPLE_RATE == EI_CLASSIFIER_FREQUENCY), "I2S sample rate must match EI_CLASSIFIER_FREQUENCY");
+
+        if (microphone_inference_start(EI_CLASSIFIER_RAW_SAMPLE_COUNT) == false) {
+            ei_printf("ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+        }
+
+        
+    #endif
+
     // setup button as interrupt
     ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)GPIO_BUTTON));
     //ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_BUTTON));
@@ -911,5 +985,49 @@ void app_main(void) {
                 }
             }
         }
+
+        #ifdef EDGE_IMPULSE_ENABLED
+            // bool m = microphone_inference_record();
+            // if (!m) {
+            //     ei_printf("ERR: Failed to record audio...\n");
+            //     return;
+            // }
+
+            signal_t signal;
+            signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
+            signal.get_data = &microphone_audio_signal_get_data;
+            ei_impulse_result_t result = {0};
+
+            EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
+            if (r != EI_IMPULSE_OK) {
+                ei_printf("ERR: Failed to run classifier (%d)\n", r);
+                return;
+            }
+
+            if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW)) {
+                // print the predictions
+                ei_printf("Predictions ");
+                ei_printf("(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
+                    result.timing.dsp, result.timing.classification, result.timing.anomaly);
+                ei_printf(": \n");
+                for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
+                    ei_printf("    %s: ", result.classification[ix].label);
+                    ei_printf_float(result.classification[ix].value);
+                    ei_printf("\n");
+                }
+            #if EI_CLASSIFIER_HAS_ANOMALY == 1
+                    ei_printf("    anomaly score: ");
+                    ei_printf_float(result.anomaly);
+                    ei_printf("\n");
+            #endif
+
+                print_results = 0;
+            }
+
+        #endif  // EDGE_IMPULSE_ENABLED
+
     }
+
 }
+
+

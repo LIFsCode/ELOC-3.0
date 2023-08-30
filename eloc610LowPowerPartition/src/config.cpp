@@ -21,13 +21,13 @@ i2s_config_t i2s_mic_Config = {
     .fixed_mclk = 0,
     //.mclk_multiple =I2S_MCLK_MULTIPLE_DEFAULT,   // I2S_MCLK_MULTIPLE_DEFAULT= 0,       /*!< Default value. mclk = sample_rate * 256 */
     //.bits_per_chan=I2S_BITS_PER_CHAN_DEFAULT
-    };
+};
 
 // i2s microphone pins
 i2s_pin_config_t i2s_mic_pins = {
-  
-   .mck_io_num = I2S_PIN_NO_CHANGE,  //tbg removed new api?
-  
+
+    .mck_io_num = I2S_PIN_NO_CHANGE, // tbg removed new api?
+
     .bck_io_num = I2S_MIC_SERIAL_CLOCK,
     .ws_io_num = I2S_MIC_LEFT_RIGHT_CLOCK,
     .data_out_num = I2S_PIN_NO_CHANGE,

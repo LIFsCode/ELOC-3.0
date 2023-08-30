@@ -56,8 +56,10 @@
         // TODO: check if we want these configureable
         #define I2S_DMA_BUFFER_COUNT 18
         #define I2S_DMA_BUFFER_LEN   1000
-        #define I2S_DEFAULT_SAMPLE_RATE 20000
-
+        // #define I2S_DEFAULT_SAMPLE_RATE 20000
+        // For Edge Impulse/ ML 
+        // I2S_DEFAULT_SAMPLE_RATE needs to equal EI_CLASSIFIER_FREQUENCY
+        #define I2S_DEFAULT_SAMPLE_RATE 16000
         
         // sdcard (unused, as SDIO is fixed to its Pins)
         #define PIN_NUM_MISO GPIO_NUM_2

@@ -53,6 +53,72 @@
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
 
+static const char *TAG = "main";
+
+bool gMountedSDCard=false;
+bool gRecording=false;
+
+int32_t *graw_samples;
+
+int gRawSampleBlockSize=1000;
+int gSampleBlockSize=16000; //must be factor of 1000   in samples
+int gBufferLen=I2S_DMA_BUFFER_LEN; //in samples
+int gBufferCount=I2S_DMA_BUFFER_COUNT;   // so 6*4000 = 24k buf len
+//always keep these in same order
+
+
+////// these are the things you can change for now. 
+
+uint32_t  gRealSampleRate;
+uint64_t gStartupTime; //gets read in at startup to set tystem time. 
+
+char gSessionFolder[65];
+
+//timing
+int64_t gTotalUPTimeSinceReboot=esp_timer_get_time();  //esp_timer_get_time returns 64-bit time since startup, in microseconds.
+int64_t gTotalRecordTimeSinceReboot=0;
+int64_t gSessionRecordTime=0;
+
+int gMinutesWaitUntilDeepSleep=60; //change to 1 or 2 for testing
+
+
+//session stuff
+String gSessionIdentifier="";
+
+//String gBluetoothMAC="";
+String gFirmwareVersion=VERSION;
+
+ESP32Time timeObject;
+//WebServer server(80);
+//bool updateFinished=false;
+bool gWillUpdate=false;
+float gFreeSpaceGB=0.0;
+uint32_t  gFreeSpaceKB=0;
+
+//String gTimeDifferenceCode; //see getTimeDifferenceCode() below
+
+#ifdef USE_SPI_VERSION
+    SDCard *theSDCardObject;
+#endif
+
+#ifdef USE_SDIO_VERSION
+    SDCardSDIO *theSDCardObject;
+#endif
+
+
+void writeSettings(String settings);
+void doDeepSleep();
+void setTime(long epoch, int ms);
+
+// idf-wav-sdcard/lib/sd_card/src/SDCard.cpp   m_host.max_freq_khz = 18000;
+// https://github.com/atomic14/esp32_sdcard_audio/commit/000691f9fca074c69e5bb4fdf39635ccc5f993d4#diff-6410806aa37281ef7c073550a4065903dafce607a78dc0d4cbc72cf50bac3439
+
+extern "C"
+{
+  void app_main(void);
+}
+
+
 #ifdef EDGE_IMPULSE_ENABLED
     // If your target is limited in memory remove this macro to save 10K RAM
     // But if you do results in errors: '.... insn does not satisfy its constraints'
@@ -70,38 +136,124 @@
 
     static inference_t inference;
     static const uint32_t sample_buffer_size = 2048;
-    // static signed short sampleBuffer[sample_buffer_size];
+    static signed short sampleBuffer[sample_buffer_size];
     static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
     static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
     static bool record_status = true;
 
-    // TODO: This function MAY be redundant
-    // static void capture_samples(void* arg) {
-    //     const int32_t i2s_bytes_to_read = (uint32_t)arg;
-    //     // Single logical right shift divides a number by 2, throwing out any remainders
-    //     size_t i2s_samples_to_read = i2s_bytes_to_read >> 1;
+    // The following functions enable continuous audio sampling and inferencing
+    // https://docs.edgeimpulse.com/docs/tutorials/advanced-inferencing/continuous-audio-sampling
 
-    //     input->start();
+    /**
+     * This function is repeatedly called by capture_samples()
+     * When sufficient samples are collected:
+     *  1. inference.buf_ready = 1
+     *  2. microphone_inference_record() is unblocked
+     *  3. classifier is run in main loop() 
+    */
+    static void audio_inference_callback(uint32_t n_bytes)
+    {
 
-    //     while (record_status) {
-    //         int samples_read = input->read(sampleBuffer, i2s_samples_to_read);
+    // ei_printf("audio_inference_callback()\n");
+
+        for(int i = 0; i < n_bytes>>1; i++) {
+            inference.buffer[inference.buf_count++] = sampleBuffer[i];
             
-    //         // Scale the data
-    //         for (int x = 0; x < i2s_samples_to_read; x++) {
-    //             sampleBuffer[x] = (int16_t)(sampleBuffer[x]) * I2S_DATA_SCALING_FACTOR;
-    //         }
+    #ifdef SDCARD_WRITING_ENABLED
+        if (record_buffer_idx < EI_CLASSIFIER_RAW_SAMPLE_COUNT * 10) {
+            recordBuffer[record_buffer_idx++] = sampleBuffer[i];
+        } else {
+            ei_printf("Warning: Record buffer is full, skipping sample\n");
+        }
+    #endif
 
-    //         if (record_status) {
-    //             audio_inference_callback(i2s_bytes_to_read);
-    //         }
-    //         else {
-    //             break;
-    //         }
-    //     }
+            if(inference.buf_count >= inference.n_samples) {
+            inference.buf_count = 0;
+            inference.buf_ready = 1;
+            }
+        }
+    }
 
-    //     input->stop();
-    //     vTaskDelete(NULL);
-    // }
+    /**
+     * This is initiated by a task created in microphone_inference_record_start()
+     * When periodically called it:
+     *  1. reads data from I2S DMA buffer, 
+     *  2. scales it
+     *  3. Calls audio_inference_callback() 
+    */
+    #ifdef USE_I2S_MIC_INPUT
+        /**
+         * This is initiated by a task created in microphone_inference_record_start()
+         * When periodically called it:
+         *  1. reads data from I2S DMA buffer, 
+         *  2. scales it
+         *  3. Calls audio_inference_callback() 
+        */
+        static void capture_samples(void* arg) {
+
+        ei_printf("capture_samples()\n");
+        const int32_t i2s_bytes_to_read = (uint32_t)arg;
+        // logical right shift divides a number by 2, throwing out any remainders
+        size_t i2s_samples_to_read = i2s_bytes_to_read >> 1;
+
+        input->start();
+
+        // Enter a continual loop to collect new data from I2S
+        while (record_status) {
+            int samples_read = input->read(sampleBuffer, i2s_samples_to_read);
+            
+            // Scale the data
+            for (int x = 0; x < i2s_samples_to_read; x++) {
+                sampleBuffer[x] = (int16_t)(sampleBuffer[x]) * I2S_DATA_SCALING_FACTOR;
+            }
+
+            if (record_status) {
+                audio_inference_callback(i2s_bytes_to_read);
+            }
+            else {
+                break;
+            }
+        }
+
+        input->stop();
+        vTaskDelete(NULL);
+        }
+    #else // USE_I2S_MIC_INPUT
+        // Not used
+        static void capture_samples(void* arg) {
+        const int32_t i2s_bytes_to_read = (uint32_t)arg;
+        size_t bytes_read = i2s_bytes_to_read;
+
+        while (record_status) {
+
+            /* read data at once from i2s */
+            i2s_read((i2s_port_t)1, (void*)sampleBuffer, i2s_bytes_to_read, &bytes_read, 100);
+
+            if (bytes_read <= 0) {
+            ei_printf("Error in I2S read : %d", bytes_read);
+            }
+            else {
+                if (bytes_read < i2s_bytes_to_read) {
+                ei_printf("Partial I2S read");
+                }
+
+                // scale the data (otherwise the sound is too quiet)
+                for (int x = 0; x < i2s_bytes_to_read/2; x++) {
+                    sampleBuffer[x] = (int16_t)(sampleBuffer[x]) * 11;
+                }
+
+                if (record_status) {
+                    audio_inference_callback(i2s_bytes_to_read);
+                }
+                else {
+                    break;
+                }
+            }
+        }
+        vTaskDelete(NULL);
+        }
+    #endif // USE_I2S_MIC_INPUT
+
 
     /**
      * @brief      Init inferencing struct and setup/start PDM
@@ -168,73 +320,17 @@
         return 0;
     }
 
+    /**
+     * @brief      Stop PDM and release buffers
+     */
+    static void microphone_inference_end(void)
+    {
+       // TODO: i2s_deinit();
+        heap_caps_free(inference.buffer);
+
+    }
+
 #endif
-
-static const char *TAG = "main";
-
-bool gMountedSDCard=false;
-bool gRecording=false;
-
-int32_t *graw_samples;
-
-int gRawSampleBlockSize=1000;
-int gSampleBlockSize=16000; //must be factor of 1000   in samples
-int gBufferLen=I2S_DMA_BUFFER_LEN; //in samples
-int gBufferCount=I2S_DMA_BUFFER_COUNT;   // so 6*4000 = 24k buf len
-//always keep these in same order
-
-
-////// these are the things you can change for now. 
-
-uint32_t  gRealSampleRate;
-uint64_t gStartupTime; //gets read in at startup to set tystem time. 
-
-char gSessionFolder[65];
-
-//timing
-int64_t gTotalUPTimeSinceReboot=esp_timer_get_time();  //esp_timer_get_time returns 64-bit time since startup, in microseconds.
-int64_t gTotalRecordTimeSinceReboot=0;
-int64_t gSessionRecordTime=0;
-
-int gMinutesWaitUntilDeepSleep=60; //change to 1 or 2 for testing
-
-
-//session stuff
-String gSessionIdentifier="";
-
-//String gBluetoothMAC="";
-String gFirmwareVersion=VERSION;
-
-ESP32Time timeObject;
-//WebServer server(80);
-//bool updateFinished=false;
-bool gWillUpdate=false;
-float gFreeSpaceGB=0.0;
-uint32_t  gFreeSpaceKB=0;
-
-//String gTimeDifferenceCode; //see getTimeDifferenceCode() below
-
- #ifdef USE_SPI_VERSION
-    SDCard *theSDCardObject;
- #endif
-
-#ifdef USE_SDIO_VERSION
-    SDCardSDIO *theSDCardObject;
- #endif
-
-
-void writeSettings(String settings);
-void doDeepSleep();
-void setTime(long epoch, int ms);
-
-// idf-wav-sdcard/lib/sd_card/src/SDCard.cpp   m_host.max_freq_khz = 18000;
-// https://github.com/atomic14/esp32_sdcard_audio/commit/000691f9fca074c69e5bb4fdf39635ccc5f993d4#diff-6410806aa37281ef7c073550a4065903dafce607a78dc0d4cbc72cf50bac3439
-
-extern "C"
-{
-  void app_main(void);
-}
-
 
 void resetPeripherals() {
    /*
@@ -1008,11 +1104,11 @@ void app_main(void) {
                 heap_caps_free(inference.buffer);
         }
 
-        // TODO: Remove this
+        static_assert((I2S_DEFAULT_SAMPLE_RATE == EI_CLASSIFIER_FREQUENCY), "I2S sample rate must match EI_CLASSIFIER_FREQUENCY");
+        
+        // TODO: Remove this delay??
         ei_printf("\nStarting continious inference in 2 seconds...\n");
         ei_sleep(2000);
-
-        static_assert((I2S_DEFAULT_SAMPLE_RATE == EI_CLASSIFIER_FREQUENCY), "I2S sample rate must match EI_CLASSIFIER_FREQUENCY");
         
         if (microphone_inference_start(EI_CLASSIFIER_RAW_SAMPLE_COUNT) == false) {
             ei_printf("ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);

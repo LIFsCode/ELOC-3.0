@@ -58,6 +58,7 @@
     // But if you do results in errors: '.... insn does not satisfy its constraints'
     #define EIDSP_QUANTIZE_FILTERBANK   0
     #include "trumpet_inferencing.h"
+    #include "test_samples.h"
 
     /** Audio buffers, pointers and selectors */
     typedef struct {
@@ -134,6 +135,37 @@
         // xTaskCreate(capture_samples, "CaptureSamples", 1024 * 16, (void*)sample_buffer_size, 10, NULL);
 
         return true;
+    }
+
+    /**
+     * @brief  Wait on new data. 
+     *         Blocking function.
+     *         Unblocked by audio_inference_callback() setting inference.buf_ready
+     *
+     * @return     True when finished
+     */
+    static bool microphone_inference_record(void)
+    {
+    ei_printf("microphone_inference_record()\n");
+
+        bool ret = true;
+
+        while (inference.buf_ready == 0) {
+            delay(10);
+        }
+
+        inference.buf_ready = 0;
+        return ret;
+    }
+
+    /**
+     * Get raw audio signal data
+     */
+    static int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
+    {
+        numpy::int16_to_float(&inference.buffer[offset], out_ptr, length);
+
+        return 0;
     }
 
 #endif
@@ -927,17 +959,65 @@ void app_main(void) {
         ei_printf("\tSample length: %d ms.\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16);
         ei_printf("\tNo. of classes: %d\n", sizeof(ei_classifier_inferencing_categories) / sizeof(ei_classifier_inferencing_categories[0]));
 
+        if (1){
+            // Run stored audio samples through the model to test it
+            ei_printf("Testing model against test data...\n");
+            
+            static_assert((EI_CLASSIFIER_RAW_SAMPLE_COUNT == TEST_SAMPLE_LENGTH), "EI_CLASSIFIER_RAW_SAMPLE_COUNT must match TEST_SAMPLE_LENGTH");
+            
+            signal_t signal;
+            signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
+            signal.get_data = &microphone_audio_signal_get_data;
+            ei_impulse_result_t result = { 0 };
+
+            inference.buffer = (int16_t *)heap_caps_malloc(EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+            if (!inference.buffer) {
+                ei_printf("ERR: Failed to allocate buffer for signal\n");
+                // Skip the rest of the test
+                return;
+            }
+
+            // Artifically fill buffer with test data
+            for (auto i = 0; i < TEST_SAMPLE_LENGTH; i++){
+               inference.buffer[i] = trumpet_test[i];
+            }
+
+            // Mark buffer as ready
+            inference.buf_count = 0;
+            inference.buf_ready = 1;
+
+            EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
+            if (r != EI_IMPULSE_OK) {
+                ei_printf("ERR: Failed to run classifier (%d)\n", r);
+                return;
+            }
+
+            // print the predictions
+            ei_printf("Predictions ");
+            ei_printf("(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
+                result.timing.dsp, result.timing.classification, result.timing.anomaly);
+            ei_printf(": \n");
+            for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
+                ei_printf("    %s: ", result.classification[ix].label);
+                ei_printf_float(result.classification[ix].value);
+                ei_printf("\n");
+            }
+
+            // Free buffer
+            if (inference.buffer)
+                heap_caps_free(inference.buffer);
+        }
+
         // TODO: Remove this
         ei_printf("\nStarting continious inference in 2 seconds...\n");
         ei_sleep(2000);
 
         static_assert((I2S_DEFAULT_SAMPLE_RATE == EI_CLASSIFIER_FREQUENCY), "I2S sample rate must match EI_CLASSIFIER_FREQUENCY");
-
+        
         if (microphone_inference_start(EI_CLASSIFIER_RAW_SAMPLE_COUNT) == false) {
             ei_printf("ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
         }
 
-        
     #endif
 
     // setup button as interrupt
@@ -995,7 +1075,7 @@ void app_main(void) {
 
             signal_t signal;
             signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
-            signal.get_data = &microphone_audio_signal_get_data;
+            // signal.get_data = &microphone_audio_signal_get_data;
             ei_impulse_result_t result = {0};
 
             EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);

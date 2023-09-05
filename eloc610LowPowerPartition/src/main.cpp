@@ -123,6 +123,7 @@ extern "C"
     // If your target is limited in memory remove this macro to save 10K RAM
     // But if you do results in errors: '.... insn does not satisfy its constraints'
     #define EIDSP_QUANTIZE_FILTERBANK   0
+    
     #include "trumpet_inferencing.h"
     #include "test_samples.h"
 
@@ -935,9 +936,9 @@ void app_main(void) {
         "-- VERSION: %s\n"
         "-----------------------------------------------------------------\n", VERSIONTAG);
 
-#ifdef EDGE_IMPULSE_ENABLED
-    ESP_LOGI(TAG, "Edge Impulse framework enabled\n");
-#endif
+    #ifdef EDGE_IMPULSE_ENABLED
+        ESP_LOGI(TAG, "Edge Impulse framework enabled\n");
+    #endif
 
     initTime();
 
@@ -1018,8 +1019,13 @@ void app_main(void) {
     mountSDCard();
     freeSpace();
 
+    if (ESP.getPsramSize() == 0)
+        ESP_LOGW(TAG,"Error: PSRAM Not found" );
+    else
+        ESP_LOGI(TAG,"Available PSRAM: %d", ESP.getPsramSize());
+
     // print some file system info
-     ESP_LOGI(TAG, "File system loaded: ");
+    ESP_LOGI(TAG, "File system loaded: ");
     ffsutil::printListDir("/spiffs");
     ffsutil::printListDir("/sdcard");
     ffsutil::printListDir("/sdcard/eloc");
@@ -1047,17 +1053,15 @@ void app_main(void) {
 
     #ifdef EDGE_IMPULSE_ENABLED
         // summary of inferencing settings (from model_metadata.h)
-        ei_printf("Inferencing settings:\n");
-        ei_printf("\tInterval: ");
-        ei_printf_float((float)EI_CLASSIFIER_INTERVAL_MS);
-        ei_printf(" ms.\n");
-        ei_printf("\tFrame size: %d\n", EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE);
-        ei_printf("\tSample length: %d ms.\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16);
-        ei_printf("\tNo. of classes: %d\n", sizeof(ei_classifier_inferencing_categories) / sizeof(ei_classifier_inferencing_categories[0]));
+        ESP_LOGI(TAG,"Edge Impulse Inferencing settings:");
+        ESP_LOGI(TAG,"Interval: %f ms.", (float)EI_CLASSIFIER_INTERVAL_MS);
+        ESP_LOGI(TAG,"Frame size: %d", EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE);
+        ESP_LOGI(TAG,"Sample length: %d ms.", EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16);
+        ESP_LOGI(TAG,"No. of classes: %d", sizeof(ei_classifier_inferencing_categories) / sizeof(ei_classifier_inferencing_categories[0]));
 
         if (1){
             // Run stored audio samples through the model to test it
-            ei_printf("Testing model against test data...\n");
+            ESP_LOGI(TAG,"Testing model against test data...");
             
             static_assert((EI_CLASSIFIER_RAW_SAMPLE_COUNT == TEST_SAMPLE_LENGTH), "EI_CLASSIFIER_RAW_SAMPLE_COUNT must match TEST_SAMPLE_LENGTH");
             
@@ -1067,8 +1071,9 @@ void app_main(void) {
             ei_impulse_result_t result = { 0 };
 
             inference.buffer = (int16_t *)heap_caps_malloc(EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+        
             if (!inference.buffer) {
-                ei_printf("ERR: Failed to allocate buffer for signal\n");
+                ESP_LOGW(TAG,"ERR: Failed to allocate buffer for signal\n");
                 // Skip the rest of the test
                 return;
             }
@@ -1084,19 +1089,16 @@ void app_main(void) {
 
             EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
             if (r != EI_IMPULSE_OK) {
-                ei_printf("ERR: Failed to run classifier (%d)\n", r);
+                ESP_LOGW(TAG,"ERR: Failed to run classifier (%d)\n", r);
                 return;
             }
 
             // print the predictions
-            ei_printf("Predictions ");
-            ei_printf("(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
+            ESP_LOGI(TAG,"Test model predictions ");
+            ESP_LOGI(TAG,"(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
                 result.timing.dsp, result.timing.classification, result.timing.anomaly);
-            ei_printf(": \n");
             for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
-                ei_printf("    %s: ", result.classification[ix].label);
-                ei_printf_float(result.classification[ix].value);
-                ei_printf("\n");
+                ESP_LOGI(TAG,"    %s: %f", result.classification[ix].label, result.classification[ix].value);
             }
 
             // Free buffer

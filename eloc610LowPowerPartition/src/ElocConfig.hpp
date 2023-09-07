@@ -29,7 +29,7 @@
 #include "ArduinoJson.h"
 #include "WString.h"
 
-/// @brief Holds all the Microphone & recording spedific settings
+/// @brief Holds all the Microphone & recording specific settings
 typedef struct {
     String   MicType;
     int      MicBitShift;

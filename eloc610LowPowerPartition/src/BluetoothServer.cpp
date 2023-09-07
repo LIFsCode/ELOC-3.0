@@ -677,7 +677,7 @@ void wakeup_task (void *pvParameters)
         TickType_t gpio_evt_wait = gBluetoothEnabled ? 0 : portMAX_DELAY; // do not wait idle if bluetooth is enabled
         if (xQueueReceive(gpio_evt_queue, &gpio_num, gpio_evt_wait))
         {
-            ESP_LOGI(TAG, "Knock knock knocking on Heaveans Door...");
+            ESP_LOGI(TAG, "Knock knock knocking on Heavens Door...");
             lis3dh_int_click_source_t click_src = {};
 
             // get the source of the interrupt and reset *INTx* signals

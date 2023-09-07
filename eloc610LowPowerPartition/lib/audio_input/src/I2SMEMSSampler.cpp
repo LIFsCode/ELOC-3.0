@@ -10,8 +10,8 @@ I2SMEMSSampler::I2SMEMSSampler(
     int bitShift,
     bool listenOnly,
     bool fixSPH0645) : I2SSampler(i2s_port, i2s_config),
-    mBitShift(bitShift),
-    mListenOnly(listenOnly)
+                       mBitShift(bitShift),
+                       mListenOnly(listenOnly)
 {
     m_i2sPins = i2s_pins;
     m_fixSPH0645 = fixSPH0645;
@@ -30,39 +30,54 @@ void I2SMEMSSampler::configureI2S()
 }
 
 
-
+#ifdef EDGE_IMPULSE_ENABLED
 
 int I2SMEMSSampler::read(int16_t *samples, int count)
 {
     // read from i2s
-    //grawsamples hard coded to 1000 samples??
+    int32_t *raw_samples = (int32_t *)malloc(sizeof(int32_t) * count);
     size_t bytes_read = 0;
-    int samples_read=0;
-    int numberOfIterations=count/1000;  //so the others must always be a divisor of 1000
-    int temp;
-        for (int j = 0; j < numberOfIterations; j++) {
     
-                i2s_read(m_i2sPort, graw_samples, sizeof(int32_t) * 1000, &bytes_read, portMAX_DELAY);
-                samples_read += bytes_read / sizeof(int32_t);
-                if (! mListenOnly) {
-                    temp=0;
-                    for (int i = j*1000; i < samples_read; i++)
-                    {
-                    
-                        //samples[i] = (raw_samples[i] & 0xFFFFFFF0) >> 11;
-                        //samples[i] = (raw_samples[i] & 0xFFFFFFF0) >> 14; //16 good
-                        samples[i] = graw_samples[temp++]  >> mBitShift; //14 mahout, 11 forest
-                    }
-                }
-        }
+    i2s_read(m_i2sPort, raw_samples, sizeof(int32_t) * count, &bytes_read, portMAX_DELAY);
+    int samples_read = bytes_read / sizeof(int32_t);
     
+    for (int i = 0; i < samples_read; i++)
+    {
+        samples[i] = (raw_samples[i] & 0xFFFFFFF0) >> 11;
+    }
     
-    
-    
+    free(raw_samples);
     return samples_read;
 }
 
+#else // NOT EDGE_IMPULSE_ENABLED
 
+int I2SMEMSSampler::read(int16_t *samples, int count)
+{
+    // read from i2s
+    // grawsamples hard coded to 1000 samples??
+    size_t bytes_read = 0;
+    int samples_read = 0;
+    int numberOfIterations = count / 1000; // so the others must always be a divisor of 1000
+    int temp;
+    for (int j = 0; j < numberOfIterations; j++)
+    {
 
+        i2s_read(m_i2sPort, graw_samples, sizeof(int32_t) * 1000, &bytes_read, portMAX_DELAY);
+        samples_read += bytes_read / sizeof(int32_t);
+        if (!mListenOnly)
+        {
+            temp = 0;
+            for (int i = j * 1000; i < samples_read; i++)
+            {
+                // samples[i] = (raw_samples[i] & 0xFFFFFFF0) >> 11;
+                // samples[i] = (raw_samples[i] & 0xFFFFFFF0) >> 14; //16 good
+                samples[i] = graw_samples[temp++] >> mBitShift; // 14 mahout, 11 forest
+            }
+        }
+    }
 
+    return samples_read;
+}
 
+#endif // #ifdef EDGE_IMPULSE_ENABLED

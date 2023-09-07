@@ -105,6 +105,8 @@ uint32_t  gFreeSpaceKB=0;
     SDCardSDIO *theSDCardObject;
 #endif
 
+// Need to have access to I2S mic
+I2SMEMSSampler *input = nullptr;
 
 void writeSettings(String settings);
 void doDeepSleep();
@@ -128,9 +130,6 @@ extern "C"
     
     #include "trumpet_inferencing.h"
     #include "test_samples.h"
-
-    // Need to have access to I2S mic
-    I2SMEMSSampler *input;
 
     /** Audio buffers, pointers and selectors */
     typedef struct {
@@ -196,7 +195,13 @@ extern "C"
         // logical right shift divides a number by 2, throwing out any remainders
         size_t i2s_samples_to_read = i2s_bytes_to_read >> 1;
 
-        input->start();
+        if (input != nullptr){
+            input->start();
+        }
+        else {
+            ESP_LOGE(TAG,"I2SMEMSSampler input == nullptr");
+            return;
+        }
 
         // Enter a continual loop to collect new data from I2S
         while (record_status) {

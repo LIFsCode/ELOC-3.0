@@ -120,258 +120,69 @@ extern "C"
   void app_main(void);
 }
 
+void resetPeripherals()
+{
+    /*
+    periph_module_reset( PERIPH_I2S0_MODULE);
+        periph_module_reset( PERIPH_BT_MODULE);
+        periph_module_reset( PERIPH_WIFI_BT_COMMON_MODULE);
+        periph_module_reset( PERIPH_BT_MODULE);
+        periph_module_reset(  PERIPH_BT_BASEBAND_MODULE);
+        periph_module_reset(PERIPH_BT_LC_MODULE);
+        //periph_module_reset(PERIPH_UART0_MODULE);    //this used by debugger?
+        periph_module_reset(PERIPH_UART1_MODULE);  //this was it! bug stops bluetooth
+                                                //from re-broadcasting in other partition on  https://github.com/espressif/esp-idf/issues/9971
 
-#ifdef EDGE_IMPULSE_ENABLED
-    // If your target is limited in memory remove this macro to save 10K RAM
-    // But if you do results in errors: '.... insn does not satisfy its constraints'
-    #define EIDSP_QUANTIZE_FILTERBANK   0
+        periph_module_reset(PERIPH_UART2_MODULE); //just in case
 
-    #define I2S_DATA_SCALING_FACTOR 1
-    
-    #include "trumpet_inferencing.h"
-    #include "test_samples.h"
-
-    /** Audio buffers, pointers and selectors */
-    typedef struct {
-        int16_t *buffer;
-        uint8_t buf_ready;
-        uint32_t buf_count;
-        uint32_t n_samples;
-    } inference_t;
-
-    static inference_t inference;
-    static const uint32_t sample_buffer_size = 2048;
-    static signed short sampleBuffer[sample_buffer_size];
-    static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
-    static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
-    static bool record_status = true;
-
-    // The following functions enable continuous audio sampling and inferencing
-    // https://docs.edgeimpulse.com/docs/tutorials/advanced-inferencing/continuous-audio-sampling
-
-    /**
-     * This function is repeatedly called by capture_samples()
-     * When sufficient samples are collected:
-     *  1. inference.buf_ready = 1
-     *  2. microphone_inference_record() is unblocked
-     *  3. classifier is run in main loop() 
     */
-    static void audio_inference_callback(uint32_t n_bytes)
-    {
-
-        // ESP_LOGI(TAG,"audio_inference_callback()");
-
-        for(int i = 0; i < n_bytes>>1; i++) {
-            inference.buffer[inference.buf_count++] = sampleBuffer[i];
-                
-        #ifdef SDCARD_WRITING_ENABLED
-            if (record_buffer_idx < EI_CLASSIFIER_RAW_SAMPLE_COUNT * 10) {
-                recordBuffer[record_buffer_idx++] = sampleBuffer[i];
-            } else {
-                ESP_LOGI(TAG,"Warning: Record buffer is full, skipping sample\n");
-            }
-        #endif
-
-        if(inference.buf_count >= inference.n_samples) {
-            inference.buf_count = 0;
-            inference.buf_ready = 1;
-        }
 }
-    }
 
-    /**
-     * This is initiated by a task created in microphone_inference_record_start()
-     * When periodically called it:
-     *  1. reads data from I2S DMA buffer, 
-     *  2. scales it
-     *  3. Calls audio_inference_callback() 
-    */
-    static void capture_samples(void* arg) {
+void printRevision()
+{
 
-        ESP_LOGI(TAG,"capture_samples()");
-        
-        const int32_t i2s_bytes_to_read = (uint32_t)arg;
-        
-        // logical right shift divides a number by 2, throwing out any remainders
-        size_t i2s_samples_to_read = i2s_bytes_to_read >> 1;
+    /*
+      esp_chip_info_t chip_info;
+      esp_chip_info(&chip_info);
+      printf("\nThis is ESP32 chip with %d CPU cores, WiFi%s%s, ",
+              chip_info.cores,
+              (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
+              (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "");
 
-        if (input != nullptr){
-            input->start();
-        }
-        else {
-            ESP_LOGE(TAG,"I2SMEMSSampler input == nullptr");
-            return;
-        }
+      printf("silicon revision %d, ", chip_info.revision);
 
-        // Enter a continual loop to collect new data from I2S
-        while (record_status) {
-            int samples_read = input->read(sampleBuffer, i2s_samples_to_read);
+      printf("%dMB %s flash\n", spi_flash_get_chip_size() / (1024 * 1024),
+              (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+      */
+}
 
-            // Scale the data
-            for (int x = 0; x < i2s_samples_to_read; x++) {
-                sampleBuffer[x] = (int16_t)(sampleBuffer[x]) * I2S_DATA_SCALING_FACTOR;
-            }
+void delay(int ms)
+{
 
-            if (record_status) {
-                audio_inference_callback(i2s_bytes_to_read);
-            }
-            else {
-                break;
-            }
-        }
+    vTaskDelay(pdMS_TO_TICKS(ms));
+}
 
+void testInput()
+{
+    ESP_LOGI(TAG, "testInput()");
+    // Moved to global scope
+    // I2SSampler *input;
+    for (uint32_t i = 1000; i < 34000; i = i + 2000)
+    {
+        i2s_mic_Config.sample_rate = i;
+        i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL;
+
+        input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+        input->start();
+        delay(100);
+        ESP_LOGI(TAG, "Clockrate: %f", i2s_get_clk(I2S_NUM_0));
         input->stop();
-        
-        vTaskDelete(NULL);
+        delay(100);
+        // delete input;
+        // delay(100);
     }
-    
-
-    /**
-     * @brief      Init inferencing struct and setup/start PDM
-     *
-     * @param[in]  n_samples  The n samples
-     *
-     * @return     { description_of_the_return_value }
-     */
-    static bool microphone_inference_start(uint32_t n_samples)
-    {
-        ESP_LOGI(TAG, "microphone_inference_start()");
-        
-        inference.buffer = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
-
-        if(inference.buffer == NULL) {
-            ESP_LOGE(TAG,"ERR: Failed to allocate buffer for signal");
-            return false;
-        }
-
-        inference.buf_count  = 0;
-        inference.n_samples  = n_samples;
-        inference.buf_ready  = 0;
-
-        // This is not necessary, setup elsewhere
-        // if (i2s_init(EI_CLASSIFIER_FREQUENCY)) {
-        //     ESP_LOGE(TAG, "Failed to start I2S!");
-        // }
-
-        ei_sleep(100);
-
-        record_status = true;
-
-        xTaskCreate(capture_samples, "CaptureSamples", 1024 * 16, (void*)sample_buffer_size, 10, NULL);
-
-        return true;
-    }
-
-    /**
-     * @brief  Wait on new data. 
-     *         Blocking function.
-     *         Unblocked by audio_inference_callback() setting inference.buf_ready
-     *
-     * @return     True when finished
-     */
-    static bool microphone_inference_record(void)
-    {
-        ESP_LOGI(TAG,"microphone_inference_record()");
-
-        bool ret = true;
-
-        while (inference.buf_ready == 0) {
-            delay(10);
-        }
-
-        inference.buf_ready = 0;
-        return ret;
-    }
-
-    /**
-     * Get raw audio signal data
-     */
-    static int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
-    {
-        // ESP_LOGI(TAG,"microphone_audio_signal_get_data()");
-        numpy::int16_to_float(&inference.buffer[offset], out_ptr, length);
-
-        return 0;
-    }
-
-    /**
-     * @brief      Stop PDM and release buffers
-     */
-    static void microphone_inference_end(void)
-    {
-       // TODO: i2s_deinit();
-        heap_caps_free(inference.buffer);
-
-    }
-
-#endif
-
-void resetPeripherals() {
-   /*
-   periph_module_reset( PERIPH_I2S0_MODULE);  
-    periph_module_reset( PERIPH_BT_MODULE);
-    periph_module_reset( PERIPH_WIFI_BT_COMMON_MODULE);
-    periph_module_reset( PERIPH_BT_MODULE);
-    periph_module_reset(  PERIPH_BT_BASEBAND_MODULE);
-    periph_module_reset(PERIPH_BT_LC_MODULE);
-    //periph_module_reset(PERIPH_UART0_MODULE);    //this used by debugger?
-    periph_module_reset(PERIPH_UART1_MODULE);  //this was it! bug stops bluetooth 
-                                               //from re-broadcasting in other partition on  https://github.com/espressif/esp-idf/issues/9971
-
-    periph_module_reset(PERIPH_UART2_MODULE); //just in case
-    
-   */
-
+    // delete input;
 }
-
-
-void printRevision() {
-
-  /*
-    esp_chip_info_t chip_info;
-    esp_chip_info(&chip_info);
-    printf("\nThis is ESP32 chip with %d CPU cores, WiFi%s%s, ",
-            chip_info.cores,
-            (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
-            (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "");
-
-    printf("silicon revision %d, ", chip_info.revision);
-
-    printf("%dMB %s flash\n", spi_flash_get_chip_size() / (1024 * 1024),
-            (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
-    */
-}
-
-void delay (int  ms) {
-
-  vTaskDelay(pdMS_TO_TICKS(ms));
-
-} 
-
-
-void testInput() {
-         // Moved to global scope
-         // I2SSampler *input;
-          for (uint32_t i=1000; i<34000; i=i+2000) {
-                 i2s_mic_Config.sample_rate=i;
-                 i2s_mic_Config.use_apll=getMicInfo().MicUseAPLL;
-           
-
-                 input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-                 input->start();
-                 delay(100);
-                  ESP_LOGI(TAG, "Clockrate: %f", i2s_get_clk(I2S_NUM_0));
-                 input->stop();
-                  delay(100);
-                  //delete input;
-                  //delay(100);
-
-        }
-        //delete input;
-}
-
-
-
 
 void resetESP32() {
 
@@ -897,6 +708,227 @@ i2s_config_t getI2sConfig() {
     return i2s_mic_Config;
 }
 
+#ifdef EDGE_IMPULSE_ENABLED
+// If your target is limited in memory remove this macro to save 10K RAM
+// But if you do results in errors: '.... insn does not satisfy its constraints'
+#define EIDSP_QUANTIZE_FILTERBANK 0
+
+#define I2S_DATA_SCALING_FACTOR 1
+
+#include "trumpet_inferencing.h"
+#include "test_samples.h"
+
+/** Audio buffers, pointers and selectors */
+typedef struct
+{
+    int16_t *buffer;
+    uint8_t buf_ready;
+    uint32_t buf_count;
+    uint32_t n_samples;
+} inference_t;
+
+static inference_t inference;
+static const uint32_t sample_buffer_size = 2048;
+static signed short sampleBuffer[sample_buffer_size];
+static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
+static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
+static bool record_status = true;
+
+// The following functions enable continuous audio sampling and inferencing
+// https://docs.edgeimpulse.com/docs/tutorials/advanced-inferencing/continuous-audio-sampling
+
+/**
+ * This function is repeatedly called by capture_samples()
+ * When sufficient samples are collected:
+ *  1. inference.buf_ready = 1
+ *  2. microphone_inference_record() is unblocked
+ *  3. classifier is run in main loop()
+ */
+static void audio_inference_callback(uint32_t n_bytes)
+{
+
+    ESP_LOGI(TAG,"audio_inference_callback()");
+
+    for (int i = 0; i < n_bytes >> 1; i++)
+    {
+        inference.buffer[inference.buf_count++] = sampleBuffer[i];
+
+#ifdef SDCARD_WRITING_ENABLED
+        if (record_buffer_idx < EI_CLASSIFIER_RAW_SAMPLE_COUNT * 10)
+        {
+            recordBuffer[record_buffer_idx++] = sampleBuffer[i];
+        }
+        else
+        {
+            ESP_LOGI(TAG, "Warning: Record buffer is full, skipping sample\n");
+        }
+#endif
+
+        if (inference.buf_count >= inference.n_samples)
+        {
+            inference.buf_count = 0;
+            inference.buf_ready = 1;
+        }
+    }
+}
+
+/**
+ * This is initiated by a task created in microphone_inference_record_start()
+ * When periodically called it:
+ *  1. reads data from I2S DMA buffer,
+ *  2. scales it
+ *  3. Calls audio_inference_callback()
+ */
+static void capture_samples(void *arg)
+{
+
+    ESP_LOGI(TAG, "capture_samples()");
+
+    const int32_t i2s_bytes_to_read = (uint32_t)arg;
+
+    // logical right shift divides a number by 2, throwing out any remainders
+    size_t i2s_samples_to_read = i2s_bytes_to_read >> 1;
+
+    if (input != nullptr)
+    {
+        input->start();
+    }
+    else
+    {
+        ESP_LOGE(TAG, "I2SMEMSSampler input == nullptr");
+        return;
+    }
+
+    // Enter a loop to collect new data from I2S
+    while (record_status)
+    {
+        int samples_read = input->read(sampleBuffer, i2s_samples_to_read);
+
+        // Scale the data
+        for (int x = 0; x < i2s_samples_to_read; x++)
+        {
+            sampleBuffer[x] = (int16_t)(sampleBuffer[x]) * I2S_DATA_SCALING_FACTOR;
+        }
+
+        if (record_status)
+        {
+            audio_inference_callback(i2s_bytes_to_read);
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    input->stop();
+
+    vTaskDelete(NULL);
+}
+
+/**
+ * @brief      Init inferencing struct and setup/start PDM
+ *
+ * @param[in]  n_samples  The n samples
+ *
+ * @return     { description_of_the_return_value }
+ */
+static bool microphone_inference_start(uint32_t n_samples)
+{
+    ESP_LOGI(TAG, "microphone_inference_start()");
+
+    inference.buffer = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+
+    if (inference.buffer == NULL)
+    {
+        ESP_LOGE(TAG, "ERR: Failed to allocate buffer for signal");
+        return false;
+    }
+
+    inference.buf_count = 0;
+    inference.n_samples = n_samples;
+    inference.buf_ready = 0;
+
+    // EI implementation
+    // if (i2s_init(EI_CLASSIFIER_FREQUENCY)) {
+    //     ESP_LOGE(TAG, "Failed to start I2S!");
+    // }
+
+    getI2sConfig();
+    input = new I2SMEMSSampler (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+
+    if (input != nullptr)
+    {
+        input->start();
+    }
+    else
+    {
+        ESP_LOGE(TAG, "I2SMEMSSampler input == nullptr");
+        return false;
+    }
+
+    ei_sleep(100);
+
+    record_status = true;
+
+    xTaskCreate(capture_samples, "CaptureSamples", 1024 * 16, (void *)sample_buffer_size, 10, NULL);
+
+    return true;
+}
+
+/**
+ * @brief  Wait on new data.
+ *         Blocking function.
+ *         Unblocked by audio_inference_callback() setting inference.buf_ready
+ *
+ * @return     True when finished
+ */
+static bool microphone_inference_record(void)
+{
+    ESP_LOGI(TAG, "microphone_inference_record()");
+
+    bool ret = true;
+
+    while (inference.buf_ready == 0)
+    {
+        delay(10);
+    }
+
+    ESP_LOGI(TAG, "microphone_inference_record() - exit");
+    inference.buf_ready = 0;
+    return ret;
+}
+
+/**
+ * Get raw audio signal data
+ */
+static int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
+{
+    // ESP_LOGI(TAG,"microphone_audio_signal_get_data()");
+    numpy::int16_to_float(&inference.buffer[offset], out_ptr, length);
+
+    return 0;
+}
+
+/**
+ * @brief      Stop PDM and release buffers
+ */
+static void microphone_inference_end(void)
+{
+    // i2s_deinit();
+    if (input != nullptr)
+    {
+        input->stop();
+    }
+    else
+    {
+        ESP_LOGE(TAG, "I2SMEMSSampler input == nullptr");
+        return;
+    }
+    heap_caps_free(inference.buffer);
+}
+
+#endif
+
 void app_main(void) {
 
     ESP_LOGI(TAG, "\nSETUP--start\n");
@@ -993,11 +1025,13 @@ void app_main(void) {
     mountSDCard();
     freeSpace();
 
-    auto psram_size = esp_spiram_get_size();
-    if (psram_size == 0)
-        ESP_LOGW(TAG,"Error: SPI RAM (PSRAM) Not found" );
-    else
-        ESP_LOGI(TAG,"Available SPI RAM (PSRAM): %d bytes, %d MBit", psram_size, (psram_size/ 131072));
+    if(0){
+        auto psram_size = esp_spiram_get_size();
+        if (psram_size == 0)
+            ESP_LOGW(TAG,"Error: SPI RAM (PSRAM) Not found" );
+        else
+            ESP_LOGI(TAG,"Available SPI RAM (PSRAM): %d bytes, %d MBit", psram_size, (psram_size/ 131072));
+    }
 
     // print some file system info
     ESP_LOGI(TAG, "File system loaded: ");
@@ -1037,7 +1071,7 @@ void app_main(void) {
         ESP_LOGI(TAG,"Sample length: %d ms.", EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16);
         ESP_LOGI(TAG,"No. of classes: %d", sizeof(ei_classifier_inferencing_categories) / sizeof(ei_classifier_inferencing_categories[0]));
 
-        if (1){
+        if (0){
             // Run stored audio samples through the model to test it
             ESP_LOGI(TAG,"Testing model against pre-recorded sample data...");
             
@@ -1115,42 +1149,23 @@ void app_main(void) {
     ESP_LOGI(TAG, "waiting for button or bluetooth");
     ESP_LOGI(TAG, "voltage is %.3f", Battery::GetInstance().getVoltage());
 
-    
-    // Start microphone sampling for EI inferencing
-    getI2sConfig(); 
-    // I2SMEMSSampler input moved to global scope
-    // I2SMEMSSampler input (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-    input = new I2SMEMSSampler (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+#ifdef EDGE_IMPULSE_ENABLED
 
-    while (true) {
+    while (true)
+    {
 
-        // rec_req_t rec_req = REC_REQ_NONE;
-        // if (xQueueReceive(rec_req_evt_queue, &rec_req, pdMS_TO_TICKS(500))) {
-        //     ESP_LOGI(TAG,"REC_REQ = %d", rec_req);
-        //     if (rec_req == REC_REQ_START) {
-        //         if (esp_err_t err = checkSDCard() != ESP_OK) {
-        //             ESP_LOGE(TAG, "Cannot start recording due to SD error %s", esp_err_to_name(err));
-        //             // TODO: set status here and let LED flash as long as the device is in error state
-        //             LEDflashError();
-        //         } else {
-        //             getI2sConfig(); 
-        //             I2SMEMSSampler input (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-        //             // record(&input);
-        //         }
-        //     }
-        // }
+        if (microphone_inference_start(EI_CLASSIFIER_RAW_SAMPLE_COUNT) == false)
+        {
+            ESP_LOGE(TAG, "ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+        }
 
-        ESP_LOGI(TAG, "loop");
-
-        #ifdef EDGE_IMPULSE_ENABLED
-            if (microphone_inference_start(EI_CLASSIFIER_RAW_SAMPLE_COUNT) == false) {
-                ESP_LOGE(TAG, "ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
-            }
-
+        while (record_status == true)
+        {
             bool m = microphone_inference_record();
             // Blocking function - unblocks when buffer is full
-            if (!m) {
-                ESP_LOGE(TAG,"ERR: Failed to record audio...");
+            if (!m)
+            {
+                ESP_LOGE(TAG, "ERR: Failed to record audio...");
                 return;
             }
 
@@ -1162,32 +1177,65 @@ void app_main(void) {
             ei_impulse_result_t result = {0};
 
             EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
-            if (r != EI_IMPULSE_OK) {
-                ESP_LOGE(TAG,"ERR: Failed to run classifier (%d)", r);
+            if (r != EI_IMPULSE_OK)
+            {
+                ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
                 return;
             }
 
-            if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW)) {
+            if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))
+            {
                 // print the predictions
-                ESP_LOGI(TAG,"Predictions ");
-                ESP_LOGI(TAG,"(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
-                    result.timing.dsp, result.timing.classification, result.timing.anomaly);
-                
-                for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
-                    ESP_LOGI(TAG,"    %s: %f", result.classification[ix].label, result.classification[ix].value);
+                ESP_LOGI(TAG, "Predictions ");
+                ESP_LOGI(TAG, "(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
+                            result.timing.dsp, result.timing.classification, result.timing.anomaly);
+
+                for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
+                {
+                    ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
                 }
 
-            #if EI_CLASSIFIER_HAS_ANOMALY == 1
-                ESP_LOGI(TAG,"    anomaly score: %f", result.anomaly);
-            #endif
+#if EI_CLASSIFIER_HAS_ANOMALY == 1
+                ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
+#endif
 
                 print_results = 0;
             }
 
-        #endif  // EDGE_IMPULSE_ENABLED
+        } // end while(record_status == true)
 
+        // record_status = false;
+        // Prepare to restart
+        microphone_inference_end();
+        delay(500);
+    
+    } // end while(1)
+
+#else // EDGE_IMPULSE_ENABLED
+
+    while (true)
+    {
+        // Code from before EI implementation
+        rec_req_t rec_req = REC_REQ_NONE;
+        if (xQueueReceive(rec_req_evt_queue, &rec_req, pdMS_TO_TICKS(500))) {
+            ESP_LOGI(TAG,"REC_REQ = %d", rec_req);
+            if (rec_req == REC_REQ_START) {
+                if (esp_err_t err = checkSDCard() != ESP_OK) {
+                    ESP_LOGE(TAG, "Cannot start recording due to SD error %s", esp_err_to_name(err));
+                    // TODO: set status here and let LED flash as long as the device is in error state
+                    LEDflashError();
+                } else {
+                    getI2sConfig();
+                    input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+                    record(input);
+                }
+            }
+        }
     }
 
+#endif // EDGE_IMPULSE_ENABLED
+
+    ESP_LOGI(TAG, "app_main done");
 }
 
 

@@ -51,6 +51,7 @@ int I2SMEMSSampler::read(int16_t *samples, int count)
 }
 
 #else // NOT EDGE_IMPULSE_ENABLED
+    // Code from before EI implementation
 
 int I2SMEMSSampler::read(int16_t *samples, int count)
 {

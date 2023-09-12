@@ -11,7 +11,6 @@ I2SSampler::I2SSampler(i2s_port_t i2sPort, const i2s_config_t &i2s_config) : m_i
 {
 }
 
-
 esp_err_t I2SSampler::start()
 {
     //install and start i2s driver

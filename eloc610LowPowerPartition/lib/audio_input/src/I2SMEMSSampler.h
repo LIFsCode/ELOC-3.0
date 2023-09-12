@@ -28,4 +28,6 @@ public:
         bool listenOnly = false,
         bool fixSPH0645 = false);
     virtual int read(int16_t *samples, int count);
+
+    virtual ~I2SMEMSSampler() {};
 };

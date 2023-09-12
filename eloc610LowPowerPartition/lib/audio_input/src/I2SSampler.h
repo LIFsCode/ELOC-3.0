@@ -26,4 +26,6 @@ public:
     {
         return m_i2s_config.sample_rate;
     }
+
+    virtual ~I2SSampler() {};
 };

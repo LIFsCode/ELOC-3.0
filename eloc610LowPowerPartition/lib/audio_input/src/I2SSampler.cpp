@@ -12,7 +12,7 @@ I2SSampler::I2SSampler(i2s_port_t i2sPort, const i2s_config_t &i2s_config) : m_i
 }
 
 
-void I2SSampler::start()
+esp_err_t I2SSampler::start()
 {
     //install and start i2s driver
     //i2s_driver_install(m_i2sPort, &m_i2s_config, 0, NULL);
@@ -21,11 +21,13 @@ void I2SSampler::start()
     
     if(r != ESP_OK) {
         ESP_LOGE(TAG, "i2s_driver_install error: %s", esp_err_to_name(r));
-        return;
+        return r;
     }
 
     // set up the I2S configuration from the subclass
     configureI2S();
+
+    return r;
 }
 
 void I2SSampler::stop()

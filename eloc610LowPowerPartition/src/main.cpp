@@ -708,6 +708,8 @@ i2s_config_t getI2sConfig() {
     return i2s_mic_Config;
 }
 
+#define EDGE_IMPULSE_ENABLED
+
 #ifdef EDGE_IMPULSE_ENABLED
 // If your target is limited in memory remove this macro to save 10K RAM
 // But if you do results in errors: '.... insn does not satisfy its constraints'
@@ -747,7 +749,7 @@ static bool record_status = true;
 static void audio_inference_callback(uint32_t n_bytes)
 {
 
-    ESP_LOGI(TAG,"audio_inference_callback()");
+    // ESP_LOGI(TAG,"audio_inference_callback()");
 
     for (int i = 0; i < n_bytes >> 1; i++)
     {
@@ -784,20 +786,25 @@ static void capture_samples(void *arg)
 
     ESP_LOGI(TAG, "capture_samples()");
 
+    record_status = false;
+
     const int32_t i2s_bytes_to_read = (uint32_t)arg;
 
     // logical right shift divides a number by 2, throwing out any remainders
     size_t i2s_samples_to_read = i2s_bytes_to_read >> 1;
 
-    if (input != nullptr)
-    {
-        input->start();
-    }
-    else
-    {
+    if (input == nullptr){
         ESP_LOGE(TAG, "I2SMEMSSampler input == nullptr");
         return;
     }
+
+    if (input->start() != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to start I2S MEMS sampler");
+        return;
+    }
+
+    record_status = true;
 
     // Enter a loop to collect new data from I2S
     while (record_status)
@@ -836,6 +843,8 @@ static bool microphone_inference_start(uint32_t n_samples)
 {
     ESP_LOGI(TAG, "microphone_inference_start()");
 
+    record_status = false;
+
     inference.buffer = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
 
     if (inference.buffer == NULL)
@@ -854,17 +863,14 @@ static bool microphone_inference_start(uint32_t n_samples)
     // }
 
     getI2sConfig();
-    input = new I2SMEMSSampler (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-
+    
     if (input != nullptr)
     {
-        input->start();
-    }
-    else
-    {
-        ESP_LOGE(TAG, "I2SMEMSSampler input == nullptr");
+        // From restart an instance may already exist
+        ESP_LOGE(TAG, "I2SMEMSSampler input != nullptr");
         return false;
     }
+    input = new I2SMEMSSampler (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,getConfig().listenOnly, getMicInfo().MicUseTimingFix);
 
     ei_sleep(100);
 
@@ -914,17 +920,24 @@ static int microphone_audio_signal_get_data(size_t offset, size_t length, float 
  */
 static void microphone_inference_end(void)
 {
-    // i2s_deinit();
-    if (input != nullptr)
+    ESP_LOGI(TAG, "microphone_inference_end()");
+
+    record_status = false;
+    delay(1000);
+    
+    if (input == nullptr)
     {
-        input->stop();
-    }
-    else
-    {
-        ESP_LOGE(TAG, "I2SMEMSSampler input == nullptr");
+         ESP_LOGE(TAG, "I2SMEMSSampler input == nullptr");
         return;
     }
+   
+    input->stop();
     heap_caps_free(inference.buffer);
+
+    delete input;
+
+    input = nullptr;
+
 }
 
 #endif
@@ -1156,7 +1169,12 @@ void app_main(void) {
 
         if (microphone_inference_start(EI_CLASSIFIER_RAW_SAMPLE_COUNT) == false)
         {
-            ESP_LOGE(TAG, "ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+            // ESP_LOGE(TAG, "ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+            ESP_LOGE(TAG, "ERR: microphone_inference_start failed, restarting...");
+            delay(500);
+            microphone_inference_end();
+            delay(500);
+            continue;
         }
 
         while (record_status == true)
@@ -1180,7 +1198,10 @@ void app_main(void) {
             if (r != EI_IMPULSE_OK)
             {
                 ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
-                return;
+                // TODO: Debug
+                // return;
+                record_status = false;
+                continue;
             }
 
             if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))
@@ -1207,7 +1228,7 @@ void app_main(void) {
         // record_status = false;
         // Prepare to restart
         microphone_inference_end();
-        delay(500);
+        delay(1000);
     
     } // end while(1)
 

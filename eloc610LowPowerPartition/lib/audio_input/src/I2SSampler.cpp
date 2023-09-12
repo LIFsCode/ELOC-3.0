@@ -25,9 +25,8 @@ esp_err_t I2SSampler::start()
     }
 
     // set up the I2S configuration from the subclass
-    configureI2S();
+    return(configureI2S());
 
-    return r;
 }
 
 void I2SSampler::stop()

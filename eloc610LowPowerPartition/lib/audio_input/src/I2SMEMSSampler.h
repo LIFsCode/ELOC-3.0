@@ -11,7 +11,7 @@ private:
     bool mListenOnly;
 
 protected:
-    void configureI2S();
+    esp_err_t configureI2S();
 
 public:
     void setBitShift(int bitShift) {

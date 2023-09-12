@@ -1,6 +1,11 @@
 #include "I2SMEMSSampler.h"
 #include "soc/i2s_reg.h"
 
+#include "esp_err.h"
+#include "esp_log.h"
+
+static const char* TAG = "I2SMEMSSampler";
+
 extern int32_t *graw_samples;
 
 I2SMEMSSampler::I2SMEMSSampler(
@@ -17,7 +22,7 @@ I2SMEMSSampler::I2SMEMSSampler(
     m_fixSPH0645 = fixSPH0645;
 }
 
-void I2SMEMSSampler::configureI2S()
+esp_err_t I2SMEMSSampler::configureI2S()
 {
     if (m_fixSPH0645)
     {
@@ -26,7 +31,14 @@ void I2SMEMSSampler::configureI2S()
         REG_SET_BIT(I2S_CONF_REG(m_i2sPort), I2S_RX_MSB_SHIFT);
     }
 
-    i2s_set_pin(m_i2sPort, &m_i2sPins);
+    auto r = i2s_set_pin(m_i2sPort, &m_i2sPins);
+
+    if (r != ESP_OK)
+    {
+        ESP_LOGE(TAG, "i2s_set_pin error: %s", esp_err_to_name(r));
+    }
+
+    return r;
 }
 
 

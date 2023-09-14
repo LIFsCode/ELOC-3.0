@@ -11,7 +11,6 @@ i2s_config_t i2s_mic_Config = {
     #ifdef USE_SDIO_VERSION
        .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT, //bug! should be left? for 5.2.0 eave this for both spi and sdio
     #endif
-
     .communication_format = I2S_COMM_FORMAT_I2S,
     .intr_alloc_flags = I2S_INTR_PIRO,
     .dma_buf_count = I2S_DMA_BUFFER_COUNT,  //so 2000 sample  buffer at 16khz sr gives us 125ms to do our writing

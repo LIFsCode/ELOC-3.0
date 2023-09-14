@@ -708,7 +708,7 @@ i2s_config_t getI2sConfig() {
     return i2s_mic_Config;
 }
 
-#define EDGE_IMPULSE_ENABLED
+// #define EDGE_IMPULSE_ENABLED
 
 #ifdef EDGE_IMPULSE_ENABLED
 // If your target is limited in memory remove this macro to save 10K RAM
@@ -890,7 +890,7 @@ static bool microphone_inference_start(uint32_t n_samples)
  */
 static bool microphone_inference_record(void)
 {
-    ESP_LOGI(TAG, "microphone_inference_record()");
+    // ESP_LOGI(TAG, "microphone_inference_record()");
 
     bool ret = true;
 
@@ -899,7 +899,7 @@ static bool microphone_inference_record(void)
         delay(10);
     }
 
-    ESP_LOGI(TAG, "microphone_inference_record() - exit");
+    // ESP_LOGI(TAG, "microphone_inference_record() - exit");
     inference.buf_ready = 0;
     return ret;
 }
@@ -923,6 +923,7 @@ static void microphone_inference_end(void)
     ESP_LOGI(TAG, "microphone_inference_end()");
 
     record_status = false;
+    // Wait for 'capture_samples' thread to terminate
     delay(1000);
     
     if (input == nullptr)
@@ -1163,6 +1164,10 @@ void app_main(void) {
     ESP_LOGI(TAG, "voltage is %.3f", Battery::GetInstance().getVoltage());
 
 #ifdef EDGE_IMPULSE_ENABLED
+
+    // Wait for system to settle..
+    
+    delay(2000);
 
     while (true)
     {

@@ -52,9 +52,9 @@ const micInfo_t& getMicInfo();
 typedef struct {
     int  secondsPerFile;
     bool listenOnly;
-    int  cpuMaxFrequencyMHZ;    // SPI this fails for anyting below 80   //
+    int  cpuMaxFrequencyMHZ;        // SPI this fails for anything below 80   //
     int  cpuMinFrequencyMHZ;
-    bool cpuEnableLightSleep; //only for AUTOMATIC light leep.
+    bool cpuEnableLightSleep;       // Only for AUTOMATIC light sleep.
     bool bluetoothEnableAtStart;
     bool bluetoothEnableOnTapping;
     bool bluetoothEnableDuringRecord;

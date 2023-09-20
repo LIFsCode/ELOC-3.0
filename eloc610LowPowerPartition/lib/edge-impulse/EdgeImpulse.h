@@ -1,5 +1,5 @@
 /**
- * @file edge-impulse.h
+ * @file EdgeImpulse.h
  * @brief Edge Impulse header file
  * 
 */
@@ -7,9 +7,28 @@
 #ifndef _EDGE_IMPULSE_H_
 #define _EDGE_IMPULSE_H_
 
+// If your target is limited in memory remove this macro to save 10K RAM
+// But if you do results in errors: '.... insn does not satisfy its constraints'
+#define EIDSP_QUANTIZE_FILTERBANK 0
+
+#define I2S_DATA_SCALING_FACTOR 1
+
 #include "esp_err.h"
 #include "esp_log.h"
 #include "I2SMEMSSampler.h"
+#include "trumpet_inferencing.h"
+// #include "../include/test_samples.h"
+
+
+typedef struct
+{
+    int16_t *buffer;
+    uint8_t buf_ready;
+    uint32_t buf_count;
+    uint32_t n_samples;
+} inference_t;
+
+extern I2SMEMSSampler *input;
 
 /**
  * This function is repeatedly called by capture_samples()

@@ -1,28 +1,14 @@
 /**
- * @file edge-impulse.c
+ * @file EdgeImpulse.c
  * @brief Edge Impulse helper functions
  *
 */
 
-#include "edge-impulse.h"
+#include "EdgeImpulse.h"
 
-// If your target is limited in memory remove this macro to save 10K RAM
-// But if you do results in errors: '.... insn does not satisfy its constraints'
-#define EIDSP_QUANTIZE_FILTERBANK 0
-
-#define I2S_DATA_SCALING_FACTOR 1
-
-#include "trumpet_inferencing.h"
-#include "test_samples.h"
+static const char *TAG = "EdgeImpulse";
 
 /** Audio buffers, pointers and selectors */
-typedef struct
-{
-    int16_t *buffer;
-    uint8_t buf_ready;
-    uint32_t buf_count;
-    uint32_t n_samples;
-} inference_t;
 
 static inference_t inference;
 static const uint32_t sample_buffer_size = 2048;

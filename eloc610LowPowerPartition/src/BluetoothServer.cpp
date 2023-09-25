@@ -42,6 +42,7 @@
 #include "FirmwareUpdate.hpp"
 #include "ElocConfig.hpp"
 #include "ElocSystem.hpp"
+#include "utils/logging.hpp"
 
 #include "Battery.hpp"
 
@@ -120,6 +121,12 @@ void btwrite(const String& theString) {
         SerialBT.println(theString);
         SerialBT.print(static_cast<char>(0x04));
     }
+}
+
+void btwrite(const String& theString, esp_err_t errCode) {
+    char response[128];
+    snprintf(response, sizeof(response), "E%05d: %s", errCode, errCode != ESP_OK ? esp_err_to_name(errCode): "");
+    btwrite(String(response) + theString);
 }
 
 //BUGME: place this somewhere else
@@ -534,6 +541,21 @@ void wait_for_bt_command() {
                 String status;
                 printStatus(status);
                 btwrite(status);
+            }
+            if (serialIN.startsWith("setLogPersistant")) {
+                String cfg = serialIN.substring(serialIN.indexOf('#')+1);
+                cfg.trim();
+                esp_err_t err = ESP_OK;
+                if (cfg.equalsIgnoreCase("on")) {
+                    err = Logging::esp_log_to_scard(true);
+                }
+                else if (cfg.equalsIgnoreCase("off")) {
+                    err = Logging::esp_log_to_scard(false);
+                }
+                else {
+                    err = ESP_ERR_INVALID_ARG;
+                }
+                btwrite(cfg, err);
             }
 
             if (serialIN.startsWith("_setClk_")) {

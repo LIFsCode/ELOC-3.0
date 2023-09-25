@@ -689,8 +689,8 @@ void wakeup_task (void *pvParameters)
                ESP_LOGI(TAG, "LIS3DH %s\n", 
                       click_src.s_click ? "single click" : "double click");
 
-            float voltage = Battery::GetInstance().getVoltage();
-            ESP_LOGI(TAG, "Bat Voltage %.3f\n", voltage);
+            Battery& battery = Battery::GetInstance();
+            ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC", battery.getVoltage(), battery.getSoC());
 
             if (!gBluetoothEnabled && getConfig().bluetoothEnableOnTapping) {
                 ESP_LOGI(TAG, " two following are heap size, total and max alloc ");

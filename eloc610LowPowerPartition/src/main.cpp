@@ -54,12 +54,8 @@
 #include "PerfMonitor.hpp"
 
 #ifdef EDGE_IMPULSE_ENABLED
-    #include "EdgeImpulse.h"
-    #include "test_samples.h"   // TODO: remove this
-    extern bool record_status;
-    extern inference_t inference;
-    extern bool debug_nn;
-    extern int print_results;
+    #include <EdgeImpulse.h>
+    #include <test_samples.h>   // TODO: remove this
 #endif
 
 static const char *TAG = "main";

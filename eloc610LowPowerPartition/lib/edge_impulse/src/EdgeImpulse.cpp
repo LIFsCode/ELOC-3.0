@@ -4,12 +4,13 @@
  *
 */
 
-#include "EdgeImpulse.h"
+#include "EdgeImpulse.hpp"
+#include "trumpet_inferencing.h"
 
 static const char *TAG = "EdgeImpulse";
 
 /** Audio buffers, pointers and selectors */
-
+/** Need to be globally accessible... */
 inference_t inference;
 const uint32_t sample_buffer_size = 2048;
 signed short sampleBuffer[sample_buffer_size];
@@ -17,8 +18,11 @@ bool debug_nn = false; // Set this to true to see e.g. features generated from t
 int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
 bool record_status = true;
 
+
 // The following functions enable continuous audio sampling and inferencing
 // https://docs.edgeimpulse.com/docs/tutorials/advanced-inferencing/continuous-audio-sampling
+
+
 
 /**
  * This function is repeatedly called by capture_samples()
@@ -30,7 +34,7 @@ bool record_status = true;
 void audio_inference_callback(uint32_t n_bytes)
 {
 
-    // ESP_LOGI(TAG,"audio_inference_callback()");
+    ESP_LOGI(TAG,"audio_inference_callback()");
 
     for (int i = 0; i < n_bytes >> 1; i++)
     {
@@ -171,7 +175,7 @@ bool microphone_inference_start(uint32_t n_samples)
  */
 bool microphone_inference_record(void)
 {
-    // ESP_LOGI(TAG, "microphone_inference_record()");
+    ESP_LOGI(TAG, "microphone_inference_record()");
 
     bool ret = true;
 
@@ -190,8 +194,8 @@ bool microphone_inference_record(void)
  */
 int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
 {
-    // ESP_LOGI(TAG,"microphone_audio_signal_get_data()");
-    numpy::int16_to_float(&inference.buffer[offset], out_ptr, length);
+   ESP_LOGI(TAG,"microphone_audio_signal_get_data()");
+   numpy::int16_to_float(&inference.buffer[offset], out_ptr, length);
 
     return 0;
 }

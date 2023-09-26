@@ -16,7 +16,6 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "I2SMEMSSampler.h"
-#include "trumpet_inferencing.h"
 // #include "../include/test_samples.h"
 
 
@@ -37,7 +36,7 @@ extern I2SMEMSSampler *input;
  *  2. microphone_inference_record() is unblocked
  *  3. classifier is run in main loop()
  */
-static void audio_inference_callback(uint32_t n_bytes);
+void audio_inference_callback(uint32_t n_bytes);
 
 /**
  * This is initiated by a task created in microphone_inference_record_start()
@@ -46,7 +45,7 @@ static void audio_inference_callback(uint32_t n_bytes);
  *  2. scales it
  *  3. Calls audio_inference_callback()
  */
-static void capture_samples(void *arg);
+void capture_samples(void *arg);
 
 /**
  * @brief      Init inferencing struct and setup/start PDM
@@ -55,7 +54,7 @@ static void capture_samples(void *arg);
  *
  * @return     { description_of_the_return_value }
  */
-static bool microphone_inference_start(uint32_t n_samples);
+bool microphone_inference_start(uint32_t n_samples);
 
 /**
  * @brief  Wait on new data.
@@ -64,17 +63,17 @@ static bool microphone_inference_start(uint32_t n_samples);
  *
  * @return     True when finished
  */
-static bool microphone_inference_record(void);
+bool microphone_inference_record(void);
 
 /**
  * Get raw audio signal data
  */
-static int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr);
+int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr);
 
 /**
  * @brief      Stop PDM and release buffers
  */
-static void microphone_inference_end(void);
+void microphone_inference_end(void);
 
 /**
  * @brief      Start recording audio

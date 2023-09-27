@@ -882,7 +882,7 @@ void app_main(void) {
         //         return;
         //     }
 
-        //     // Artifically fill buffer with test data
+        //     // Artificially fill buffer with test data
         //     for (auto i = 0; i < TEST_SAMPLE_LENGTH; i++){
         //        inference.buffer[i] = trumpet_test[i];
         //     }

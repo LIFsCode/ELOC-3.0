@@ -23,6 +23,16 @@ bool record_status = true;
 // https://docs.edgeimpulse.com/docs/tutorials/advanced-inferencing/continuous-audio-sampling
 
 
+void output_inferencing_settings(){
+    // summary of inferencing settings (from model_metadata.h)
+    ESP_LOGI(TAG, "Edge Impulse Inferencing settings:");
+    ESP_LOGI(TAG, "Interval: %f ms.", (float)EI_CLASSIFIER_INTERVAL_MS);
+    ESP_LOGI(TAG, "Frame size: %d", EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE);
+    ESP_LOGI(TAG, "Sample length: %d ms.", EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16);
+    ESP_LOGI(TAG, "No. of classes: %d", sizeof(ei_classifier_inferencing_categories) / sizeof(ei_classifier_inferencing_categories[0]));
+
+}
+
 
 /**
  * This function is repeatedly called by capture_samples()

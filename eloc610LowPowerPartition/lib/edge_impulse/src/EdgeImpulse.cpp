@@ -1,30 +1,41 @@
 /**
  * @file EdgeImpulse.c
- * @brief Edge Impulse helper functions
- *
-*/
+ * @brief Edge Impulse class
+ * @note The following functions enable continuous audio sampling and inferencing
+ * @note https://docs.edgeimpulse.com/docs/tutorials/advanced-inferencing/continuous-audio-sampling
+ */
 
 #include "EdgeImpulse.hpp"
 #include "trumpet_inferencing.h"
+#include "config.h"
+
+   // Ideally these would be created dynamically but then can't reference
+    // Can't declare in header as end up with name mangling when multiple inclusions
+    static signal_t signal;
+    static signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
+    static signal.get_data = &microphone_audio_signal_get_data;
+    static ei_impulse_result_t result = {0};
 
 static const char *TAG = "EdgeImpulse";
 
 
-/** Audio buffers, pointers and selectors */
-/** Need to be globally accessible... */
-inference_t inference;
-const uint32_t sample_buffer_size = 2048;
-signed short sampleBuffer[sample_buffer_size];
-bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
-int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
-bool record_status = true;
 
+EdgeImpulse::EdgeImpulse(int i2s_sample_rate)
+{
+    ESP_LOGI(TAG, "EdgeImpulse()");
+    if (i2s_sample_rate != EI_CLASSIFIER_FREQUENCY)
+    {
+        ESP_LOGE(TAG, "ERR: I2S sample rate %d does not match EI_CLASSIFIER_FREQUENCY %d", i2s_sample_rate, EI_CLASSIFIER_FREQUENCY);
+    }
+    
+    print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
+    record_status = false;
 
-// The following functions enable continuous audio sampling and inferencing
-// https://docs.edgeimpulse.com/docs/tutorials/advanced-inferencing/continuous-audio-sampling
+ 
+}
 
-
-void output_inferencing_settings(){
+void EdgeImpulse::output_inferencing_settings()
+{
     // summary of inferencing settings (from model_metadata.h)
     ESP_LOGI(TAG, "Edge Impulse Inferencing settings:");
     ESP_LOGI(TAG, "Interval: %f ms.", (float)EI_CLASSIFIER_INTERVAL_MS);
@@ -33,32 +44,25 @@ void output_inferencing_settings(){
     ESP_LOGI(TAG, "No. of classes: %d", sizeof(ei_classifier_inferencing_categories) / sizeof(ei_classifier_inferencing_categories[0]));
 }
 
-/**
- * This function is repeatedly called by capture_samples()
- * When sufficient samples are collected:
- *  1. inference.buf_ready = 1
- *  2. microphone_inference_record() is unblocked
- *  3. classifier is run in main loop()
- */
-void audio_inference_callback(uint32_t n_bytes)
+void EdgeImpulse::audio_inference_callback(uint32_t n_bytes)
 {
 
-    ESP_LOGI(TAG,"audio_inference_callback()");
+    ESP_LOGI(TAG, "audio_inference_callback()");
 
     for (int i = 0; i < n_bytes >> 1; i++)
     {
         inference.buffer[inference.buf_count++] = sampleBuffer[i];
 
-#ifdef SDCARD_WRITING_ENABLED
-        if (record_buffer_idx < EI_CLASSIFIER_RAW_SAMPLE_COUNT * 10)
-        {
-            recordBuffer[record_buffer_idx++] = sampleBuffer[i];
-        }
-        else
-        {
-            ESP_LOGI(TAG, "Warning: Record buffer is full, skipping sample\n");
-        }
-#endif
+        // #ifdef SDCARD_WRITING_ENABLED
+        //         if (record_buffer_idx < EI_CLASSIFIER_RAW_SAMPLE_COUNT * 10)
+        //         {
+        //             recordBuffer[record_buffer_idx++] = sampleBuffer[i];
+        //         }
+        //         else
+        //         {
+        //             ESP_LOGI(TAG, "Warning: Record buffer is full, skipping sample\n");
+        //         }
+        // #endif
 
         if (inference.buf_count >= inference.n_samples)
         {
@@ -68,14 +72,7 @@ void audio_inference_callback(uint32_t n_bytes)
     }
 }
 
-/**
- * This is initiated by a task created in microphone_inference_record_start()
- * When periodically called it:
- *  1. reads data from I2S DMA buffer,
- *  2. scales it
- *  3. Calls audio_inference_callback()
- */
-void capture_samples(void *arg)
+void EdgeImpulse::capture_samples(void *arg)
 {
 
     ESP_LOGI(TAG, "capture_samples()");
@@ -87,7 +84,8 @@ void capture_samples(void *arg)
     // logical right shift divides a number by 2, throwing out any remainders
     size_t i2s_samples_to_read = i2s_bytes_to_read >> 1;
 
-    if (input == nullptr){
+    if (input == nullptr)
+    {
         ESP_LOGE(TAG, "I2SMEMSSampler input == nullptr");
         return;
     }
@@ -133,7 +131,7 @@ void capture_samples(void *arg)
  *
  * @return     { description_of_the_return_value }
  */
-bool microphone_inference_start(uint32_t n_samples)
+bool EdgeImpulse::microphone_inference_start(uint32_t n_samples)
 {
     ESP_LOGI(TAG, "microphone_inference_start()");
 
@@ -157,7 +155,7 @@ bool microphone_inference_start(uint32_t n_samples)
     // }
 
     // TODO: getI2sConfig();
-    
+
     if (input != nullptr)
     {
         // From restart an instance may already exist
@@ -170,7 +168,7 @@ bool microphone_inference_start(uint32_t n_samples)
 
     record_status = true;
 
-    xTaskCreate(capture_samples, "CaptureSamples", 1024 * 16, (void *)sample_buffer_size, 10, NULL);
+   // xTaskCreate(capture_samples, "CaptureSamples", 1024 * 16, (void *)sample_buffer_size, 10, NULL);
 
     return true;
 }
@@ -182,7 +180,7 @@ bool microphone_inference_start(uint32_t n_samples)
  *
  * @return     True when finished
  */
-bool microphone_inference_record(void)
+bool EdgeImpulse::microphone_inference_record(void)
 {
     ESP_LOGI(TAG, "microphone_inference_record()");
 
@@ -201,10 +199,10 @@ bool microphone_inference_record(void)
 /**
  * Get raw audio signal data
  */
-int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
+int EdgeImpulse::microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
 {
-   ESP_LOGI(TAG,"microphone_audio_signal_get_data()");
-   numpy::int16_to_float(&inference.buffer[offset], out_ptr, length);
+    ESP_LOGI(TAG, "microphone_audio_signal_get_data()");
+    numpy::int16_to_float(&inference.buffer[offset], out_ptr, length);
 
     return 0;
 }
@@ -212,25 +210,24 @@ int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_pt
 /**
  * @brief      Stop PDM and release buffers
  */
-void microphone_inference_end(void)
+void EdgeImpulse::microphone_inference_end(void)
 {
     ESP_LOGI(TAG, "microphone_inference_end()");
 
     record_status = false;
     // Wait for 'capture_samples' thread to terminate
     delay(1000);
-    
+
     if (input == nullptr)
     {
-         ESP_LOGE(TAG, "I2SMEMSSampler input == nullptr");
+        ESP_LOGE(TAG, "I2SMEMSSampler input == nullptr");
         return;
     }
-   
+
     input->stop();
     heap_caps_free(inference.buffer);
 
     delete input;
 
     input = nullptr;
-
 }

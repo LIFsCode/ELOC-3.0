@@ -56,14 +56,8 @@
 #ifdef EDGE_IMPULSE_ENABLED
     #include <EdgeImpulse.hpp>
     #include <test_samples.h>   // TODO: Move this to unit test code
-   // #include "trumpet_inferencing.h"
-    extern inference_t inference;
-    extern const uint32_t sample_buffer_size;
-    extern signed short sampleBuffer[];
-    extern bool debug_nn;
-    extern int print_results;
-    extern bool record_status;
-
+    // #include "trumpet_inferencing.h"
+    EdgeImpulse *ei;
 #endif
 
 static const char *TAG = "main";
@@ -946,6 +940,8 @@ void app_main(void) {
     // Wait for system to settle..
     
     delay(2000);
+
+    ei = new EdgeImpulse(I2S_DEFAULT_SAMPLE_RATE);
 
     while (true)
     {

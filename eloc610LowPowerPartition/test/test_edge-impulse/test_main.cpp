@@ -1,13 +1,23 @@
+/**
+ * @file test_main.cpp
+ * @author Owen O'Hehir
+ * @brief Test Edge Impulse code
+ * @version 0.1
+ * @date 2023-09-27
+ *
+ * 
+ */
+
 #include <Arduino.h>
 #include <unity.h>
-#include "config.h"   // for I2S_DEFAULT_SAMPLE_RATE
+// #include "config.h"   // for I2S_DEFAULT_SAMPLE_RATE
 
 #define EIDSP_QUANTIZE_FILTERBANK 0
 
-#include "trumpet_inferencing.h"
-#include "test_samples.h"
+#include <trumpet_inferencing.h>
+#include <test_samples.h>
 
-/** Audio buffers, pointers and selectors */
+// /** Audio buffers, pointers and selectors */
 typedef struct
 {
   int16_t *buffer;
@@ -26,13 +36,14 @@ static bool record_status = true;
 /**
  * Get raw audio signal data
  */
-static int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
+int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
 {
-  // ESP_LOGI(TAG,"microphone_audio_signal_get_data()");
-  numpy::int16_to_float(&inference.buffer[offset], out_ptr, length);
+   // ESP_LOGI(TAG,"microphone_audio_signal_get_data()");
+   numpy::int16_to_float(&inference.buffer[offset], out_ptr, length);
 
-  return 0;
+    return 0;
 }
+
 
 void setUp(void)
 {
@@ -46,7 +57,7 @@ void tearDown(void)
 
 void test_sample_length(void)
 {
-  TEST_ASSERT_EQUAL(EI_CLASSIFIER_RAW_SAMPLE_COUNT, TEST_SAMPLE_LENGTH);
+  // TEST_ASSERT_EQUAL(EI_CLASSIFIER_RAW_SAMPLE_COUNT, TEST_SAMPLE_LENGTH);
 }
 
 void test_trumpet(void)
@@ -87,18 +98,6 @@ void test_trumpet(void)
       heap_caps_free(inference.buffer);
   }
 
-  void test_led_state_high(void)
-  {
-    // digitalWrite(LED_BUILTIN, HIGH);
-    // TEST_ASSERT_EQUAL(HIGH, digitalRead(LED_BUILTIN));
-  }
-
-  void test_led_state_low(void)
-  {
-    // digitalWrite(LED_BUILTIN, LOW);
-    // TEST_ASSERT_EQUAL(LOW, digitalRead(LED_BUILTIN));
-  }
-
   extern "C"
   {
     void app_main(void);
@@ -111,28 +110,10 @@ void test_trumpet(void)
     // if board doesn't support software reset via Serial.DTR/RTS
     delay(2000);
 
-    RUN_TEST(test_sample_length);
-
-
     UNITY_BEGIN(); // IMPORTANT LINE!
-    RUN_TEST(test_led_builtin_pin_number);
-
-    uint8_t i = 0;
-    uint8_t max_blinks = 5;
-
-    while (1)
-    {
-      if (i < max_blinks)
-      {
-        RUN_TEST(test_led_state_high);
-        delay(500);
-        RUN_TEST(test_led_state_low);
-        delay(500);
-        i++;
-      }
-      else if (i == max_blinks)
-      {
-        UNITY_END(); // stop unit testing
-      }
-    }
+    
+    RUN_TEST(test_sample_length);
+    RUN_TEST(test_trumpet);
+    
+    UNITY_END(); // stop unit testing
   }

@@ -15,9 +15,8 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
-#include "I2SMEMSSampler.h"
-// #include "../include/test_samples.h"
 
+// #include "../include/test_samples.h"
 
 typedef struct
 {
@@ -27,7 +26,26 @@ typedef struct
     uint32_t n_samples;
 } inference_t;
 
-extern I2SMEMSSampler *input;
+#ifndef PIO_UNIT_TESTING
+    #include <I2SMEMSSampler.h>
+    extern I2SMEMSSampler *input;
+#endif
+
+/** Audio buffers, pointers and selectors */
+/** Need to be globally accessible... */
+extern inference_t inference;
+extern const uint32_t sample_buffer_size;
+extern signed short sampleBuffer[];
+extern bool debug_nn;
+extern int print_results;
+extern bool record_status;
+
+/**
+ * @brief Output to console the inferencing settings
+ * @note summary of inferencing settings (from model_metadata.h)
+ * @note Note not EI code
+ */
+void output_inferencing_settings();
 
 /**
  * This function is repeatedly called by capture_samples()

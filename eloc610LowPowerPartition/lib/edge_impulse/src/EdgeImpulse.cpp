@@ -9,6 +9,7 @@
 
 static const char *TAG = "EdgeImpulse";
 
+
 /** Audio buffers, pointers and selectors */
 /** Need to be globally accessible... */
 inference_t inference;
@@ -30,9 +31,7 @@ void output_inferencing_settings(){
     ESP_LOGI(TAG, "Frame size: %d", EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE);
     ESP_LOGI(TAG, "Sample length: %d ms.", EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16);
     ESP_LOGI(TAG, "No. of classes: %d", sizeof(ei_classifier_inferencing_categories) / sizeof(ei_classifier_inferencing_categories[0]));
-
 }
-
 
 /**
  * This function is repeatedly called by capture_samples()

@@ -53,13 +53,6 @@
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
 
-#ifdef EDGE_IMPULSE_ENABLED
-    #include <EdgeImpulse.hpp>
-    #include <test_samples.h>   // TODO: Move this to unit test code
-    // #include "trumpet_inferencing.h"
-    EdgeImpulse *ei;
-#endif
-
 static const char *TAG = "main";
 
 bool gMountedSDCard=false;
@@ -715,6 +708,322 @@ i2s_config_t getI2sConfig() {
     return i2s_mic_Config;
 }
 
+#define EDGE_IMPULSE_ENABLED
+
+#ifdef EDGE_IMPULSE_ENABLED
+// If your target is limited in memory remove this macro to save 10K RAM
+// But if you do results in errors: '.... insn does not satisfy its constraints'
+#define EIDSP_QUANTIZE_FILTERBANK 0
+
+#define I2S_DATA_SCALING_FACTOR 1
+
+#include "trumpet_inferencing.h"
+#include "test_samples.h"
+
+/** Audio buffers, pointers and selectors */
+typedef struct
+{
+    int16_t *buffer;
+    uint8_t buf_ready;
+    uint32_t buf_count;
+    uint32_t n_samples;
+} inference_t;
+
+static inference_t inference;
+static const uint32_t sample_buffer_size = 2048;
+static signed short sampleBuffer[sample_buffer_size];
+static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
+static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
+static bool record_status = true;
+
+#define EI_FILE_RESULTS_LOCATION "/sdcard/eloc/ei_results.csv"
+
+// The following functions enable continuous audio sampling and inferencing
+// https://docs.edgeimpulse.com/docs/tutorials/advanced-inferencing/continuous-audio-sampling
+
+/**
+ * This function is repeatedly called by capture_samples()
+ * When sufficient samples are collected:
+ *  1. inference.buf_ready = 1
+ *  2. microphone_inference_record() is unblocked
+ *  3. classifier is run in main loop()
+ */
+static void audio_inference_callback(uint32_t n_bytes)
+{
+
+    // ESP_LOGI(TAG,"audio_inference_callback()");
+
+    for (int i = 0; i < n_bytes >> 1; i++)
+    {
+        inference.buffer[inference.buf_count++] = sampleBuffer[i];
+
+#ifdef SDCARD_WRITING_ENABLED
+        if (record_buffer_idx < EI_CLASSIFIER_RAW_SAMPLE_COUNT * 10)
+        {
+            recordBuffer[record_buffer_idx++] = sampleBuffer[i];
+        }
+        else
+        {
+            ESP_LOGI(TAG, "Warning: Record buffer is full, skipping sample\n");
+        }
+#endif
+
+        if (inference.buf_count >= inference.n_samples)
+        {
+            inference.buf_count = 0;
+            inference.buf_ready = 1;
+        }
+    }
+}
+
+/**
+ * This is initiated by a task created in microphone_inference_record_start()
+ * When periodically called it:
+ *  1. reads data from I2S DMA buffer,
+ *  2. scales it
+ *  3. Calls audio_inference_callback()
+ */
+static void capture_samples(void *arg)
+{
+
+    ESP_LOGI(TAG, "capture_samples()");
+
+    record_status = false;
+
+    const int32_t i2s_bytes_to_read = (uint32_t)arg;
+
+    // logical right shift divides a number by 2, throwing out any remainders
+    size_t i2s_samples_to_read = i2s_bytes_to_read >> 1;
+
+    if (input == nullptr){
+        ESP_LOGE(TAG, "I2SMEMSSampler input == nullptr");
+        return;
+    }
+
+    if (input->start() != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to start I2S MEMS sampler");
+        return;
+    }
+
+    record_status = true;
+
+    // Enter a loop to collect new data from I2S
+    while (record_status)
+    {
+        int samples_read = input->read(sampleBuffer, i2s_samples_to_read);
+
+        // Scale the data
+        for (int x = 0; x < i2s_samples_to_read; x++)
+        {
+            sampleBuffer[x] = (int16_t)(sampleBuffer[x]) * I2S_DATA_SCALING_FACTOR;
+        }
+
+        if (record_status)
+        {
+            audio_inference_callback(i2s_bytes_to_read);
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    input->stop();
+
+    vTaskDelete(NULL);
+}
+
+/**
+ * @brief      Init inferencing struct and setup/start PDM
+ *
+ * @param[in]  n_samples  The n samples
+ *
+ * @return     { description_of_the_return_value }
+ */
+static bool microphone_inference_start(uint32_t n_samples)
+{
+    ESP_LOGI(TAG, "microphone_inference_start()");
+
+    record_status = false;
+
+    inference.buffer = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+
+    if (inference.buffer == NULL)
+    {
+        ESP_LOGE(TAG, "ERR: Failed to allocate buffer for signal");
+        return false;
+    }
+
+    inference.buf_count = 0;
+    inference.n_samples = n_samples;
+    inference.buf_ready = 0;
+
+    // EI implementation
+    // if (i2s_init(EI_CLASSIFIER_FREQUENCY)) {
+    //     ESP_LOGE(TAG, "Failed to start I2S!");
+    // }
+
+    getI2sConfig();
+    
+    if (input != nullptr)
+    {
+        // From restart an instance may already exist
+        ESP_LOGE(TAG, "I2SMEMSSampler input != nullptr");
+        return false;
+    }
+    input = new I2SMEMSSampler (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+
+    ei_sleep(100);
+
+    record_status = true;
+
+    xTaskCreate(capture_samples, "CaptureSamples", 1024 * 16, (void *)sample_buffer_size, 10, NULL);
+
+    return true;
+}
+
+/**
+ * @brief  Wait on new data.
+ *         Blocking function.
+ *         Unblocked by audio_inference_callback() setting inference.buf_ready
+ *
+ * @return     True when finished
+ */
+static bool microphone_inference_record(void)
+{
+    // ESP_LOGI(TAG, "microphone_inference_record()");
+
+    bool ret = true;
+
+    while (inference.buf_ready == 0)
+    {
+        delay(10);
+    }
+
+    // ESP_LOGI(TAG, "microphone_inference_record() - exit");
+    inference.buf_ready = 0;
+    return ret;
+}
+
+/**
+ * Get raw audio signal data
+ */
+static int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
+{
+    // ESP_LOGI(TAG,"microphone_audio_signal_get_data()");
+    numpy::int16_to_float(&inference.buffer[offset], out_ptr, length);
+
+    return 0;
+}
+
+/**
+ * @brief      Stop PDM and release buffers
+ */
+static void microphone_inference_end(void)
+{
+    ESP_LOGI(TAG, "microphone_inference_end()");
+
+    record_status = false;
+    // Wait for 'capture_samples' thread to terminate
+    delay(1000);
+    
+    if (input == nullptr)
+    {
+         ESP_LOGE(TAG, "I2SMEMSSampler input == nullptr");
+        return;
+    }
+   
+    input->stop();
+    heap_caps_free(inference.buffer);
+
+    delete input;
+
+    input = nullptr;
+
+}
+
+/**
+ * @brief Check if file exists to record inference result from Edge Impulse
+ * @note If the file doesn't exits it will be created with the following details:
+ *          EI Project ID, 186372
+ *          EI Project owner, EDsteve
+ *          EI Project name, trumpet          
+ *          EI Project deploy version, 2
+*/
+int create_inference_result_file_SD() {
+
+    String temp = EI_FILE_RESULTS_LOCATION;
+    FILE *fp = fopen(temp.c_str(), "r");
+
+    String file_string;
+
+    if (fp){
+        ESP_LOGI(TAG, "%s exists", EI_FILE_RESULTS_LOCATION);
+        fclose(fp);
+        return 0;
+    }
+    
+    fp = fopen(temp.c_str(), "wb");
+    if (!fp)
+    {
+        ESP_LOGE(TAG, "Failed to open file for writing");
+        return -1;
+    }
+
+
+    file_string += "EI Project ID, ";
+    file_string += EI_CLASSIFIER_PROJECT_ID;
+    file_string += "\nEI Project owner, ";
+    file_string += EI_CLASSIFIER_PROJECT_OWNER;
+    file_string += "\nEI Project name, ";
+    file_string += EI_CLASSIFIER_PROJECT_NAME;
+    file_string += "\nEI Project deploy version, ";
+    file_string += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
+
+    // Column headers
+    file_string += "\n\nYear-Month-Day Hour:Min:Sec";
+
+    for (auto i = 0; i < EI_CLASSIFIER_NN_OUTPUT_COUNT; i++){
+        file_string += " ,";
+        file_string += ei_classifier_inferencing_categories[i];
+    }
+
+    file_string += "\n";
+
+    fputs(file_string.c_str(), fp);
+    fclose(fp);
+
+    return 0;
+}
+
+/**
+ * @brief This function accepts a string, prepends date & time & appends to a csv file
+ * @param file_string string in csv format, e.g. 0.94, 0.06
+*/
+int save_inference_result_SD(String results_string) {
+
+    String temp = EI_FILE_RESULTS_LOCATION;
+    FILE *fp = fopen(temp.c_str(), "wb");
+
+    if (!fp)
+    {
+        ESP_LOGE(TAG, "Failed to open file for writing");
+        return -1;
+    }
+
+    String file_string;
+
+    file_string += getProperDateTime() + " ," + results_string;
+
+    fputs(file_string.c_str(), fp);
+    fclose(fp);
+
+    return 0;
+}
+
+#endif
+
 void app_main(void) {
 
     ESP_LOGI(TAG, "\nSETUP--start\n");
@@ -848,61 +1157,61 @@ void app_main(void) {
 
     #ifdef EDGE_IMPULSE_ENABLED
 
-        // static_assert((I2S_DEFAULT_SAMPLE_RATE == EI_CLASSIFIER_FREQUENCY), "I2S sample rate must match EI_CLASSIFIER_FREQUENCY");
+        static_assert((I2S_DEFAULT_SAMPLE_RATE == EI_CLASSIFIER_FREQUENCY), "I2S sample rate must match EI_CLASSIFIER_FREQUENCY");
         
-        // // summary of inferencing settings (from model_metadata.h)
-        // ESP_LOGI(TAG,"Edge Impulse Inferencing settings:");
-        // ESP_LOGI(TAG,"Interval: %f ms.", (float)EI_CLASSIFIER_INTERVAL_MS);
-        // ESP_LOGI(TAG,"Frame size: %d", EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE);
-        // ESP_LOGI(TAG,"Sample length: %d ms.", EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16);
-        // ESP_LOGI(TAG,"No. of classes: %d", sizeof(ei_classifier_inferencing_categories) / sizeof(ei_classifier_inferencing_categories[0]));
+        // summary of inferencing settings (from model_metadata.h)
+        ESP_LOGI(TAG,"Edge Impulse Inferencing settings:");
+        ESP_LOGI(TAG,"Interval: %f ms.", (float)EI_CLASSIFIER_INTERVAL_MS);
+        ESP_LOGI(TAG,"Frame size: %d", EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE);
+        ESP_LOGI(TAG,"Sample length: %d ms.", EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16);
+        ESP_LOGI(TAG,"No. of classes: %d", sizeof(ei_classifier_inferencing_categories) / sizeof(ei_classifier_inferencing_categories[0]));
 
-        // if (0){
-        //     // Run stored audio samples through the model to test it
-        //     ESP_LOGI(TAG,"Testing model against pre-recorded sample data...");
+        if (0){
+            // Run stored audio samples through the model to test it
+            ESP_LOGI(TAG,"Testing model against pre-recorded sample data...");
             
-        //     static_assert((EI_CLASSIFIER_RAW_SAMPLE_COUNT == TEST_SAMPLE_LENGTH), "EI_CLASSIFIER_RAW_SAMPLE_COUNT must match TEST_SAMPLE_LENGTH");
+            static_assert((EI_CLASSIFIER_RAW_SAMPLE_COUNT == TEST_SAMPLE_LENGTH), "EI_CLASSIFIER_RAW_SAMPLE_COUNT must match TEST_SAMPLE_LENGTH");
             
-        //     signal_t signal;
-        //     signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
-        //     signal.get_data = &microphone_audio_signal_get_data;
-        //     ei_impulse_result_t result = { 0 };
+            signal_t signal;
+            signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
+            signal.get_data = &microphone_audio_signal_get_data;
+            ei_impulse_result_t result = { 0 };
 
-        //     inference.buffer = (int16_t *)heap_caps_malloc(EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+            inference.buffer = (int16_t *)heap_caps_malloc(EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t), MALLOC_CAP_SPIRAM);
         
-        //     if (!inference.buffer) {
-        //         ESP_LOGW(TAG,"ERR: Failed to allocate buffer for signal\n");
-        //         // Skip the rest of the test
-        //         return;
-        //     }
+            if (!inference.buffer) {
+                ESP_LOGW(TAG,"ERR: Failed to allocate buffer for signal\n");
+                // Skip the rest of the test
+                return;
+            }
 
-        //     // Artificially fill buffer with test data
-        //     for (auto i = 0; i < TEST_SAMPLE_LENGTH; i++){
-        //        inference.buffer[i] = trumpet_test[i];
-        //     }
+            // Artifically fill buffer with test data
+            for (auto i = 0; i < TEST_SAMPLE_LENGTH; i++){
+               inference.buffer[i] = trumpet_test[i];
+            }
 
-        //     // Mark buffer as ready
-        //     inference.buf_count = 0;
-        //     inference.buf_ready = 1;
+            // Mark buffer as ready
+            inference.buf_count = 0;
+            inference.buf_ready = 1;
 
-        //     EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
-        //     if (r != EI_IMPULSE_OK) {
-        //         ESP_LOGW(TAG,"ERR: Failed to run classifier (%d)\n", r);
-        //         return;
-        //     }
+            EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
+            if (r != EI_IMPULSE_OK) {
+                ESP_LOGW(TAG,"ERR: Failed to run classifier (%d)\n", r);
+                return;
+            }
 
-        //     // print the predictions
-        //     ESP_LOGI(TAG,"Test model predictions:");
-        //     ESP_LOGI(TAG,"    (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
-        //         result.timing.dsp, result.timing.classification, result.timing.anomaly);
-        //     for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
-        //         ESP_LOGI(TAG,"    %s: %f", result.classification[ix].label, result.classification[ix].value);
-        //     }
+            // print the predictions
+            ESP_LOGI(TAG,"Test model predictions:");
+            ESP_LOGI(TAG,"    (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
+                result.timing.dsp, result.timing.classification, result.timing.anomaly);
+            for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
+                ESP_LOGI(TAG,"    %s: %f", result.classification[ix].label, result.classification[ix].value);
+            }
 
-        //     // Free buffer
-        //     if (inference.buffer)
-        //         heap_caps_free(inference.buffer);
-        // }
+            // Free buffer
+            if (inference.buffer)
+                heap_caps_free(inference.buffer);
+        }
        
     #endif
 
@@ -941,73 +1250,71 @@ void app_main(void) {
     
     delay(2000);
 
-    ei = new EdgeImpulse(I2S_DEFAULT_SAMPLE_RATE);
-
     while (true)
     {
 
-//         if (microphone_inference_start(EI_CLASSIFIER_RAW_SAMPLE_COUNT) == false)
-//         {
-//             // ESP_LOGE(TAG, "ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
-//             ESP_LOGE(TAG, "ERR: microphone_inference_start failed, restarting...");
-//             delay(500);
-//             microphone_inference_end();
-//             delay(500);
-//             continue;
-//         }
+        if (microphone_inference_start(EI_CLASSIFIER_RAW_SAMPLE_COUNT) == false)
+        {
+            // ESP_LOGE(TAG, "ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+            ESP_LOGE(TAG, "ERR: microphone_inference_start failed, restarting...");
+            delay(500);
+            microphone_inference_end();
+            delay(500);
+            continue;
+        }
 
-//         while (record_status == true)
-//         {
-//             bool m = microphone_inference_record();
-//             // Blocking function - unblocks when buffer is full
-//             if (!m)
-//             {
-//                 ESP_LOGE(TAG, "ERR: Failed to record audio...");
-//                 return;
-//             }
+        while (record_status == true)
+        {
+            bool m = microphone_inference_record();
+            // Blocking function - unblocks when buffer is full
+            if (!m)
+            {
+                ESP_LOGE(TAG, "ERR: Failed to record audio...");
+                return;
+            }
 
-//             // At this point the buffer & an EI interfernce can be run
+            // At this point the buffer & an EI interfernce can be run
 
-//             signal_t signal;
-//             signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
-//             signal.get_data = &microphone_audio_signal_get_data;
-//             ei_impulse_result_t result = {0};
+            signal_t signal;
+            signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
+            signal.get_data = &microphone_audio_signal_get_data;
+            ei_impulse_result_t result = {0};
 
-//             EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
-//             if (r != EI_IMPULSE_OK)
-//             {
-//                 ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
-//                 // TODO: Debug
-//                 // return;
-//                 record_status = false;
-//                 continue;
-//             }
+            EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
+            if (r != EI_IMPULSE_OK)
+            {
+                ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
+                // TODO: Debug
+                // return;
+                record_status = false;
+                continue;
+            }
 
-//             if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))
-//             {
-//                 // print the predictions
-//                 ESP_LOGI(TAG, "Predictions ");
-//                 ESP_LOGI(TAG, "(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
-//                             result.timing.dsp, result.timing.classification, result.timing.anomaly);
+            if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))
+            {
+                // print the predictions
+                ESP_LOGI(TAG, "Predictions ");
+                ESP_LOGI(TAG, "(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
+                            result.timing.dsp, result.timing.classification, result.timing.anomaly);
 
-//                 for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
-//                 {
-//                     ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
-//                 }
+                for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
+                {
+                    ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
+                }
 
-// #if EI_CLASSIFIER_HAS_ANOMALY == 1
-//                 ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
-// #endif
+#if EI_CLASSIFIER_HAS_ANOMALY == 1
+                ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
+#endif
 
-//                 print_results = 0;
-//             }
+                print_results = 0;
+            }
 
-//         } // end while(record_status == true)
+        } // end while(record_status == true)
 
-//         // record_status = false;
-//         // Prepare to restart
-//         microphone_inference_end();
-//         delay(1000);
+        // record_status = false;
+        // Prepare to restart
+        microphone_inference_end();
+        delay(1000);
     
     } // end while(1)
 

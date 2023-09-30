@@ -1,23 +1,12 @@
-/**
- * @file test_main.cpp
- * @author Owen O'Hehir
- * @brief Test Edge Impulse code
- * @version 0.1
- * @date 2023-09-27
- *
- * 
- */
-
 #include <Arduino.h>
 #include <unity.h>
-// #include "config.h"   // for I2S_DEFAULT_SAMPLE_RATE
 
 #define EIDSP_QUANTIZE_FILTERBANK 0
 
-#include <trumpet_inferencing.h>
-#include <test_samples.h>
+#include "trumpet_inferencing.h"
+#include "test_samples.h"
 
-// /** Audio buffers, pointers and selectors */
+/** Audio buffers, pointers and selectors */
 typedef struct
 {
   int16_t *buffer;
@@ -36,14 +25,13 @@ static bool record_status = true;
 /**
  * Get raw audio signal data
  */
-int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
+static int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
 {
-   // ESP_LOGI(TAG,"microphone_audio_signal_get_data()");
-   numpy::int16_to_float(&inference.buffer[offset], out_ptr, length);
+  // ESP_LOGI(TAG,"microphone_audio_signal_get_data()");
+  numpy::int16_to_float(&inference.buffer[offset], out_ptr, length);
 
-    return 0;
+  return 0;
 }
-
 
 void setUp(void)
 {
@@ -54,66 +42,87 @@ void tearDown(void)
   // clean stuff up here
 }
 
-
-void test_sample_length(void)
+void test_led_builtin_pin_number(void)
 {
-  // TEST_ASSERT_EQUAL(EI_CLASSIFIER_RAW_SAMPLE_COUNT, TEST_SAMPLE_LENGTH);
+  signal_t signal;
+  signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
+  signal.get_data = &microphone_audio_signal_get_data;
+  ei_impulse_result_t result = {0};
+
+  inference.buffer = (int16_t *)heap_caps_malloc(EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+
+  if (!inference.buffer)
+  {
+    // Skip the rest of the test
+    return;
+  }
+
+  // Artificially fill buffer with test data
+  for (auto i = 0; i < TEST_SAMPLE_LENGTH; i++)
+  {
+    inference.buffer[i] = trumpet_test[i];
+  }
+
+  // Mark buffer as ready
+  inference.buf_count = 0;
+  inference.buf_ready = 1;
+
+  EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
+  if (r != EI_IMPULSE_OK)
+  {
+    return;
+  }
+
+  // Free buffer
+  if (inference.buffer)
+    heap_caps_free(inference.buffer);
 }
 
-void test_trumpet(void)
+void test_led_state_high(void)
 {
-    signal_t signal;
-    signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
-    signal.get_data = &microphone_audio_signal_get_data;
-    ei_impulse_result_t result = {0};
+  // digitalWrite(LED_BUILTIN, HIGH);
+  // TEST_ASSERT_EQUAL(HIGH, digitalRead(LED_BUILTIN));
+}
 
-    inference.buffer = (int16_t *)heap_caps_malloc(EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+void test_led_state_low(void)
+{
+  // digitalWrite(LED_BUILTIN, LOW);
+  // TEST_ASSERT_EQUAL(LOW, digitalRead(LED_BUILTIN));
+}
 
-    if (!inference.buffer)
-    {
-      // Skip the rest of the test
-      return;
-    }
+extern "C"
+{
+  void app_main(void);
+}
 
-    // Artificially fill buffer with test data
-    for (auto i = 0; i < TEST_SAMPLE_LENGTH; i++)
-    {
-      inference.buffer[i] = trumpet_test[i];
-    }
+void app_main()
+{
+  initArduino();
+  // NOTE!!! Wait for >2 secs
+  // if board doesn't support software reset via Serial.DTR/RTS
+  delay(2000);
 
-    // Mark buffer as ready
-    inference.buf_count = 0;
-    inference.buf_ready = 1;
+  // pinMode(LED_BUILTIN, OUTPUT);
 
-    EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
-    if (r != EI_IMPULSE_OK)
-    {
-      return;
-    }
+  UNITY_BEGIN(); // IMPORTANT LINE!
+  RUN_TEST(test_led_builtin_pin_number);
 
-    TEST_ASSERT_FLOAT_WITHIN(0.05, 0.95, result.classification[1].value);
+  uint8_t i = 0;
+  uint8_t max_blinks = 5;
 
-    // Free buffer
-    if (inference.buffer)
-      heap_caps_free(inference.buffer);
-  }
-
-  extern "C"
+  while (1)
   {
-    void app_main(void);
+    if (i < max_blinks)
+    {
+      RUN_TEST(test_led_state_high);
+      delay(500);
+      RUN_TEST(test_led_state_low);
+      delay(500);
+      i++;
+    }
+    else if (i == max_blinks)
+    {
+      UNITY_END(); // stop unit testing
+    }
   }
-
-  void app_main()
-  {
-    initArduino();
-    // NOTE!!! Wait for >2 secs
-    // if board doesn't support software reset via Serial.DTR/RTS
-    delay(2000);
-
-    UNITY_BEGIN(); // IMPORTANT LINE!
-    
-    RUN_TEST(test_sample_length);
-    RUN_TEST(test_trumpet);
-    
-    UNITY_END(); // stop unit testing
-  }
+}

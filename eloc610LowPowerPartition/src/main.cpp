@@ -105,7 +105,7 @@ uint32_t  gFreeSpaceKB=0;
     SDCardSDIO *theSDCardObject;
 #endif
 
-// Need to have access to I2S mic
+// Need to have global access to I2S mic
 I2SMEMSSampler *input = nullptr;
 
 void writeSettings(String settings);
@@ -158,7 +158,6 @@ void printRevision()
 
 void delay(int ms)
 {
-
     vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
@@ -1334,6 +1333,11 @@ void app_main(void) {
                     save_inference_result_SD(file_str);
 
                     // TODO: Commence saving wav file
+                    // Somethin
+                    if (gRecording == false){
+                        record();
+
+                    }
 
                 }
 

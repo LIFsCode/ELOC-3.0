@@ -27,5 +27,15 @@ public:
         return m_i2s_config.sample_rate;
     }
 
+    /**
+     * Add a consuming task to the mic data
+     * Ideally this would:
+     * @param buffer to fill
+     * @param size of buffer
+     * @param callback when buffer full
+     * 
+    */
+    int register_consumer();
+
     virtual ~I2SSampler() {};
 };

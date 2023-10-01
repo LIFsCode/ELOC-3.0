@@ -1333,11 +1333,11 @@ void app_main(void) {
                     save_inference_result_SD(file_str);
 
                     // TODO: Commence saving wav file
-                    // Somethin
-                    if (gRecording == false){
-                        record();
+                    // Something like this:
+                    // if (gRecording == false){
+                    //     record();
 
-                    }
+                    // }
 
                 }
 

@@ -35,3 +35,9 @@ void I2SSampler::stop()
     // stop the i2S driver
     i2s_driver_uninstall(m_i2sPort);
 }
+
+int I2SSampler::register_consumer(){
+
+
+    return 0;
+}

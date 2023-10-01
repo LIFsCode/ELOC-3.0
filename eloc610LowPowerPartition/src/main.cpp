@@ -447,7 +447,7 @@ void record(I2SSampler *input) {
 
   
   int64_t recordStartTime= esp_timer_get_time();
-    bool deepSleep=false;
+  bool deepSleep=false;
   float loops;
   int samples_read;
   int64_t longestWriteTimeMillis=0;
@@ -638,7 +638,7 @@ void freeSpace() {
 esp_err_t checkSDCard() {
 
     if (!gMountedSDCard) {
-        // in case SD card is not yet mounted, mout it now, e.g. not inserted durint boot
+        // in case SD card is not yet mounted, mount it now, e.g. not inserted during boot
         if (!mountSDCard()) {
             return ESP_ERR_NOT_FOUND;
         }
@@ -735,6 +735,8 @@ static signed short sampleBuffer[sample_buffer_size];
 static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
 static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
 static bool record_status = true;
+
+bool inference_result_file_SD_available = false;
 
 #define EI_FILE_RESULTS_LOCATION "/sdcard/eloc/ei_results.csv"
 
@@ -950,8 +952,14 @@ static void microphone_inference_end(void)
  *          EI Project owner, EDsteve
  *          EI Project name, trumpet          
  *          EI Project deploy version, 2
+ * @return 0 on success, -1 on fail
 */
 int create_inference_result_file_SD() {
+
+    if (checkSDCard() != ESP_OK){
+        // Abandon
+        return -1;
+    }
 
     String temp = EI_FILE_RESULTS_LOCATION;
     FILE *fp = fopen(temp.c_str(), "r");
@@ -961,6 +969,7 @@ int create_inference_result_file_SD() {
     if (fp){
         ESP_LOGI(TAG, "%s exists", EI_FILE_RESULTS_LOCATION);
         fclose(fp);
+        inference_result_file_SD_available = true;
         return 0;
     }
     
@@ -994,12 +1003,15 @@ int create_inference_result_file_SD() {
     fputs(file_string.c_str(), fp);
     fclose(fp);
 
+    inference_result_file_SD_available = true;
+
     return 0;
 }
 
 /**
  * @brief This function accepts a string, prepends date & time & appends to a csv file
  * @param file_string string in csv format, e.g. 0.94, 0.06
+ * @return 0 on success, -1 on fail
 */
 int save_inference_result_SD(String results_string) {
 
@@ -1166,6 +1178,11 @@ void app_main(void) {
         ESP_LOGI(TAG,"Sample length: %d ms.", EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16);
         ESP_LOGI(TAG,"No. of classes: %d", sizeof(ei_classifier_inferencing_categories) / sizeof(ei_classifier_inferencing_categories[0]));
 
+        // Check if file exists to record results
+        if(gMountedSDCard == true){
+            create_inference_result_file_SD();
+        }
+
         if (0){
             // Run stored audio samples through the model to test it
             ESP_LOGI(TAG,"Testing model against pre-recorded sample data...");
@@ -1297,14 +1314,32 @@ void app_main(void) {
                 ESP_LOGI(TAG, "(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
                             result.timing.dsp, result.timing.classification, result.timing.anomaly);
 
+                String file_str;
+
                 for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
                 {
                     ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
+                    
+                    // Build string to save to inference results file
+                    file_str += ", ";
+                    file_str += result.classification[ix].label;
+                    file_str += ", ";
+                    file_str += result.classification[ix].value;
+                    file_str += "\n";
                 }
 
-#if EI_CLASSIFIER_HAS_ANOMALY == 1
-                ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
-#endif
+                // Save results to file 
+                // TODO: Only save results & wav file if classification value exceeds a threshold?
+                if(checkSDCard() == ESP_OK){
+                    save_inference_result_SD(file_str);
+
+                    // TODO: Commence saving wav file
+
+                }
+
+                #if EI_CLASSIFIER_HAS_ANOMALY == 1
+                    ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
+                #endif
 
                 print_results = 0;
             }

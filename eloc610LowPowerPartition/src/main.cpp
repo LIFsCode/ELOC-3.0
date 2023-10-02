@@ -1015,7 +1015,7 @@ int create_inference_result_file_SD() {
 int save_inference_result_SD(String results_string) {
 
     String temp = EI_FILE_RESULTS_LOCATION;
-    FILE *fp = fopen(temp.c_str(), "wb");
+    FILE *fp = fopen(temp.c_str(), FILE_APPEND);
 
     if (!fp)
     {
@@ -1264,7 +1264,7 @@ void app_main(void) {
 
     // Wait for system to settle..
     
-    delay(2000);
+    delay(5000);
 
     while (true)
     {
@@ -1353,7 +1353,7 @@ void app_main(void) {
         // record_status = false;
         // Prepare to restart
         microphone_inference_end();
-        delay(1000);
+        delay(2000);
     
     } // end while(1)
 

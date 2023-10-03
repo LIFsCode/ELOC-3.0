@@ -33,9 +33,13 @@
 #include "ScopeGuard.hpp"
 #include "RotateFile.hpp"
 
+/// @brief Timeout for acquiring the Mutex for accessing RotateFile
 static const uint32_t LOCK_TIMEOUT_MS = 10;
+/// @brief Number of Writes to the file after which a fsync() is triggered to flush data to physical storage
 static const uint32_t WRITE_CACHE_CYCLE = 5;
 
+// wrapper for xSemaphoreGive: required for ScopeGuards MakeGuard, which requires a function pointer
+// xSemaphoreGive is only a macro
 static inline BaseType_t SemaphoreGive(SemaphoreHandle_t xSemaphore) {
     return xSemaphoreGive(xSemaphore);
 }
@@ -57,20 +61,36 @@ RotateFile::RotateFile(const char* filename, uint32_t maxFiles /*=0*/, uint32_t 
     SemaphoreGive(mSemaphore);
 }
 
-void RotateFile::setFilename(std::string filename) { 
-    this->mFilename = filename; 
-    this->mFolder = getDirectory();
+bool RotateFile::setFilename(std::string filename) { 
+    if (!_fp) {    
+        this->mFilename = filename; 
+        this->mFolder = getDirectory();
+        return true;
+    }
+    return false;
 }
 
-void RotateFile::setMaxFiles(uint32_t maxFiles) { 
-    this->mMaxFiles = maxFiles; 
+bool RotateFile::setMaxFiles(uint32_t maxFiles) { 
+    if (!_fp) {    
+        this->mMaxFiles = maxFiles; 
+        return true;
+    }
+    return false;
 }
 
-void RotateFile::setMaxFileSize(uint32_t maxFileSize) { 
-    this->mMaxFileSize = maxFileSize; 
+bool RotateFile::setMaxFileSize(uint32_t maxFileSize) { 
+    if (!_fp) {    
+        this->mMaxFileSize = maxFileSize; 
+        return true;
+    }
+    return false;
 }
-void RotateFile::setWriteCacheCycle(uint32_t writeCacheCycle) { 
-    this->mWriteCacheCycle = writeCacheCycle; 
+bool RotateFile::setWriteCacheCycle(uint32_t writeCacheCycle) { 
+    if (!_fp) {    
+        this->mWriteCacheCycle = writeCacheCycle; 
+        return true;
+    }
+    return false;
 }
 
 bool RotateFile::needsRotate() const {

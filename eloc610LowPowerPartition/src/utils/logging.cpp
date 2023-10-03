@@ -38,23 +38,16 @@ namespace Logging {
 
 static const char *TAG = "Logging";
 
-static FILE* _log_remote_fp  = NULL;
 static const uint32_t LOG_NUM_FILES = 10;
 static const uint32_t LOG_FILE_SIZE = 5*1024;
 
-
-static const char* LOG_FOLDER = "/sdcard/log";
 static const char* LOG_NAME = "/sdcard/log/eloc.log";
 
 static RotateFile logFile(LOG_NAME, LOG_NUM_FILES, LOG_FILE_SIZE);
 // This function will be called by the ESP log library every time ESP_LOG needs to be performed.
 //      @important Do NOT use the ESP_LOG* macro's in this function ELSE recursive loop and stack overflow! So use printf() instead for debug messages.
+static bool static_fatal_error = false;
 static int _log_vprintf(const char *fmt, va_list args) {
-    static bool static_fatal_error = false;
-    static const uint32_t WRITE_CACHE_CYCLE = 5;
-    static uint32_t counter_write = 0;
-    int iresult;
-
     if (static_fatal_error == false) {
         if (!logFile.vprintf(fmt, args)) {
             printf("%s() ABORT. failed vfprintf() -> disable future vfprintf \n", __FUNCTION__);
@@ -64,20 +57,6 @@ static int _log_vprintf(const char *fmt, va_list args) {
     }
     // #3 ALWAYS Write to stdout!
     return vprintf(fmt, args);
-}
-
-static bool log_file_check_ringBuffer() {
-
-    struct stat sb;
-    if (ffsutil::fileExist(LOG_NAME)) {
-        if (stat(LOG_NAME, &sb) == 0) {
-
-        }
-    }
-    return true;
-}
-static const char* log_file_gen_name() {
-    return "eloc.log";
 }
 
 esp_err_t esp_log_to_scard(bool enable) {
@@ -95,6 +74,8 @@ esp_err_t esp_log_to_scard(bool enable) {
     else {
         ESP_LOGI(TAG, "  ***Redirecting log output BACK to only UART0 (not to the SPIFFS log file anymore)");
         logFile.close();
+        // reset permanent error if disabled, allows to be rechecked if reenabled
+        static_fatal_error = false; 
         esp_log_set_vprintf(&vprintf);
         ESP_LOGI(TAG, "this should not be on sd card");
     }

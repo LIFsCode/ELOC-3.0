@@ -33,8 +33,6 @@
 #include "ScopeGuard.hpp"
 #include "RotateFile.hpp"
 
-static const char* TAG = "RotateFile";
-
 static const uint32_t LOCK_TIMEOUT_MS = 10;
 static const uint32_t WRITE_CACHE_CYCLE = 5;
 
@@ -85,21 +83,21 @@ bool RotateFile::needsRotate() const {
 
 bool RotateFile::rotate() { 
 
-    char filename[128];
-    char filename2[128];
+    std::string filename;
+    std::string filename2;
     if (needsRotate()) {
-        snprintf(filename, sizeof(filename), "%s%d", mFilename.c_str(), mMaxFiles-1);
-        if (ffsutil::fileExist(filename)) {
-            if (remove(filename)) {
-                printf("%s() ERROR. failed to delete %s, errno=%d (%s) \n", __FUNCTION__, filename, errno, strerror(errno));
+        filename = mFilename + std::to_string(mMaxFiles-1);
+        if (ffsutil::fileExist(filename.c_str())) {
+            if (remove(filename.c_str())) {
+                printf("%s() ERROR. failed to delete %s, errno=%d (%s) \n", __FUNCTION__, filename.c_str(), errno, strerror(errno));
             }
         }
         for (int i=mMaxFiles-2; i > 0; i--) {
-            snprintf(filename, sizeof(filename), "%s%d", mFilename.c_str(), i);
-            snprintf(filename2, sizeof(filename2), "%s%d", mFilename.c_str(), i+1);
-            if (ffsutil::fileExist(filename)) {
-                if (int rc = rename(filename, filename2)) {
-                    printf("%s() ERROR. failed to rename %s, errno=%d (%s) \n", __FUNCTION__, filename, errno, strerror(errno));
+            filename = mFilename + std::to_string(i);
+            filename2 = mFilename + std::to_string(i+1);
+            if (ffsutil::fileExist(filename.c_str())) {
+                if (rename(filename.c_str(), filename2.c_str())) {
+                    printf("%s() ERROR. failed to rename %s, errno=%d (%s) \n", __FUNCTION__, filename.c_str(), errno, strerror(errno));
                 }
             }
         }
@@ -107,8 +105,8 @@ bool RotateFile::rotate() {
         fsync(fileno(_fp));
         fclose(_fp);
         if (mMaxFiles > 1 ) {
-            snprintf(filename, sizeof(filename), "%s%d", mFilename.c_str(), 1);
-            if (rename(mFilename.c_str(), filename)) {
+            filename = mFilename + std::to_string(1);
+            if (rename(mFilename.c_str(), filename.c_str())) {
                 printf("%s() ERROR. failed to rename %s, errno=%d (%s) \n", __FUNCTION__, mFilename.c_str(), errno, strerror(errno));
             }
         }

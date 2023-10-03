@@ -737,8 +737,6 @@ static bool record_status = true;
 
 bool inference_result_file_SD_available = false;
 
-#define EI_FILE_RESULTS_LOCATION "/sdcard/eloc/ei_results.csv"
-
 // The following functions enable continuous audio sampling and inferencing
 // https://docs.edgeimpulse.com/docs/tutorials/advanced-inferencing/continuous-audio-sampling
 
@@ -953,42 +951,43 @@ static void microphone_inference_end(void)
  *          EI Project deploy version, 2
  * @return 0 on success, -1 on fail
 */
-int create_inference_result_file_SD() {
-
+int create_inference_result_file_SD(String f_name) {
+ 
     if (checkSDCard() != ESP_OK){
         // Abandon
         return -1;
     }
-
-    String temp = EI_FILE_RESULTS_LOCATION;
-    FILE *fp = fopen(temp.c_str(), "r");
-
-    String file_string;
+    
+    FILE *fp = fopen(f_name.c_str(), "r");
 
     if (fp){
-        ESP_LOGI(TAG, "%s exists", EI_FILE_RESULTS_LOCATION);
+        ESP_LOGI(TAG, "%s exists on SD card", f_name.c_str());
         fclose(fp);
         inference_result_file_SD_available = true;
         return 0;
     }
     
-    fp = fopen(temp.c_str(), "wb");
+    String file_string;
+    
+    fp = fopen(f_name.c_str(), "wb");
     if (!fp)
     {
         ESP_LOGE(TAG, "Failed to open file for writing");
         return -1;
     }
 
-
-    file_string += "EI Project ID, ";
-    file_string += EI_CLASSIFIER_PROJECT_ID;
-    file_string += "\nEI Project owner, ";
-    file_string += EI_CLASSIFIER_PROJECT_OWNER;
-    file_string += "\nEI Project name, ";
-    file_string += EI_CLASSIFIER_PROJECT_NAME;
-    file_string += "\nEI Project deploy version, ";
-    file_string += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
-
+    // Possible other details to include in file
+    if (0){
+        file_string += "EI Project ID, ";
+        file_string += EI_CLASSIFIER_PROJECT_ID;
+        file_string += "\nEI Project owner, ";
+        file_string += EI_CLASSIFIER_PROJECT_OWNER;
+        file_string += "\nEI Project name, ";
+        file_string += EI_CLASSIFIER_PROJECT_NAME;
+        file_string += "\nEI Project deploy version, ";
+        file_string += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
+    }
+    
     // Column headers
     file_string += "\n\nYear-Month-Day Hour:Min:Sec";
 
@@ -1012,10 +1011,9 @@ int create_inference_result_file_SD() {
  * @param file_string string in csv format, e.g. 0.94, 0.06
  * @return 0 on success, -1 on fail
 */
-int save_inference_result_SD(String results_string) {
+int save_inference_result_SD(String f_name, String results_string) {
 
-    String temp = EI_FILE_RESULTS_LOCATION;
-    FILE *fp = fopen(temp.c_str(), FILE_APPEND);
+    FILE *fp = fopen(f_name.c_str(), FILE_APPEND);
 
     if (!fp)
     {
@@ -1025,7 +1023,7 @@ int save_inference_result_SD(String results_string) {
 
     String file_string;
 
-    file_string += getProperDateTime() + " ," + results_string;
+    file_string += getProperDateTime() + " " + results_string;
 
     fputs(file_string.c_str(), fp);
     fclose(fp);
@@ -1168,6 +1166,17 @@ void app_main(void) {
 
     #ifdef EDGE_IMPULSE_ENABLED
 
+        String ei_results_filename = "/sdcard/eloc/";
+        ei_results_filename += "EI-results-ID-";
+        ei_results_filename += EI_CLASSIFIER_PROJECT_ID;
+        ei_results_filename += "-DEPLOY-VER-";
+        ei_results_filename += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
+        ei_results_filename += ".csv";  
+
+        if(1){
+            ESP_LOGI(TAG, "EI results filename: %s", ei_results_filename.c_str());
+        }
+
         static_assert((I2S_DEFAULT_SAMPLE_RATE == EI_CLASSIFIER_FREQUENCY), "I2S sample rate must match EI_CLASSIFIER_FREQUENCY");
         
         // summary of inferencing settings (from model_metadata.h)
@@ -1179,7 +1188,7 @@ void app_main(void) {
 
         // Check if file exists to record results
         if(gMountedSDCard == true){
-            create_inference_result_file_SD();
+            create_inference_result_file_SD(ei_results_filename);
         }
 
         if (0){
@@ -1321,16 +1330,14 @@ void app_main(void) {
                     
                     // Build string to save to inference results file
                     file_str += ", ";
-                    file_str += result.classification[ix].label;
-                    file_str += ", ";
-                    file_str += result.classification[ix].value;
-                    file_str += "\n";
+                    file_str += result.classification[ix].value;    
                 }
-
+                
+                file_str += "\n";
                 // Save results to file 
                 // TODO: Only save results & wav file if classification value exceeds a threshold?
                 if(checkSDCard() == ESP_OK){
-                    save_inference_result_SD(file_str);
+                    save_inference_result_SD(ei_results_filename, file_str);
 
                     // TODO: Commence saving wav file
                     // Something like this:

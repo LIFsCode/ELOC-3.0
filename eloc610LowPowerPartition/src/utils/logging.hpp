@@ -29,6 +29,10 @@ namespace Logging {
 
 esp_err_t esp_log_to_scard(bool enable);
 
+esp_err_t printLogConfig(String& buf);
+esp_err_t updateConfig(const String& buf);
+
+
 }
 
 #endif // UTILS_LOGGING_HPP_

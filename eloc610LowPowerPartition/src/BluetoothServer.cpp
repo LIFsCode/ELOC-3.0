@@ -544,18 +544,14 @@ void wait_for_bt_command() {
             }
             if (serialIN.startsWith("setLogPersistant")) {
                 String cfg = serialIN.substring(serialIN.indexOf('#')+1);
-                cfg.trim();
-                esp_err_t err = ESP_OK;
-                if (cfg.equalsIgnoreCase("on")) {
-                    err = Logging::esp_log_to_scard(true);
-                }
-                else if (cfg.equalsIgnoreCase("off")) {
-                    err = Logging::esp_log_to_scard(false);
-                }
-                else {
-                    err = ESP_ERR_INVALID_ARG;
-                }
+                ESP_LOGI(TAG, "updating log cfg with %s", cfg.c_str());
+                esp_err_t err = Logging::updateConfig(cfg);
                 btwrite(cfg, err);
+            }
+            if (serialIN.startsWith("getLogPersistant")) {
+                String status;
+                esp_err_t err = Logging::printLogConfig(status);
+                btwrite(status, err);
             }
 
             if (serialIN.startsWith("_setClk_")) {

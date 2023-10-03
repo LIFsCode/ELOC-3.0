@@ -97,6 +97,10 @@ public:
     RotateFile(const char* filename, uint32_t maxFiles = 0, uint32_t maxFileSize = 0);
     ~RotateFile(){};
 
+    bool isOpen() const {
+        return _fp != NULL;
+    }
+
     /// @brief Opens the logfile as specified by filename. Needs to be executed before accessing it
     /// @return True if successfuly, false if not
     bool open();

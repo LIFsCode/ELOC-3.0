@@ -48,6 +48,13 @@ void setBluetoothOnOrOffDuringRecord(bool MicBluetoothOnOrOff);
 
 const micInfo_t& getMicInfo();
 
+typedef struct {
+    bool logToSdCard;
+    String filename;
+    uint32_t maxFiles;
+    uint32_t maxFileSize;
+}logConfig_t;
+
 /// @brief holds all the device specific configuration settings
 typedef struct {
     int  secondsPerFile;
@@ -60,6 +67,7 @@ typedef struct {
     bool bluetoothEnableDuringRecord;
     int bluetoothOffTimeoutSeconds;
     bool testI2SClockInput;
+    logConfig_t logConfig;
 }elocConfig_T;
 
 const elocConfig_T& getConfig();

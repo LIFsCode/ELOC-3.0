@@ -23,20 +23,28 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <errno.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include "esp_log.h"
 #include "ffsutils.h"
+#include "ScopeGuard.hpp"
 #include "RotateFile.hpp"
 
 static const char* TAG = "RotateFile";
 
+static const uint32_t LOCK_TIMEOUT_MS = 10;
 static const uint32_t WRITE_CACHE_CYCLE = 5;
+
+static inline BaseType_t SemaphoreGive(SemaphoreHandle_t xSemaphore) {
+    return xSemaphoreGive(xSemaphore);
+}
 
 RotateFile::RotateFile(const char* filename, uint32_t maxFiles /*=0*/, uint32_t maxFileSize /*=0*/):
     mFilename(filename), mMaxFiles(maxFiles), mMaxFileSize(maxFileSize), mWriteCacheCycle(WRITE_CACHE_CYCLE), 
-    _fp(NULL), mWriteCounter(0), mFatalError(false)
+    _fp(NULL), mWriteCounter(0), mFatalError(false), mSemaphore(NULL)
 {
     this->mFolder = getDirectory();
     // Semaphore cannot be used before a call to xSemaphoreCreateBinary() or
@@ -46,6 +54,9 @@ RotateFile::RotateFile(const char* filename, uint32_t maxFiles /*=0*/, uint32_t 
     // function's parameter is not NULL, so the function will not attempt any
     // dynamic memory allocation, and therefore the function will not return
     // return NULL.
+    mSemaphore = xSemaphoreCreateMutexStatic ( &_mSemaphoreBuffer );
+    // Semaphore is created in the 'empty' state, meaning the semaphore must first be given
+    SemaphoreGive(mSemaphore);
 }
 
 void RotateFile::setFilename(std::string filename) { 
@@ -77,15 +88,59 @@ bool RotateFile::rotate() {
     char filename[128];
     char filename2[128];
     if (needsRotate()) {
-        //TODO: rotate files and limit files to mMaxFiles
+        snprintf(filename, sizeof(filename), "%s%d", mFilename.c_str(), mMaxFiles-1);
+        if (ffsutil::fileExist(filename)) {
+            if (remove(filename)) {
+                printf("%s() ERROR. failed to delete %s, errno=%d (%s) \n", __FUNCTION__, filename, errno, strerror(errno));
+            }
+        }
+        for (int i=mMaxFiles-2; i > 0; i--) {
+            snprintf(filename, sizeof(filename), "%s%d", mFilename.c_str(), i);
+            snprintf(filename2, sizeof(filename2), "%s%d", mFilename.c_str(), i+1);
+            if (ffsutil::fileExist(filename)) {
+                if (int rc = rename(filename, filename2)) {
+                    printf("%s() ERROR. failed to rename %s, errno=%d (%s) \n", __FUNCTION__, filename, errno, strerror(errno));
+                }
+            }
+        }
+        // sync everything to filesystem before cosing the file
+        fsync(fileno(_fp));
+        fclose(_fp);
+        if (mMaxFiles > 1 ) {
+            snprintf(filename, sizeof(filename), "%s%d", mFilename.c_str(), 1);
+            if (rename(mFilename.c_str(), filename)) {
+                printf("%s() ERROR. failed to rename %s, errno=%d (%s) \n", __FUNCTION__, mFilename.c_str(), errno, strerror(errno));
+            }
+        }
+        else {
+            if (remove(mFilename.c_str())) {
+                printf("%s() ERROR. failed to delete %s, errno=%d (%s) \n", __FUNCTION__, mFilename.c_str(), errno, strerror(errno));
+            }
+        }
+        _fp = fopen(mFilename.c_str(), "a+");
+        if (!_fp) {
+            printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
+            return false;
+        }
+        mWriteCounter = 0;
     }
     return true; 
+}
+
+bool RotateFile::_write(const char *data) { 
+    if (!rotate()) {
+        printf("%s() failed to rotate file\n", __FUNCTION__);
+    }
+    if (_fp == NULL) {
+        printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
+        return false;
+    }
+    return (fprintf(_fp, data) >= 0);
 }
 
 std::string RotateFile::getDirectory()const { 
     std::string directory;
     const size_t last_slash_idx = mFilename.rfind('/');
-    printf("getDirectory of %s", mFilename.c_str());
     if (std::string::npos != last_slash_idx)
     {
         directory = mFilename.substr(0, last_slash_idx);
@@ -107,15 +162,22 @@ bool RotateFile::makeDirectory() {
 }
 
 bool RotateFile::open() {
-    makeDirectory();
-    _fp = fopen(mFilename.c_str(), "a+");
-    if (!_fp) {
-        printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
+    if( xSemaphoreTake( mSemaphore, ( TickType_t ) 10 ) == pdTRUE ) {
+        MakeGuard(SemaphoreGive, mSemaphore);
+        makeDirectory();
+        _fp = fopen(mFilename.c_str(), "a+");
+        if (!_fp) {
+            printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
+            return false;
+        }
+        mWriteCounter = 0;
+        // always write a empty line after opening to avoid continuing an old deprecated line
+        return _write("\n");
+    }
+    else {
+        printf("%s() ABORT. Semaphore is blocked\n", __FUNCTION__);
         return false;
     }
-    mWriteCounter = 0;
-    // always write a empty line after opening to avoid continuing an old deprecated line
-    return write("\n");
 }
 
 void  RotateFile::close() {
@@ -123,45 +185,55 @@ void  RotateFile::close() {
         printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
         return;
     }
-    // sync everything to filesystem before cosing the file
-    fsync(fileno(_fp));
-    fclose(_fp);
-    _fp = NULL;
-}
-
-bool RotateFile::write(const char *data) { 
-    if (!rotate()) {
-        printf("%s() failed to rotate file\n", __FUNCTION__);
+    if( xSemaphoreTake( mSemaphore, portMAX_DELAY ) == pdTRUE ) {
+        MakeGuard(SemaphoreGive, mSemaphore);
+        // sync everything to filesystem before cosing the file
+        fsync(fileno(_fp));
+        fclose(_fp);
+        _fp = NULL;
     }
+}
+bool RotateFile::write(const char *data) { 
     if (_fp == NULL) {
         printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
         return false;
     }
-    return (fprintf(_fp, data) >= 0);
+    if( xSemaphoreTake( mSemaphore, pdMS_TO_TICKS(LOCK_TIMEOUT_MS) ) == pdTRUE ) {
+        MakeGuard(SemaphoreGive, mSemaphore);
+        if (!rotate()) {
+            printf("%s() ABORT. Failed to rotate file and open new\n", __FUNCTION__);
+            return false;
+        }
+        return (fprintf(_fp, data) >= 0);
+    }
+    return true;
 }
 bool RotateFile::vprintf(const char *fmt, va_list args) { 
     int iresult;
 
-    if (!rotate()) {
-        printf("%s() failed to rotate file\n", __FUNCTION__);
-    }
-    // #1 Write to SPIFFS
     if (_fp == NULL) {
         printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
-        return -1;
-    }
-    iresult = vfprintf(_fp, fmt, args);
-    if (iresult < 0) {
-        printf("%s() ABORT. failed vfprintf() -> disable future vfprintf(_log_remote_fp) \n", __FUNCTION__);
         return false;
     }
+    if( xSemaphoreTake( mSemaphore, pdMS_TO_TICKS(LOCK_TIMEOUT_MS) ) == pdTRUE ) {
+        MakeGuard(SemaphoreGive, mSemaphore);
+        if (!rotate()) {
+            printf("%s() ABORT. Failed to rotate file and open new\n", __FUNCTION__);
+            return false;
+        }
+        // #1 Write to SPIFFS
+        iresult = vfprintf(_fp, fmt, args);
+        if (iresult < 0) {
+            printf("%s() ABORT. failed vfprintf() -> disable future vfprintf(_log_remote_fp) \n", __FUNCTION__);
+            return false;
+        }
 
-    // #2 Smart commit after x writes
-    mWriteCounter++;
-    if (mWriteCounter % mWriteCacheCycle == 0) {
-        /////printf("%s() fsync'ing log file on SPIFFS (WRITE_CACHE_CYCLE=%u)\n", WRITE_CACHE_CYCLE);
-        fsync(fileno(_fp));
+        // #2 Smart commit after x writes
+        mWriteCounter++;
+        if (mWriteCounter % mWriteCacheCycle == 0) {
+            /////printf("%s() fsync'ing log file on SPIFFS (WRITE_CACHE_CYCLE=%u)\n", WRITE_CACHE_CYCLE);
+            fsync(fileno(_fp));
+        }
     }
-
     return true; 
 }

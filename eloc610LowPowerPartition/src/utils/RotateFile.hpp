@@ -26,6 +26,8 @@
 #define UTILS_ROTATEFILE_HPP_
 
 #include <string>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 class RotateFile
 {
@@ -41,6 +43,8 @@ private:
     FILE* _fp;
     uint32_t mWriteCounter;
     bool mFatalError;
+    SemaphoreHandle_t mSemaphore;
+    StaticSemaphore_t _mSemaphoreBuffer;
 
     void setFilename(std::string filename);
     const std::string getFilename() const { 
@@ -63,6 +67,8 @@ private:
 
     std::string getDirectory() const;
     bool makeDirectory();
+    /** private versin of write without any locking */
+    bool _write(const char* data);
 public:
     RotateFile(const char* filename, uint32_t maxFiles = 0, uint32_t maxFileSize = 0);
     ~RotateFile(){};

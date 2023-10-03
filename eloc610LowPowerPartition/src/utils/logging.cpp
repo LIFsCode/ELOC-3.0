@@ -29,6 +29,9 @@
 #include "esp_err.h"
 
 #include "utils/ffsutils.h"
+#include "utils/RotateFile.hpp"
+
+#include "ESP32Time.h"
 
 
 namespace Logging {
@@ -43,6 +46,7 @@ static const uint32_t LOG_FILE_SIZE = 5*1024;
 static const char* LOG_FOLDER = "/sdcard/log";
 static const char* LOG_NAME = "/sdcard/log/eloc.log";
 
+static RotateFile logFile(LOG_NAME, LOG_NUM_FILES, LOG_FILE_SIZE);
 // This function will be called by the ESP log library every time ESP_LOG needs to be performed.
 //      @important Do NOT use the ESP_LOG* macro's in this function ELSE recursive loop and stack overflow! So use printf() instead for debug messages.
 static int _log_vprintf(const char *fmt, va_list args) {
@@ -51,28 +55,13 @@ static int _log_vprintf(const char *fmt, va_list args) {
     static uint32_t counter_write = 0;
     int iresult;
 
-    // #1 Write to SPIFFS
-    if (_log_remote_fp == NULL) {
-        printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
-        return -1;
-    }
     if (static_fatal_error == false) {
-        iresult = vfprintf(_log_remote_fp, fmt, args);
-        if (iresult < 0) {
-            printf("%s() ABORT. failed vfprintf() -> disable future vfprintf(_log_remote_fp) \n", __FUNCTION__);
+        if (!logFile.vprintf(fmt, args)) {
+            printf("%s() ABORT. failed vfprintf() -> disable future vfprintf \n", __FUNCTION__);
             // MARK FATAL
             static_fatal_error = true;
-            return iresult;
-        }
-
-        // #2 Smart commit after x writes
-        counter_write++;
-        if (counter_write % WRITE_CACHE_CYCLE == 0) {
-            /////printf("%s() fsync'ing log file on SPIFFS (WRITE_CACHE_CYCLE=%u)\n", WRITE_CACHE_CYCLE);
-            fsync(fileno(_log_remote_fp));
         }
     }
-
     // #3 ALWAYS Write to stdout!
     return vprintf(fmt, args);
 }
@@ -96,22 +85,16 @@ esp_err_t esp_log_to_scard(bool enable) {
     if (enable) {
         ESP_LOGI(TAG, "***Redirecting log output to SD card log file (also keep sending logs to UART0)");
 
-        if (!ffsutil::folderExists(LOG_FOLDER)) {
-            ESP_LOGI(TAG, "Folder %s does not exist, creating empty folder", LOG_FOLDER);
-            mkdir(LOG_FOLDER, 0777);
-            ffsutil::printListDir("/sdcard");
-
-        }
-        _log_remote_fp = fopen(LOG_NAME, "a+");
-        if (!_log_remote_fp) {
+        if (!logFile.open()) {
             ESP_LOGE(TAG, "Failed to open %s for logging", LOG_NAME);
             return ESP_ERR_NOT_FOUND;
         }
         esp_log_set_vprintf(&_log_vprintf);
-        ESP_LOGI(TAG, "first log on sdcard");
+        ESP_LOGI(TAG, "%s: start logging to sd card", ESP32Time().getTimeDate(false).c_str());
     }
     else {
         ESP_LOGI(TAG, "  ***Redirecting log output BACK to only UART0 (not to the SPIFFS log file anymore)");
+        logFile.close();
         esp_log_set_vprintf(&vprintf);
         ESP_LOGI(TAG, "this should not be on sd card");
     }

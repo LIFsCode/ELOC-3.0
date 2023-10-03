@@ -34,6 +34,8 @@ void printSPIFFS_size();
 
 bool fileExist(const char* filename);
 
+long getFileSize(const char* filename);
+
 bool folderExists(const char* folder);
 
 }

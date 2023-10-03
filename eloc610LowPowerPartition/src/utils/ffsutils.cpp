@@ -35,6 +35,14 @@ bool fileExist(const char* filename) {
     return (stat(filename, &st) == 0);
 }
 
+long getFileSize(const char* filename)
+{
+    struct stat stat_buf;
+    int rc = stat(filename, &stat_buf);
+    return rc == 0 ? stat_buf.st_size : -1;
+}
+
+
 void printSPIFFS_size() {
     printf("-----------------------------------\n");
 

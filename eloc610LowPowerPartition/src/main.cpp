@@ -464,10 +464,14 @@ void record(I2SSampler *input)
     gRealSampleRate = (int32_t)(i2s_get_clk(I2S_NUM_0));
     ESP_LOGI(TAG, "I2s REAL clockrate in record %u", gRealSampleRate);
 
-    int64_t recordStartTime = esp_timer_get_time();
-    bool deepSleep = false;
-    float loops; // Why is this a float??
-    int samples_read;
+  // This is used in I2SMemSampler::read(), move it there??
+  graw_samples = (int32_t *)malloc(sizeof(int32_t) * 1000);
+  
+   
+  int16_t *samples = (int16_t *)malloc(sizeof(int16_t) *gSampleBlockSize);
+ 
+  FILE *fp=NULL;
+  WAVFileWriter *writer=NULL;
 
     int64_t longestWriteTimeMillis = 0, writeTimeMillis = 0, bufferUnderruns = 0;
     int64_t writestart, loop_start_time, looptime;

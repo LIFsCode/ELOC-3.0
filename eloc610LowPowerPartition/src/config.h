@@ -60,6 +60,14 @@
         // For Edge Impulse/ ML 
         // I2S_DEFAULT_SAMPLE_RATE needs to equal EI_CLASSIFIER_FREQUENCY
         #define I2S_DEFAULT_SAMPLE_RATE 16000
+
+        // ELOC 3.2
+        // Uses TDK/ INVENSENSE ICS-43434 mic
+        // https://invensense.tdk.com/download-pdf/ics-43434-datasheet
+        // " The output data word length is 24 bits per channel. The default data format is I2S
+        // (twos complement), MSB-first. In this format, the MSB of each word is delayed by one
+        // SCK cycle from the start of each half-frame"
+        #define I2S_BITS_PER_SAMPLE 24
         
         // sdcard (unused, as SDIO is fixed to its Pins)
         #define PIN_NUM_MISO GPIO_NUM_2
@@ -86,10 +94,8 @@
 
 #endif
 
-// undefine to skipt performance monitor
+// undefine to skip performance monitor
 #define USE_PERF_MONITOR
-
-
 
 // i2s config for reading from of I2S
 extern i2s_config_t i2s_mic_Config;

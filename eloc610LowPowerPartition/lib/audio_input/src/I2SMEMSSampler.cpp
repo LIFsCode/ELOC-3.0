@@ -86,6 +86,7 @@ int I2SMEMSSampler::read(int16_t *samples, int count)
             {
                 // samples[i] = (raw_samples[i] & 0xFFFFFFF0) >> 11;
                 // samples[i] = (raw_samples[i] & 0xFFFFFFF0) >> 14; //16 good
+                // Default value of mBitShift = 11
                 samples[i] = graw_samples[temp++] >> mBitShift; // 14 mahout, 11 forest
             }
         }

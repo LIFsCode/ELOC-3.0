@@ -61,16 +61,16 @@ bool gRecording=false;
 int32_t *graw_samples;
 
 int gRawSampleBlockSize=1000;
-int gSampleBlockSize=16000; //must be factor of 1000   in samples
-int gBufferLen=I2S_DMA_BUFFER_LEN; //in samples
-int gBufferCount=I2S_DMA_BUFFER_COUNT;   // so 6*4000 = 24k buf len
+int gSampleBlockSize=16000;             // must be factor of 1000   in samples
+int gBufferLen=I2S_DMA_BUFFER_LEN;      // in samples
+int gBufferCount=I2S_DMA_BUFFER_COUNT;  // so 6*4000 = 24k buf len
 //always keep these in same order
 
 
 ////// these are the things you can change for now. 
 
-uint32_t  gRealSampleRate;
-uint64_t gStartupTime; //gets read in at startup to set tystem time. 
+uint32_t gRealSampleRate;
+uint64_t gStartupTime;      //gets read in at startup to set system time. 
 
 char gSessionFolder[65];
 
@@ -435,160 +435,176 @@ void doDeepSleep(){
 
 }
 
-void record(I2SSampler *input) {
-  
-  gRecording=true;
-  char fname[100];
-  
-  input->start();
-  gRealSampleRate=(int32_t)(i2s_get_clk(I2S_NUM_0));
-  ESP_LOGI(TAG, "I2s REAL clockrate in record  %u", gRealSampleRate  );
+/**
+ * @brief Record I2S mic input to WAV file
+ * 
+ * @param input I2S mic input
+ */
+void record(I2SSampler *input)
+{
 
-  
-  int64_t recordStartTime= esp_timer_get_time();
-  bool deepSleep=false;
-  float loops;
-  int samples_read;
-  int64_t longestWriteTimeMillis=0;
-  int64_t writeTimeMillis=0;
-  int64_t bufferUnderruns=0;
-  float bufferTimeMillis=(((float)gBufferCount*(float)gBufferLen)/(float)getMicInfo().MicSampleRate)*1000;
-  int64_t writestart,writeend,loopstart,looptime,temptime;
-  
-  //BUGME: this should return the session folder name to parse it to createFilename()
-  createSessionFolder();
+    gRecording = true;
+    
+    input->start();
+    gRealSampleRate = (int32_t)(i2s_get_clk(I2S_NUM_0));
+    ESP_LOGI(TAG, "I2s REAL clockrate in record %u", gRealSampleRate);
 
-  graw_samples = (int32_t *)malloc(sizeof(int32_t) * 1000);
-  int16_t *samples = (int16_t *)malloc(sizeof(int16_t) *gSampleBlockSize);
- 
-  FILE *fp=NULL;
-  WAVFileWriter *writer=NULL;
+    int64_t recordStartTime = esp_timer_get_time();
+    bool deepSleep = false;
+    float loops; // Why is this a float??
+    int samples_read;
 
-  bool stopit = false;
-  
-  if (getConfig().listenOnly)  ESP_LOGI(TAG, "Listening only...");
-  while (!stopit) {
-      
-      
-      if (!getConfig().listenOnly) {
+    int64_t longestWriteTimeMillis = 0, writeTimeMillis = 0, bufferUnderruns = 0;
+    int64_t writestart, loop_start_time, looptime;
+    
+    float bufferTimeMillis = (((float)gBufferCount * (float)gBufferLen) / (float)getMicInfo().MicSampleRate) * 1000;
+    
+
+    // BUGME: this should return the session folder name to parse it to createFilename()
+    createSessionFolder();
+
+    graw_samples = (int32_t *)malloc(sizeof(int32_t) * 1000);
+    int16_t *samples = (int16_t *)malloc(sizeof(int16_t) * gSampleBlockSize);
+
+    FILE *fp = NULL;
+    WAVFileWriter *writer = NULL;
+
+    bool stopit = false;
+
+    if (getConfig().listenOnly)
+        ESP_LOGI(TAG, "Listening only...");
+
+    while (!stopit)
+    {
+
+        if (!getConfig().listenOnly)
+        {
+            char fname[100];
             createFilename(fname, sizeof(fname));
             fp = fopen(fname, "wb");
-
-          
             writer = new WAVFileWriter(fp, gRealSampleRate, NUMBER_OF_CHANNELS);
-      }
-      long loopCounter=0;
-      int64_t recordupdate = esp_timer_get_time();
- 
- 
- 
-      loops= (float)getConfig().secondsPerFile/((gSampleBlockSize)/((float)getMicInfo().MicSampleRate)) ;
-      //printf("loops: "); printf(loops); 
-      loopstart=esp_timer_get_time(); 
-      while (loopCounter < loops ) {
+        }
+
+        long loopCounter = 0;
+        int64_t recordupdate = esp_timer_get_time();
+
+        loops = (float)getConfig().secondsPerFile / ((gSampleBlockSize) / ((float)getMicInfo().MicSampleRate));
+        //  = 60 / 16000 / 16000 = 60
+        
+        // printf("loops: "); printf(loops);
+        loop_start_time = esp_timer_get_time();
+
+        while (loopCounter < loops)
+        {
             loopCounter++;
-            temptime=esp_timer_get_time();
-            looptime=(temptime-loopstart);
-            loopstart=temptime;
-
-           // gpio_set_level(STATUS_LED, 1); //so status led only goes low if we go into light sleep manually.
-            //esp_sleep_enable_timer_wakeup(1500000);  //1.5 sec
-            //esp_light_sleep_start();
-            samples_read=0;
-            samples_read = input->read(samples, gSampleBlockSize); //8khz 16k samples so 2 sec
-            //delay(3000); //3 secs this delay will not get anything from i2s logging. DELAY is turning off the CPU?
-                         // if i use delay I dont get the i2s buffer overflow error. do I ever get it?
-                         // fixed if I don't read anything I get watchdog timer errors. 
-                         // looks like I am getting the i2s errors now. 
-                         //  get the i2s buffer overflow ALWAYS
-                         // there is no i2s output when DELAY is active. but get buffer overflow always
             
-            gSessionRecordTime=esp_timer_get_time()-recordStartTime;
-             if (!getConfig().listenOnly)  {
-                  writestart = esp_timer_get_time();
-                  writer->write(samples, samples_read);
-                  
-                  writeend = esp_timer_get_time();
-                  writeTimeMillis=(writeend - writestart)/1000;
-                  if (writeTimeMillis > longestWriteTimeMillis) longestWriteTimeMillis=writeTimeMillis;
-                  if (writeTimeMillis>bufferTimeMillis) bufferUnderruns++;
-                  ESP_LOGI(TAG, "Wrote %d samples in %lld ms. Longest: %lld. buffer (ms): %f underrun: %lld loop:%lld",   samples_read,writeTimeMillis,longestWriteTimeMillis,bufferTimeMillis,bufferUnderruns,looptime/1000);
-            }
-            //if (getConfig().listenOnly)  ESP_LOGI(TAG, "Listening only...");
-            rec_req_t rec_req = REC_REQ_NONE;
-            if (xQueueReceive(rec_req_evt_queue, &rec_req, 0))  { // 0 waiting time
-                if (rec_req == REC_REQ_STOP) {
-                  stopit=true; 
-                  loopCounter=10000001L; 
-                  ESP_LOGI(TAG,"stop recording requested");
-                }
-                else {
-                  ESP_LOGI(TAG,"REC_REQ = %d", rec_req);
-                }
-            }
+            // Calculate time to loop
+            int64_t t_time = esp_timer_get_time();
+            looptime = (t_time - loop_start_time);
+            loop_start_time = t_time;
 
-            if ((esp_timer_get_time() - recordupdate  ) > 9000000 ) { //9 seconds for the next loop
-                ESP_LOGI(TAG,"record in second loop--voltage check");
-                //esp_pm_dump_locks(stdout);
-                //vTaskGetRunTimeStats( ( char * ) sBuffer );
-                //ESP_LOGI(TAG,"vTaskGetRunTimeStats:\n %s", sBuffer);
-             
-                //printf("freeSpaceGB "+String(gFreeSpaceGB));
+            // gpio_set_level(STATUS_LED, 1); //so status led only goes low if we go into light sleep manually.
+            // esp_sleep_enable_timer_wakeup(1500000);  //1.5 sec
+            // esp_light_sleep_start();
+            samples_read = 0;
+            samples_read = input->read(samples, gSampleBlockSize); // 8khz 16k samples so 2 sec
+            // delay(3000); //3 secs this delay will not get anything from i2s logging. DELAY is turning off the CPU?
+            //  if i use delay I dont get the i2s buffer overflow error. do I ever get it?
+            //  fixed if I don't read anything I get watchdog timer errors.
+            //  looks like I am getting the i2s errors now.
+            //   get the i2s buffer overflow ALWAYS
+            //  there is no i2s output when DELAY is active. but get buffer overflow always
 
-                recordupdate=esp_timer_get_time(); 
-
-                //if (gGPIOButtonPressed)  {stopit=true; loopCounter=10000001L; ESP_LOGI(TAG,"gpio button pressed");}
-               // ok fix me put me back in if (gFreeSpaceGB<0.2f)  {stopit=true; loopCounter=10000001L; }
+            gSessionRecordTime = esp_timer_get_time() - recordStartTime;
+            if (!getConfig().listenOnly)
+            {
+                writestart = esp_timer_get_time();
+                writer->write(samples, samples_read);
                 
-                 //voltage check
-                if ((loopCounter % 50)==0 ) {
-                   ESP_LOGI(TAG, "Checking battery state" );
-                   Battery::GetInstance().getVoltage();
-                   if ((Battery::GetInstance().isEmpty())) {
-                     stopit=true; loopCounter=10000001L;
-                     ESP_LOGI(TAG, "Voltage LOW-OFF. Stopping record. " );
-                     deepSleep=true;
+                writeTimeMillis = (esp_timer_get_time() - writestart) / 1000;
+                
+                if (writeTimeMillis > longestWriteTimeMillis)
+                    longestWriteTimeMillis = writeTimeMillis;
+                
+                if (writeTimeMillis > bufferTimeMillis)
+                    bufferUnderruns++;
+                
+                ESP_LOGI(TAG, "Wrote %d samples in %lld ms. Longest: %lld. buffer (ms): %f underrun: %lld loop:%lld", samples_read, writeTimeMillis, longestWriteTimeMillis, bufferTimeMillis, bufferUnderruns, looptime / 1000);
+            }
+            
+            // if (getConfig().listenOnly)  ESP_LOGI(TAG, "Listening only...");
+            rec_req_t rec_req = REC_REQ_NONE;
+            if (xQueueReceive(rec_req_evt_queue, &rec_req, 0))
+            {   // 0 waiting time
+                if (rec_req == REC_REQ_STOP)
+                {
+                    stopit = true;
+                    loopCounter = 10000001L;
+                    ESP_LOGI(TAG, "stop recording requested");
+                }
+                else
+                {
+                    ESP_LOGI(TAG, "REC_REQ = %d", rec_req);
+                }
+            }
 
-                     
-                   }   
-                } 
+            if ((esp_timer_get_time() - recordupdate) > 9000000)
+            { // 9 seconds for the next loop
+                ESP_LOGI(TAG, "record in second loop--voltage check");
+                // esp_pm_dump_locks(stdout);
+                // vTaskGetRunTimeStats( ( char * ) sBuffer );
+                // ESP_LOGI(TAG,"vTaskGetRunTimeStats:\n %s", sBuffer);
 
-               
-    
-              }
-  
-          
-      }
-    
-    if (!getConfig().listenOnly) {
-        writer->finish();
-        fclose(fp);
-        delete writer;
+                // printf("freeSpaceGB "+String(gFreeSpaceGB));
+
+                recordupdate = esp_timer_get_time();
+
+                // if (gGPIOButtonPressed)  {stopit=true; loopCounter=10000001L; ESP_LOGI(TAG,"gpio button pressed");}
+                // ok fix me put me back in if (gFreeSpaceGB<0.2f)  {stopit=true; loopCounter=10000001L; }
+
+                // voltage check every 50 loops?
+                if ((loopCounter % 50) == 0)
+                {
+                    ESP_LOGI(TAG, "Checking battery state");
+                    Battery::GetInstance().getVoltage();
+                    if ((Battery::GetInstance().isEmpty()))
+                    {
+                        stopit = true;
+                        loopCounter = 10000001L;
+                        ESP_LOGI(TAG, "Voltage LOW-OFF. Stopping record. ");
+                        deepSleep = true;
+                    }
+                }
+            }
+        }
+
+        if (!getConfig().listenOnly)
+        {
+            writer->finish();
+            fclose(fp);
+            delete writer;
+        }
     }
-    
+    ESP_LOGI(TAG, "Stopping record. ");
 
-  }
-   ESP_LOGI(TAG, "Stopping record. " );
-  
-  input->stop();
-  //delete input;
-  free(samples);
-  free(graw_samples);
-  
-  gSessionRecordTime=esp_timer_get_time()-recordStartTime;
-  //int64_t recordEndTime= esp_timer_get_time();
-  gTotalRecordTimeSinceReboot=gTotalRecordTimeSinceReboot+gSessionRecordTime; 
-  ESP_LOGI(TAG, "total record time since boot = %s sec", uint64ToString(gTotalRecordTimeSinceReboot/1000/1000).c_str());
- 
+    input->stop();
+    // delete input;
+    free(samples);
+    free(graw_samples);
 
-  ESP_LOGI(TAG, "Finished recording");
-  //btwrite("Finished recording");
-   gRecording=false;
-   gSessionRecordTime=0;
- 
-   if (deepSleep) doDeepSleep();
+    gSessionRecordTime = esp_timer_get_time() - recordStartTime;
+    // int64_t recordEndTime= esp_timer_get_time();
+    gTotalRecordTimeSinceReboot = gTotalRecordTimeSinceReboot + gSessionRecordTime;
+    ESP_LOGI(TAG, "total record time since boot = %s sec", uint64ToString(gTotalRecordTimeSinceReboot / 1000 / 1000).c_str());
+
+    ESP_LOGI(TAG, "Finished recording");
+    // btwrite("Finished recording");
+    gRecording = false;
+    gSessionRecordTime = 0;
+
+    if (deepSleep)
+        doDeepSleep();
 }
-
 
 bool mountSDCard() {
     gMountedSDCard=false;
@@ -707,7 +723,8 @@ i2s_config_t getI2sConfig() {
     return i2s_mic_Config;
 }
 
-#define EDGE_IMPULSE_ENABLED
+// TODO: Remove this..
+// #define EDGE_IMPULSE_ENABLED
 
 #ifdef EDGE_IMPULSE_ENABLED
 // If your target is limited in memory remove this macro to save 10K RAM

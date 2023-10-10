@@ -31,4 +31,4 @@ Build using 'esp32dev-ei' in the 'Project Tasks':
 
 ## Troubleshooting
 1. I've noticed that at startup there are errors about failing to run the inference model (or similar). When the Bluetooth task is suspended (after 30sec?) the problem seems to resolve itself & predictions will be visible.
-
+2. esp32dev-ei might not appear under 'Project Tasks'. The refresh button above will do the trick.

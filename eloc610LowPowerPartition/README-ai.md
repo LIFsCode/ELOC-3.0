@@ -13,18 +13,19 @@ Build using 'esp32dev-ei' in the 'Project Tasks':
 
 # To update the Edge Impulse model follow these steps:
 1. Open the Edge Impulse Studio and navigate to the project containing the model you want to use.
-2. Click on the "Deployment" tab.
-3. Select the deployment you want to update (i.e. "Arduino Library").
-4. Click on the "Builde" button & download the zip file.
-5. Delete the following folders from this project. This may not be strictly necessary as some fo these folders may be unchanged but it's a good idea to ensure that the latest versions are used:  
+2. Ensure the correct target device is selected (i.e. ESP32).
+3. Click on the "Deployment" tab.
+4. Select the deployment you want to update (i.e. "Arduino Library").
+5. Click on the "Builde" button & download the zip file.
+6. Delete the following folders from this project. This may not be strictly necessary as some fo these folders may be unchanged but it's a good idea to ensure that the latest versions are used:  
     `lib/edge-impulse/src/edge-impulse-sdk`  
     `lib/edge-impulse/src/model-parameters`  
     `lib/edge-impulse/src/tflite-model`  
     `lib/edge-impulse/src/<model-header-file.h>`  
-6. Copy the three new folders (edge-impulse-sdk, model-parameters & tflite-model) & model header file from the downloaded model into 'lib/src/'. 
-7. Amend the following line (currently #736) in main.cpp with the correct model header file name (if necessary)
+7. Copy the three new folders (edge-impulse-sdk, model-parameters & tflite-model) & model header file from the downloaded model into 'lib/src/'. 
+8. Amend the following line (currently #736) in main.cpp with the correct model header file name (if necessary)
     `#include "trumpet_inferencing.h"`
-8. Under 'esp32dev-ei' in the 'Project Tasks' menu run:
+9. Under 'esp32dev-ei' in the 'Project Tasks' menu run:
     'Full Clean' **(Very important, otherwise the new model will not be pulled into .pio build folder)**
     'Build'
     'Upload'

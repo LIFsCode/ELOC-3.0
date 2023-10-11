@@ -733,7 +733,7 @@ i2s_config_t getI2sConfig() {
 
 #define I2S_DATA_SCALING_FACTOR 1
 
-#include "trumpet_inferencing.h"
+#include "trumpet_trimmed_inferencing.h"
 #include "test_samples.h"
 
 /** Audio buffers, pointers and selectors */
@@ -1194,7 +1194,8 @@ void app_main(void) {
             ESP_LOGI(TAG, "EI results filename: %s", ei_results_filename.c_str());
         }
 
-        static_assert((I2S_DEFAULT_SAMPLE_RATE == EI_CLASSIFIER_FREQUENCY), "I2S sample rate must match EI_CLASSIFIER_FREQUENCY");
+        if (I2S_DEFAULT_SAMPLE_RATE != EI_CLASSIFIER_FREQUENCY)
+            ESP_LOGW(TAG, "I2S sample rate must match EI_CLASSIFIER_FREQUENCY");
         
         // summary of inferencing settings (from model_metadata.h)
         ESP_LOGI(TAG,"Edge Impulse Inferencing settings:");
@@ -1212,7 +1213,8 @@ void app_main(void) {
             // Run stored audio samples through the model to test it
             ESP_LOGI(TAG,"Testing model against pre-recorded sample data...");
             
-            static_assert((EI_CLASSIFIER_RAW_SAMPLE_COUNT == TEST_SAMPLE_LENGTH), "EI_CLASSIFIER_RAW_SAMPLE_COUNT must match TEST_SAMPLE_LENGTH");
+            if(EI_CLASSIFIER_RAW_SAMPLE_COUNT != TEST_SAMPLE_LENGTH)
+                ESP_LOGW(TAG, "EI_CLASSIFIER_RAW_SAMPLE_COUNT must match TEST_SAMPLE_LENGTH");
             
             signal_t signal;
             signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;

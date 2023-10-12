@@ -19,6 +19,14 @@
 #define _EI_CLASSIFIER_CONFIG_H_
 
 // clang-format off
+
+// This is a file that's only used in benchmarking to override HW optimized kernels
+#ifdef __has_include
+    #if __has_include("source/benchmark.h")
+    #include "source/benchmark.h"
+    #endif
+#endif
+
 #if EI_CLASSIFIER_TFLITE_ENABLE_SILABS_MVP == 1
     #define EI_CLASSIFIER_TFLITE_ENABLE_CMSIS_NN        0
     #define EI_CLASSIFIER_TFLITE_LOAD_CMSIS_NN_SOURCES  1
@@ -68,7 +76,12 @@
 #ifndef EI_CLASSIFIER_TFLITE_ENABLE_ESP_NN
     #if defined(ESP32)
         #define EI_CLASSIFIER_TFLITE_ENABLE_ESP_NN      1
-    #endif // ESP32 check
+        #define ESP_NN                                  1
+    #endif // Arduino ESP32 check
+#else
+    #ifndef ESP_NN
+        #define ESP_NN                                  1
+    #endif
 #endif
 
 // no include checks in the compiler? then just include metadata and then ops_define (optional if on EON model)

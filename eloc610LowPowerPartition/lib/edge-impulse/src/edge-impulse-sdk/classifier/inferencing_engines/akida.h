@@ -45,19 +45,29 @@
 #endif
 
 #include "model-parameters/model_metadata.h"
-#if EI_CLASSIFIER_HAS_MODEL_VARIABLES == 1
-#include "model-parameters/model_variables.h"
-#endif
-#include <akida-model/akida_model.h>
+#include <thread>
+#include "tensorflow-lite/tensorflow/lite/c/common.h"
+#include "tensorflow-lite/tensorflow/lite/interpreter.h"
+#include "tensorflow-lite/tensorflow/lite/kernels/register.h"
+#include "tensorflow-lite/tensorflow/lite/model.h"
+#include "tensorflow-lite/tensorflow/lite/optional_debug_tools.h"
+#include "edge-impulse-sdk/tensorflow/lite/kernels/tree_ensemble_classifier.h"
+#include "edge-impulse-sdk/classifier/ei_model_types.h"
 #include "edge-impulse-sdk/porting/ei_classifier_porting.h"
 #include "edge-impulse-sdk/classifier/ei_fill_result_struct.h"
-#include "edge-impulse-sdk/tensorflow/lite/kernels/internal/reference/softmax.h"
+#include "tensorflow-lite/tensorflow/lite/kernels/internal/reference/softmax.h"
+#undef EI_CLASSIFIER_INFERENCING_ENGINE
+#define EI_CLASSIFIER_INFERENCING_ENGINE EI_CLASSIFIER_TFLITE_FULL
+#include "tflite_helper.h"
+#undef EI_CLASSIFIER_INFERENCING_ENGINE
+#define EI_CLASSIFIER_INFERENCING_ENGINE EI_CLASSIFIER_AKIDA
 #include <vector>
 #include <fstream>
 #include <sstream>
 #include <iomanip>
 #include <limits>
 #include <math.h>
+#include <algorithm>
 #include "pybind11/embed.h"
 #include "pybind11/numpy.h"
 #include "pybind11/stl.h"
@@ -75,8 +85,17 @@ static bool akida_initialized = false;
 static std::vector<size_t> input_shape;
 static tflite::RuntimeShape softmax_shape;
 static tflite::SoftmaxParams dummy_params;
+static int model_input_bits = 0;
+static float scale;
+static int down_scale;
+typedef struct {
+    std::unique_ptr<tflite::FlatBufferModel> model;
+    std::unique_ptr<tflite::Interpreter> interpreter;
+} ei_tflite_state_t;
 
-bool init_akida(bool debug)
+std::map<uint32_t, ei_tflite_state_t*> ei_tflite_instances;
+
+bool init_akida(const uint8_t *model_arr, size_t model_arr_size, bool debug)
 {
     py::module_ sys;
     py::list path;
@@ -110,7 +129,7 @@ bool init_akida(bool debug)
 
     // deploy akida model file into temporary file
     std::ofstream model_file(model_file_path, std::ios::out | std::ios::binary);
-    model_file.write(reinterpret_cast<const char*>(akida_model_fbz), akida_model_fbz_len);
+    model_file.write(reinterpret_cast<const char*>(model_arr), model_arr_size);
     if(model_file.bad()) {
         ei_printf("ERR: failed to unpack model ile into %s\n", model_file_path);
         model_file.close();
@@ -136,6 +155,32 @@ bool init_akida(bool debug)
     }
     // extend input by (N, ...) - hardcoded to (1, ...)
     input_shape.insert(input_shape.begin(), (size_t)1);
+
+    // get model input_bits
+    std::vector<py::object> layers = model.attr("layers").cast<std::vector<py::object>>();
+    auto input_layer = layers[0];
+    model_input_bits = input_layer.attr("input_bits").cast<int>();
+    if((model_input_bits != 8) && (model_input_bits != 4)) {
+        ei_printf("ERR: Unsupported input_bits. Expected 4 or 8 got %d\n", model_input_bits);
+        return false;
+    }
+
+    // initialize scale coefficients
+    if(model_input_bits == 8) {
+        scale = 255;
+        down_scale = 1;
+    }
+    else if(model_input_bits == 4) {
+        // these values are recommended by BrainChip
+        scale = 15;
+        down_scale = 16;
+    }
+
+    if(debug) {
+        ei_printf("INFO: Model input_bits: %d\n", model_input_bits);
+        ei_printf("INFO: Scale: %f\n", scale);
+        ei_printf("INFO: Down scale: %d\n", down_scale);
+    }
 
 #if (defined(EI_CLASSIFIER_USE_AKIDA_HARDWARE) && (EI_CLASSIFIER_USE_AKIDA_HARDWARE == 1))
     // get list of available devices
@@ -213,14 +258,19 @@ EI_IMPULSE_ERROR run_nn_inference(
     const ei_impulse_t *impulse,
     ei::matrix_t *fmatrix,
     ei_impulse_result_t *result,
+    void *config_ptr,
     bool debug = false)
 {
+    ei_learning_block_config_tflite_graph_t *block_config = ((ei_learning_block_config_tflite_graph_t*)config_ptr);
+    ei_config_tflite_graph_t *graph_config = ((ei_config_tflite_graph_t*)block_config->graph_config);
+    EI_IMPULSE_ERROR fill_res = EI_IMPULSE_OK;
+
     // init Python embedded interpreter (should be called once!)
     static py::scoped_interpreter guard{};
 
     // check if we've initialized the interpreter and device?
     if (akida_initialized == false) {
-        if(init_akida(debug) == false) {
+        if(init_akida(graph_config->model, graph_config->model_size, debug) == false) {
             return EI_IMPULSE_AKIDA_ERROR;
         }
         akida_initialized = true;
@@ -237,19 +287,31 @@ EI_IMPULSE_ERROR run_nn_inference(
      * For images BW shape is (width, height, 1)
      * For Audio shape is (width, height, 1) - spectrogram
      * TODO: test with other ML models/data types
+     * For details see:
+     * https://pybind11.readthedocs.io/en/stable/advanced/pycpp/numpy.html#direct-access
      */
     auto r = input_data.mutable_unchecked<4>();
+    float temp;
     for (py::ssize_t x = 0; x < r.shape(1); x++) {
         for (py::ssize_t y = 0; y < r.shape(2); y++) {
             for(py::ssize_t z = 0; z < r.shape(3); z++) {
-                r(0, x, y, z) = (uint8_t)(fmatrix->buffer[x * r.shape(2) * r.shape(3) + y * r.shape(3) + z] * 255.0);
+                temp = (fmatrix->buffer[x * r.shape(2) * r.shape(3) + y * r.shape(3) + z] * scale);
+                temp = std::max(0.0f, std::min(temp, 255.0f));
+                r(0, x, y, z) = (uint8_t)(temp / down_scale);
             }
         }
     }
 
     // Run inference on AKD1000
     uint64_t ctx_start_us = ei_read_timer_us();
-    py::array_t<float> potentials = model_predict(input_data);
+    py::array_t<float> potentials;
+    try {
+        potentials = model_predict(input_data);
+    }
+    catch (py::error_already_set &e) {
+        ei_printf("ERR: Inference error:\n%s\n", e.what());
+        return EI_IMPULSE_AKIDA_ERROR;
+    }
     // TODO: 'forward' is returning int8 or int32, but EI SDK supports int8 or float32 only
     // py::array_t<float> potentials = model_forward(input_data);
     uint64_t ctx_end_us = ei_read_timer_us();
@@ -311,12 +373,12 @@ EI_IMPULSE_ERROR run_nn_inference(
     if (impulse->object_detection) {
         switch (impulse->object_detection_last_layer) {
             case EI_CLASSIFIER_LAST_LAYER_FOMO: {
-                fill_result_struct_f32_fomo(
+                fill_res = fill_result_struct_f32_fomo(
                     impulse,
                     result,
                     potentials_v.data(),
-                    impulse->input_width / 8,
-                    impulse->input_height / 8);
+                    impulse->fomo_output_size,
+                    impulse->fomo_output_size);
                 break;
             }
             case EI_CLASSIFIER_LAST_LAYER_SSD: {
@@ -337,10 +399,136 @@ EI_IMPULSE_ERROR run_nn_inference(
         }
     }
     else {
-        fill_result_struct_f32(impulse, result, potentials_v.data(), debug);
+        fill_res = fill_result_struct_f32(impulse, result, potentials_v.data(), debug);
     }
 
+    return fill_res;
+}
+
+/**
+ * Construct a tflite interpreter (creates it if needed)
+ */
+static EI_IMPULSE_ERROR get_interpreter(ei_learning_block_config_tflite_graph_t *block_config, tflite::Interpreter **interpreter) {
+    // not in the map yet...
+    if (!ei_tflite_instances.count(block_config->block_id)) {
+        ei_config_tflite_graph_t *graph_config = (ei_config_tflite_graph_t*)block_config->graph_config;
+        ei_tflite_state_t *new_state = new ei_tflite_state_t();
+
+        auto new_model = tflite::FlatBufferModel::BuildFromBuffer((const char*)graph_config->model, graph_config->model_size);
+        new_state->model = std::move(new_model);
+        if (!new_state->model) {
+            ei_printf("Failed to build TFLite model from buffer\n");
+            return EI_IMPULSE_TFLITE_ERROR;
+        }
+
+        tflite::ops::builtin::BuiltinOpResolver resolver;
+#if EI_CLASSIFIER_HAS_TREE_ENSEMBLE_CLASSIFIER
+        resolver.AddCustom("TreeEnsembleClassifier",
+            tflite::ops::custom::Register_TREE_ENSEMBLE_CLASSIFIER());
+#endif
+        tflite::InterpreterBuilder builder(*new_state->model, resolver);
+        builder(&new_state->interpreter);
+
+        if (!new_state->interpreter) {
+            ei_printf("Failed to construct interpreter\n");
+            return EI_IMPULSE_TFLITE_ERROR;
+        }
+
+        if (new_state->interpreter->AllocateTensors() != kTfLiteOk) {
+            ei_printf("AllocateTensors failed\n");
+            return EI_IMPULSE_TFLITE_ERROR;
+        }
+
+        int hw_thread_count = (int)std::thread::hardware_concurrency();
+        hw_thread_count -= 1; // leave one thread free for the other application
+        if (hw_thread_count < 1) {
+            hw_thread_count = 1;
+        }
+
+        if (new_state->interpreter->SetNumThreads(hw_thread_count) != kTfLiteOk) {
+            ei_printf("SetNumThreads failed\n");
+            return EI_IMPULSE_TFLITE_ERROR;
+        }
+
+        ei_tflite_instances.insert(std::make_pair(block_config->block_id, new_state));
+    }
+
+    auto tflite_state = ei_tflite_instances[block_config->block_id];
+    *interpreter = tflite_state->interpreter.get();
     return EI_IMPULSE_OK;
+}
+
+
+extern "C" EI_IMPULSE_ERROR run_nn_inference_from_dsp(
+    ei_learning_block_config_tflite_graph_t *block_config,
+    signal_t *signal,
+    matrix_t *output_matrix)
+{
+    tflite::Interpreter *interpreter;
+    auto interpreter_ret = get_interpreter(block_config, &interpreter);
+    if (interpreter_ret != EI_IMPULSE_OK) {
+        return interpreter_ret;
+    }
+
+    TfLiteTensor *input = interpreter->input_tensor(0);
+    TfLiteTensor *output = interpreter->output_tensor(0);
+
+    if (!input) {
+        return EI_IMPULSE_INPUT_TENSOR_WAS_NULL;
+    }
+    if (!output) {
+        return EI_IMPULSE_OUTPUT_TENSOR_WAS_NULL;
+    }
+
+    auto input_res = fill_input_tensor_from_signal(signal, input);
+    if (input_res != EI_IMPULSE_OK) {
+        return input_res;
+    }
+
+    TfLiteStatus status = interpreter->Invoke();
+    if (status != kTfLiteOk) {
+        ei_printf("ERR: interpreter->Invoke() failed with %d\n", status);
+        return EI_IMPULSE_TFLITE_ERROR;
+    }
+
+    auto output_res = fill_output_matrix_from_tensor(output, output_matrix);
+    if (output_res != EI_IMPULSE_OK) {
+        return output_res;
+    }
+
+    // on Linux we're not worried about free'ing (for now)
+
+    return EI_IMPULSE_OK;
+}
+
+__attribute__((unused)) int extract_tflite_features(signal_t *signal, matrix_t *output_matrix, void *config_ptr, const float frequency) {
+
+    ei_dsp_config_tflite_t *dsp_config = (ei_dsp_config_tflite_t*)config_ptr;
+
+    ei_config_tflite_graph_t ei_config_tflite_graph_0 = {
+        .implementation_version = 1,
+        .model = dsp_config->model,
+        .model_size = dsp_config->model_size,
+        .arena_size = dsp_config->arena_size
+    };
+
+    ei_learning_block_config_tflite_graph_t ei_learning_block_config = {
+        .implementation_version = 1,
+        .block_id = dsp_config->block_id,
+        .object_detection = false,
+        .object_detection_last_layer = EI_CLASSIFIER_LAST_LAYER_UNKNOWN,
+        .output_data_tensor = 0,
+        .output_labels_tensor = 255,
+        .output_score_tensor = 255,
+        .graph_config = &ei_config_tflite_graph_0
+    };
+
+    auto x = run_nn_inference_from_dsp(&ei_learning_block_config, signal, output_matrix);
+    if (x != 0) {
+        return x;
+    }
+
+    return EIDSP_OK;
 }
 
 #endif // EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_AKIDA

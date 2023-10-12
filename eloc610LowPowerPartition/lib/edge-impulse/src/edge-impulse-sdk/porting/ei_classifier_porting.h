@@ -20,7 +20,6 @@
 
 #include <stdint.h>
 #include <stdlib.h>
-#include "edge-impulse-sdk/tensorflow/lite/micro/debug_log.h"
 
 #if defined(__cplusplus) && EI_C_LINKAGE == 1
 extern "C" {
@@ -51,6 +50,7 @@ typedef enum {
     EI_IMPULSE_AKIDA_ERROR = -23,
     EI_IMPULSE_INVALID_SIZE = -24,
     EI_IMPULSE_ONNX_ERROR = -25,
+    EI_IMPULSE_MEMRYX_ERROR = -26,
 } EI_IMPULSE_ERROR;
 
 /**
@@ -127,14 +127,6 @@ void ei_free(void *ptr);
 #endif
 #endif
 
-#ifndef EI_PORTING_ECM3532
-#ifdef ECM3532
-#define EI_PORTING_ECM3532      1
-#else
-#define EI_PORTING_ECM3532      0
-#endif
-#endif
-
 #ifndef EI_PORTING_ESPRESSIF
 #if defined(CONFIG_IDF_TARGET_ESP32) && EI_PORTING_ARDUINO == 0
 #define EI_PORTING_ESPRESSIF      1
@@ -207,5 +199,11 @@ void ei_free(void *ptr);
 #endif
 #endif
 // End load porting layer depending on target
+
+// Additional configuration for specific architecture
+#if defined(__CORTEX_M) && ((__CORTEX_M == 85U) || (__CORTEX_M == 55U))
+#define EI_MAX_OVERFLOW_BUFFER_COUNT	15
+#endif
+// End additional configuration
 
 #endif // _EI_CLASSIFIER_PORTING_H_

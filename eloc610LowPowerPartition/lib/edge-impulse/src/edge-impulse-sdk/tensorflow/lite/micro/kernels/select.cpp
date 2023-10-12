@@ -154,7 +154,7 @@ TfLiteStatus SelectPrepare(TfLiteContext* context, TfLiteNode* node) {
   micro_context->DeallocateTempTfLiteTensor(input_y);
   micro_context->DeallocateTempTfLiteTensor(output);
 
-  TfLiteIntArrayFree(output_size);
+  TfLiteIntArrayFree(output_size) = nullptr;
 
   return kTfLiteOk;
 }

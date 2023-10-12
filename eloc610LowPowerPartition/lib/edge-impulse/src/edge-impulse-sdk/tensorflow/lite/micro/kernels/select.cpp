@@ -117,7 +117,7 @@ TfLiteStatus SelectPrepare(TfLiteContext* context, TfLiteNode* node) {
 
   bool same_shape = HaveSameShapes(input_condition, input_x) &&
                     HaveSameShapes(input_x, input_y);
-  TfLiteIntArray* output_size;
+  TfLiteIntArray* output_size = nullptr;
   if (!same_shape) {
     switch (kernel_type) {
       case kVersionOne: {
@@ -154,7 +154,7 @@ TfLiteStatus SelectPrepare(TfLiteContext* context, TfLiteNode* node) {
   micro_context->DeallocateTempTfLiteTensor(input_y);
   micro_context->DeallocateTempTfLiteTensor(output);
 
-  TfLiteIntArrayFree(output_size) = nullptr;
+  TfLiteIntArrayFree(output_size);
 
   return kTfLiteOk;
 }

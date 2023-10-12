@@ -53,12 +53,13 @@
         #define I2S_MIC_LEFT_RIGHT_CLOCK GPIO_NUM_5
         #define I2S_MIC_SERIAL_CLOCK GPIO_NUM_18     
         #define I2S_MIC_SERIAL_DATA   GPIO_NUM_19        
-        // TODO: check if we want these configureable
+        // TODO: check if we want these configurable
         #define I2S_DMA_BUFFER_COUNT 18
         #define I2S_DMA_BUFFER_LEN   1000
         // #define I2S_DEFAULT_SAMPLE_RATE 20000
         // For Edge Impulse/ ML 
         // I2S_DEFAULT_SAMPLE_RATE needs to equal EI_CLASSIFIER_FREQUENCY
+        // FIXME: This value will be overridden by config on SD card or SPIFFS
         #define I2S_DEFAULT_SAMPLE_RATE 16000
 
         // ELOC 3.2

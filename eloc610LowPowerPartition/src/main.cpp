@@ -53,6 +53,21 @@
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
 
+// TODO: Remove this..
+// #define EDGE_IMPULSE_ENABLED
+
+#ifdef EDGE_IMPULSE_ENABLED
+// If your target is limited in memory remove this macro to save 10K RAM
+// But if you do results in errors: '.... insn does not satisfy its constraints'
+#define EIDSP_QUANTIZE_FILTERBANK 0
+
+#define I2S_DATA_SCALING_FACTOR 1
+
+#include "trumpet_trimmed_inferencing.h"
+#include "test_samples.h"
+
+#endif
+
 static const char *TAG = "main";
 
 bool gMountedSDCard=false;
@@ -713,33 +728,26 @@ void saveStatusToSD() {
 
 i2s_config_t getI2sConfig() {
     // update the config with the updated parameters
-    ESP_LOGI(TAG, "Sample rate = %d", getMicInfo().MicSampleRate);
+
     #ifdef EDGE_IMPULSE_ENABLED
-        // Won't work correct otherwise..
+        // Won't work correctly otherwise..
         i2s_mic_Config.sample_rate = EI_CLASSIFIER_FREQUENCY;
     #else
         i2s_mic_Config.sample_rate = getMicInfo().MicSampleRate;
     #endif
+
+    //ESP_LOGI(TAG, "Sample rate = %d", getMicInfo().MicSampleRate);
     i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL; //not getting set. getConfig().MicUseAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
     if (i2s_mic_Config.sample_rate == 0) {
         ESP_LOGI(TAG, "Resetting invalid sample rate to default = %d", I2S_DEFAULT_SAMPLE_RATE);
         i2s_mic_Config.sample_rate = I2S_DEFAULT_SAMPLE_RATE;
     }
+
+    ESP_LOGI(TAG, "Sample rate = %d", i2s_mic_Config.sample_rate);
     return i2s_mic_Config;
 }
 
-// TODO: Remove this..
-// #define EDGE_IMPULSE_ENABLED
-
 #ifdef EDGE_IMPULSE_ENABLED
-// If your target is limited in memory remove this macro to save 10K RAM
-// But if you do results in errors: '.... insn does not satisfy its constraints'
-#define EIDSP_QUANTIZE_FILTERBANK 0
-
-#define I2S_DATA_SCALING_FACTOR 1
-
-#include "trumpet_trimmed_inferencing.h"
-#include "test_samples.h"
 
 /** Audio buffers, pointers and selectors */
 typedef struct

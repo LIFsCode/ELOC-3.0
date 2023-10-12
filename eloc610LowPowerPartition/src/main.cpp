@@ -714,7 +714,12 @@ void saveStatusToSD() {
 i2s_config_t getI2sConfig() {
     // update the config with the updated parameters
     ESP_LOGI(TAG, "Sample rate = %d", getMicInfo().MicSampleRate);
-    i2s_mic_Config.sample_rate = getMicInfo().MicSampleRate; //fails when hardcoded to 22050
+    #ifdef EDGE_IMPULSE_ENABLED
+        // Won't work correct otherwise..
+        i2s_mic_Config.sample_rate = EI_CLASSIFIER_FREQUENCY;
+    #else
+        i2s_mic_Config.sample_rate = getMicInfo().MicSampleRate;
+    #endif
     i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL; //not getting set. getConfig().MicUseAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
     if (i2s_mic_Config.sample_rate == 0) {
         ESP_LOGI(TAG, "Resetting invalid sample rate to default = %d", I2S_DEFAULT_SAMPLE_RATE);

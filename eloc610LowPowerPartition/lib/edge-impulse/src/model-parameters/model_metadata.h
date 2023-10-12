@@ -35,7 +35,9 @@
 #define EI_CLASSIFIER_DRPAI                      7
 #define EI_CLASSIFIER_TFLITE_TIDL                8
 #define EI_CLASSIFIER_AKIDA                      9
-#define EI_CLASSIFIER_ONNX_TIDL                  10
+#define EI_CLASSIFIER_SYNTIANT                   10
+#define EI_CLASSIFIER_ONNX_TIDL                  11
+#define EI_CLASSIFIER_MEMRYX                     12
 
 #define EI_CLASSIFIER_SENSOR_UNKNOWN             -1
 #define EI_CLASSIFIER_SENSOR_MICROPHONE          1
@@ -50,23 +52,24 @@
 #define EI_CLASSIFIER_DATATYPE_UINT8             3
 #define EI_CLASSIFIER_DATATYPE_INT8              9
 
-#define EI_CLASSIFIER_PROJECT_ID                 186372
+#define EI_CLASSIFIER_PROJECT_ID                 290754
 #define EI_CLASSIFIER_PROJECT_OWNER              "EDsteve"
-#define EI_CLASSIFIER_PROJECT_NAME               "trumpet"
+#define EI_CLASSIFIER_PROJECT_NAME               "trumpet trimmed"
 #define EI_CLASSIFIER_PROJECT_DEPLOY_VERSION     2
-#define EI_CLASSIFIER_NN_INPUT_FRAME_SIZE        3960
-#define EI_CLASSIFIER_RAW_SAMPLE_COUNT           16000
+#define EI_CLASSIFIER_NN_INPUT_FRAME_SIZE        16899
+#define EI_CLASSIFIER_RAW_SAMPLE_COUNT           12000
 #define EI_CLASSIFIER_RAW_SAMPLES_PER_FRAME      1
 #define EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE       (EI_CLASSIFIER_RAW_SAMPLE_COUNT * EI_CLASSIFIER_RAW_SAMPLES_PER_FRAME)
 #define EI_CLASSIFIER_INPUT_WIDTH                0
 #define EI_CLASSIFIER_INPUT_HEIGHT               0
 #define EI_CLASSIFIER_INPUT_FRAMES               0
 #define EI_CLASSIFIER_NN_OUTPUT_COUNT            2
-#define EI_CLASSIFIER_INTERVAL_MS                0.0625
+#define EI_CLASSIFIER_INTERVAL_MS                0.25
 #define EI_CLASSIFIER_LABEL_COUNT                2
 #define EI_CLASSIFIER_HAS_ANOMALY                0
-#define EI_CLASSIFIER_FREQUENCY                  16000
+#define EI_CLASSIFIER_FREQUENCY                  4000
 #define EI_CLASSIFIER_HAS_MODEL_VARIABLES        1
+
 
 
 #define EI_CLASSIFIER_OBJECT_DETECTION            0
@@ -75,17 +78,17 @@
 
 
 #define EI_CLASSIFIER_TFLITE_INPUT_DATATYPE         EI_CLASSIFIER_DATATYPE_INT8
-#define EI_CLASSIFIER_TFLITE_INPUT_QUANTIZED        1
-#define EI_CLASSIFIER_TFLITE_INPUT_SCALE            0.003599877469241619
-#define EI_CLASSIFIER_TFLITE_INPUT_ZEROPOINT        -128
 #define EI_CLASSIFIER_TFLITE_OUTPUT_DATATYPE        EI_CLASSIFIER_DATATYPE_INT8
-#define EI_CLASSIFIER_TFLITE_OUTPUT_QUANTIZED       1
-#define EI_CLASSIFIER_TFLITE_OUTPUT_SCALE           0.00390625
-#define EI_CLASSIFIER_TFLITE_OUTPUT_ZEROPOINT       -128
+
 
 #define EI_CLASSIFIER_INFERENCING_ENGINE            EI_CLASSIFIER_TFLITE
+
+#define EI_CLASSIFIER_QUANTIZATION_ENABLED          1
+
 #define EI_CLASSIFIER_COMPILED                      1
 #define EI_CLASSIFIER_HAS_TFLITE_OPS_RESOLVER       1
+
+#define EI_CLASSIFIER_LOAD_IMAGE_SCALING         0
 
 
 #define EI_CLASSIFIER_HAS_FFT_INFO               1
@@ -98,13 +101,18 @@
 #define EI_CLASSIFIER_LOAD_FFT_2048              0
 #define EI_CLASSIFIER_LOAD_FFT_4096              0
 
+#define EI_DSP_PARAMS_GENERATED 1
+
+
 #define EI_CLASSIFIER_SENSOR                     EI_CLASSIFIER_SENSOR_MICROPHONE
 #define EI_CLASSIFIER_FUSION_AXES_STRING         "audio"
+#define EI_CLASSIFIER_CALIBRATION_ENABLED        0
 
 #ifndef EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW
 #define EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW    4
 #endif // EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW
 #define EI_CLASSIFIER_SLICE_SIZE                 (EI_CLASSIFIER_RAW_SAMPLE_COUNT / EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW)
+
 
 #if ((EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE) ||      (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_DRPAI)) &&      EI_CLASSIFIER_USE_FULL_TFLITE == 1
 
@@ -184,6 +192,7 @@ typedef struct {
     uint16_t implementation_version;
     int axes;
     float scale_axes;
+    int input_decimation_ratio;
     const char * filter_type;
     float filter_cutoff;
     int filter_order;
@@ -196,6 +205,7 @@ typedef struct {
     bool do_fft_overlap;
     int wavelet_level;
     const char * wavelet;
+    bool extra_low_freq;
 } ei_dsp_config_spectral_analysis_t;
 
 typedef struct {

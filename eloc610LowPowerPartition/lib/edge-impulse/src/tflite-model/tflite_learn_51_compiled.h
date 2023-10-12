@@ -18,58 +18,32 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-// Generated on: 14.02.2023 02:34:58
+// Generated on: 10.10.2023 15:09:52
 
-#ifndef trained_model_GEN_H
-#define trained_model_GEN_H
+#ifndef tflite_learn_51_GEN_H
+#define tflite_learn_51_GEN_H
 
 #include "edge-impulse-sdk/tensorflow/lite/c/common.h"
 
 // Sets up the model with init and prepare steps.
-TfLiteStatus trained_model_init( void*(*alloc_fnc)(size_t,size_t) );
+TfLiteStatus tflite_learn_51_init( void*(*alloc_fnc)(size_t,size_t) );
 // Returns the input tensor with the given index.
-TfLiteTensor *trained_model_input(int index);
+TfLiteStatus tflite_learn_51_input(int index, TfLiteTensor* tensor);
 // Returns the output tensor with the given index.
-TfLiteTensor *trained_model_output(int index);
+TfLiteStatus tflite_learn_51_output(int index, TfLiteTensor* tensor);
 // Runs inference for the model.
-TfLiteStatus trained_model_invoke();
+TfLiteStatus tflite_learn_51_invoke();
 //Frees memory allocated
-TfLiteStatus trained_model_reset( void (*free)(void* ptr) );
+TfLiteStatus tflite_learn_51_reset( void (*free)(void* ptr) );
 
 
 // Returns the number of input tensors.
-inline size_t trained_model_inputs() {
+inline size_t tflite_learn_51_inputs() {
   return 1;
 }
 // Returns the number of output tensors.
-inline size_t trained_model_outputs() {
+inline size_t tflite_learn_51_outputs() {
   return 1;
-}
-
-inline void *trained_model_input_ptr(int index) {
-  return trained_model_input(index)->data.data;
-}
-inline size_t trained_model_input_size(int index) {
-  return trained_model_input(index)->bytes;
-}
-inline int trained_model_input_dims_len(int index) {
-  return trained_model_input(index)->dims->data[0];
-}
-inline int *trained_model_input_dims(int index) {
-  return &trained_model_input(index)->dims->data[1];
-}
-
-inline void *trained_model_output_ptr(int index) {
-  return trained_model_output(index)->data.data;
-}
-inline size_t trained_model_output_size(int index) {
-  return trained_model_output(index)->bytes;
-}
-inline int trained_model_output_dims_len(int index) {
-  return trained_model_output(index)->dims->data[0];
-}
-inline int *trained_model_output_dims(int index) {
-  return &trained_model_output(index)->dims->data[1];
 }
 
 #endif

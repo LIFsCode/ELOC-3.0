@@ -725,18 +725,25 @@ void saveStatusToSD() {
     fclose(fp);
 }
 
-
+/**
+ * @brief Get the configuration of the I2S microphone
+ * @note Possible configuration sources are:
+ *         1. '.config' file on SD card
+ *         2. '.config' file on SPIFFS
+ *         4. Setting in src/config.h 
+ * TODO: Confirm the priority of the configuration sources??
+ * @return i2s_config_t 
+ */
 i2s_config_t getI2sConfig() {
-    // update the config with the updated parameters
-
     #ifdef EDGE_IMPULSE_ENABLED
         // Won't work correctly otherwise..
         i2s_mic_Config.sample_rate = EI_CLASSIFIER_FREQUENCY;
+        static_assert(EI_CLASSIFIER_FREQUENCY >= I2S_SAMPLE_RATE_MIN, "EI_CLASSIFIER_FREQUENCY too low");
+        static_assert(EI_CLASSIFIER_FREQUENCY <= I2S_SAMPLE_RATE_MAX, "EI_CLASSIFIER_FREQUENCY too high");
     #else
         i2s_mic_Config.sample_rate = getMicInfo().MicSampleRate;
     #endif
 
-    //ESP_LOGI(TAG, "Sample rate = %d", getMicInfo().MicSampleRate);
     i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL; //not getting set. getConfig().MicUseAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
     if (i2s_mic_Config.sample_rate == 0) {
         ESP_LOGI(TAG, "Resetting invalid sample rate to default = %d", I2S_DEFAULT_SAMPLE_RATE);
@@ -907,9 +914,11 @@ static bool microphone_inference_start(uint32_t n_samples)
 
     record_status = true;
 
-    xTaskCreate(capture_samples, "CaptureSamples", 1024 * 16, (void *)sample_buffer_size, 10, NULL);
+    // xTaskCreate(capture_samples, "CaptureSamples", 1024 * 16, (void *)sample_buffer_size, 10, NULL);
+    xTaskCreate(capture_samples, "CaptureSamples", 1024 * 32, (void*)sample_buffer_size, 10, NULL);
 
-    return true;
+
+    return true;                        
 }
 
 /**
@@ -1207,8 +1216,7 @@ void app_main(void) {
             ESP_LOGI(TAG, "EI results filename: %s", ei_results_filename.c_str());
         }
 
-        if (I2S_DEFAULT_SAMPLE_RATE != EI_CLASSIFIER_FREQUENCY)
-            ESP_LOGW(TAG, "I2S sample rate must match EI_CLASSIFIER_FREQUENCY");
+        static_assert(I2S_DEFAULT_SAMPLE_RATE == EI_CLASSIFIER_FREQUENCY, "I2S sample rate must match EI_CLASSIFIER_FREQUENCY");
         
         // summary of inferencing settings (from model_metadata.h)
         ESP_LOGI(TAG,"Edge Impulse Inferencing settings:");
@@ -1222,12 +1230,11 @@ void app_main(void) {
             create_inference_result_file_SD(ei_results_filename);
         }
 
-        if (0){
+        if (1){
             // Run stored audio samples through the model to test it
             ESP_LOGI(TAG,"Testing model against pre-recorded sample data...");
             
-            if(EI_CLASSIFIER_RAW_SAMPLE_COUNT != TEST_SAMPLE_LENGTH)
-                ESP_LOGW(TAG, "EI_CLASSIFIER_RAW_SAMPLE_COUNT must match TEST_SAMPLE_LENGTH");
+            // static_assert(EI_CLASSIFIER_RAW_SAMPLE_COUNT == TEST_SAMPLE_LENGTH ,"EI_CLASSIFIER_RAW_SAMPLE_COUNT must match TEST_SAMPLE_LENGTH");
             
             signal_t signal;
             signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
@@ -1235,7 +1242,7 @@ void app_main(void) {
             ei_impulse_result_t result = { 0 };
 
             inference.buffer = (int16_t *)heap_caps_malloc(EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t), MALLOC_CAP_SPIRAM);
-        
+
             if (!inference.buffer) {
                 ESP_LOGW(TAG,"ERR: Failed to allocate buffer for signal\n");
                 // Skip the rest of the test
@@ -1243,7 +1250,7 @@ void app_main(void) {
             }
 
             // Artifically fill buffer with test data
-            for (auto i = 0; i < TEST_SAMPLE_LENGTH; i++){
+            for (auto i = 0; i < EI_CLASSIFIER_RAW_SAMPLE_COUNT; i++){
                inference.buffer[i] = trumpet_test[i];
             }
 
@@ -1267,7 +1274,7 @@ void app_main(void) {
 
             // Free buffer
             if (inference.buffer)
-                heap_caps_free(inference.buffer);
+                heap_caps_free(inference.buffer);                
         }
        
     #endif

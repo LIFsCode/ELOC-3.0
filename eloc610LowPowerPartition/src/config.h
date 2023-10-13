@@ -59,7 +59,7 @@
         // #define I2S_DEFAULT_SAMPLE_RATE 20000
         // For Edge Impulse/ ML 
         // I2S_DEFAULT_SAMPLE_RATE needs to equal EI_CLASSIFIER_FREQUENCY
-        // FIXME: This value will be overridden by config on SD card or SPIFFS
+        // WARNING: This value will be overridden by '.config' on SD card or SPIFFS
         #define I2S_DEFAULT_SAMPLE_RATE 16000
 
         // ELOC 3.2
@@ -68,8 +68,10 @@
         // " The output data word length is 24 bits per channel. The default data format is I2S
         // (twos complement), MSB-first. In this format, the MSB of each word is delayed by one
         // SCK cycle from the start of each half-frame"
-        #define I2S_BITS_PER_SAMPLE 24
-        
+        #define I2S_BITS_PER_SAMPLE 24        
+        #define I2S_SAMPLE_RATE_MIN 16000 
+        #define I2S_SAMPLE_RATE_MAX 64000
+
         // sdcard (unused, as SDIO is fixed to its Pins)
         #define PIN_NUM_MISO GPIO_NUM_2
         #define PIN_NUM_CLK GPIO_NUM_14

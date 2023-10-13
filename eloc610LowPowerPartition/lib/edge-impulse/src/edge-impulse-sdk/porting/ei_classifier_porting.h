@@ -128,8 +128,9 @@ void ei_free(void *ptr);
 #endif
 
 #ifndef EI_PORTING_ESPRESSIF
-#if defined(CONFIG_IDF_TARGET_ESP32) && EI_PORTING_ARDUINO == 0
+#if (defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32S3))
 #define EI_PORTING_ESPRESSIF      1
+#define EI_PORTING_ARDUINO        0
 #else
 #define EI_PORTING_ESPRESSIF     0
 #endif
@@ -204,6 +205,11 @@ void ei_free(void *ptr);
 #if defined(__CORTEX_M) && ((__CORTEX_M == 85U) || (__CORTEX_M == 55U))
 #define EI_MAX_OVERFLOW_BUFFER_COUNT	15
 #endif
+
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+#define EI_MAX_OVERFLOW_BUFFER_COUNT	30
+#endif
+
 // End additional configuration
 
 #endif // _EI_CLASSIFIER_PORTING_H_

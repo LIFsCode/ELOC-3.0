@@ -25,20 +25,20 @@
 #include <stdint.h>
 #include "model_metadata.h"
 
-#include "tflite-model/tflite_learn_51_compiled.h"
+#include "tflite-model/tflite_learn_107_compiled.h"
 #include "edge-impulse-sdk/classifier/ei_model_types.h"
 #include "edge-impulse-sdk/classifier/inferencing_engines/engines.h"
 
 const char* ei_classifier_inferencing_categories[] = { "background", "trumpet" };
 
-uint8_t ei_dsp_config_50_axes[] = { 0 };
-const uint32_t ei_dsp_config_50_axes_size = 1;
-ei_dsp_config_spectrogram_t ei_dsp_config_50 = {
-    50, // uint32_t blockId
+uint8_t ei_dsp_config_106_axes[] = { 0 };
+const uint32_t ei_dsp_config_106_axes_size = 1;
+ei_dsp_config_spectrogram_t ei_dsp_config_106 = {
+    106, // uint32_t blockId
     3, // int implementationVersion
     1, // int length of axes
-    0.075f, // float frame_length
-    0.0225f, // float frame_stride
+    0.06f, // float frame_length
+    0.048f, // float frame_stride
     256, // int fft_length
     -72, // int noise_floor_db
     true // boolean show_axes
@@ -46,26 +46,26 @@ ei_dsp_config_spectrogram_t ei_dsp_config_50 = {
 
 const size_t ei_dsp_blocks_size = 1;
 ei_model_dsp_t ei_dsp_blocks[ei_dsp_blocks_size] = {
-    { // DSP block 50
-        16899,
+    { // DSP block 106
+        7998,
         &extract_spectrogram_features,
-        (void*)&ei_dsp_config_50,
-        ei_dsp_config_50_axes,
-        ei_dsp_config_50_axes_size
+        (void*)&ei_dsp_config_106,
+        ei_dsp_config_106_axes,
+        ei_dsp_config_106_axes_size
     }
 };
-const ei_config_tflite_eon_graph_t ei_config_tflite_graph_51 = {
+const ei_config_tflite_eon_graph_t ei_config_tflite_graph_107 = {
     .implementation_version = 1,
-    .model_init = &tflite_learn_51_init,
-    .model_invoke = &tflite_learn_51_invoke,
-    .model_reset = &tflite_learn_51_reset,
-    .model_input = &tflite_learn_51_input,
-    .model_output = &tflite_learn_51_output,
+    .model_init = &tflite_learn_107_init,
+    .model_invoke = &tflite_learn_107_invoke,
+    .model_reset = &tflite_learn_107_reset,
+    .model_input = &tflite_learn_107_input,
+    .model_output = &tflite_learn_107_output,
 };
 
-const ei_learning_block_config_tflite_graph_t ei_learning_block_config_51 = {
+const ei_learning_block_config_tflite_graph_t ei_learning_block_config_107 = {
     .implementation_version = 1,
-    .block_id = 51,
+    .block_id = 107,
     .object_detection = 0,
     .object_detection_last_layer = EI_CLASSIFIER_LAST_LAYER_UNKNOWN,
     .output_data_tensor = 0,
@@ -73,14 +73,14 @@ const ei_learning_block_config_tflite_graph_t ei_learning_block_config_51 = {
     .output_score_tensor = 2,
     .quantized = 1,
     .compiled = 1,
-    .graph_config = (void*)&ei_config_tflite_graph_51
+    .graph_config = (void*)&ei_config_tflite_graph_107
 };
 
 const size_t ei_learning_blocks_size = 1;
 const ei_learning_block_t ei_learning_blocks[ei_learning_blocks_size] = {
     {
         &run_nn_inference,
-        (void*)&ei_learning_block_config_51,
+        (void*)&ei_learning_block_config_107,
         EI_CLASSIFIER_IMAGE_SCALING_NONE,
     },
 };
@@ -94,21 +94,21 @@ const ei_model_performance_calibration_t ei_calibration = {
     0   /* Don't use flags */
 };
 
-const ei_impulse_t impulse_290754_2 = {
+const ei_impulse_t impulse_290754_12 = {
     .project_id = 290754,
     .project_owner = "EDsteve",
     .project_name = "trumpet trimmed",
-    .deploy_version = 2,
+    .deploy_version = 12,
 
-    .nn_input_frame_size = 16899,
-    .raw_sample_count = 12000,
+    .nn_input_frame_size = 7998,
+    .raw_sample_count = 48000,
     .raw_samples_per_frame = 1,
-    .dsp_input_frame_size = 12000 * 1,
+    .dsp_input_frame_size = 48000 * 1,
     .input_width = 0,
     .input_height = 0,
     .input_frames = 0,
-    .interval_ms = 0.25,
-    .frequency = 4000,
+    .interval_ms = 0.0625,
+    .frequency = 16000,
     .dsp_blocks_size = ei_dsp_blocks_size,
     .dsp_blocks = ei_dsp_blocks,
     
@@ -126,7 +126,7 @@ const ei_impulse_t impulse_290754_2 = {
 
     .sensor = EI_CLASSIFIER_SENSOR_MICROPHONE,
     .fusion_string = "audio",
-    .slice_size = (12000/4),
+    .slice_size = (48000/4),
     .slices_per_model_window = 4,
 
     .has_anomaly = 0,
@@ -135,6 +135,6 @@ const ei_impulse_t impulse_290754_2 = {
     .categories = ei_classifier_inferencing_categories
 };
 
-const ei_impulse_t ei_default_impulse = impulse_290754_2;
+const ei_impulse_t ei_default_impulse = impulse_290754_12;
 
 #endif // _EI_CLASSIFIER_MODEL_METADATA_H_

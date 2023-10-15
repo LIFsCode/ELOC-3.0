@@ -69,8 +69,8 @@
         // (twos complement), MSB-first. In this format, the MSB of each word is delayed by one
         // SCK cycle from the start of each half-frame"
         #define I2S_BITS_PER_SAMPLE 24        
-        #define I2S_SAMPLE_RATE_MIN 16000 
-        #define I2S_SAMPLE_RATE_MAX 64000
+        #define I2S_SAMPLE_RATE_MIN 4000                // Not certain from datasheet 
+        #define I2S_SAMPLE_RATE_MAX 51600               // Not certain from datasheet
 
         // sdcard (unused, as SDIO is fixed to its Pins)
         #define PIN_NUM_MISO GPIO_NUM_2

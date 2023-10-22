@@ -45,7 +45,7 @@ public:
         return instance;
     };
     void clear();
-    void setCmd(const char* cmd);
+    void newCmd(const char* cmd);
     void setResult(esp_err_t errCode) {
         return setError(errCode, esp_err_to_name(errCode));
     }

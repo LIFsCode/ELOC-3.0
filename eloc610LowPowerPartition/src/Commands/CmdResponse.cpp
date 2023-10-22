@@ -37,7 +37,8 @@ void CmdResponse::clear()
     mReturnValue.Payload.clear();
     mReturnValue.Cmd.clear();
 };
-void CmdResponse::setCmd(const char* cmd) {
+void CmdResponse::newCmd(const char* cmd) {
+    this->clear();
     mReturnValue.Cmd = cmd;
 }
 

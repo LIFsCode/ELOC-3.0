@@ -38,6 +38,9 @@
 #include "config.h"
 #include "lis3dh.h"
 #include "utils/strutils.h"
+#include "CmdAdvCallback.hpp"
+#include "CmdResponse.hpp"
+#include "ElocCommands.hpp"
 #include "BluetoothServer.hpp"
 #include "FirmwareUpdate.hpp"
 #include "ElocConfig.hpp"
@@ -450,6 +453,35 @@ void writeSettings(String settings) {
 
 }
 
+static const char BT_RESP_TERMINATION = 0x04;
+void bt_sendResponse(const CmdResponse& cmdResponse) {
+    if (!gBluetoothEnabled)
+        return;
+
+    // SerialBT.
+    if (SerialBT.connected()) {
+        //TODO: check if this can be done via ArduinoJSON without too much stack usage overhead
+        SerialBT.print("{\"ecode\" : ");
+        SerialBT.print(cmdResponse.getReturnValue().ErrCode);
+        SerialBT.print(", \"cmd\" : ");
+        SerialBT.print(cmdResponse.getReturnValue().Cmd);
+        SerialBT.print(", \"payload\" : ");
+        SerialBT.print(cmdResponse.getReturnValue().Payload);
+        SerialBT.println("}");
+        SerialBT.print(BT_RESP_TERMINATION);
+    }
+}
+
+static CmdBuffer<2048> cmdBuffer;
+static CmdParser     cmdParser;
+static CmdAdvCallback<MAX_COMMANDS> cmdCallback;
+
+void cmd_GetHelp(CmdParser* cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    String& cfg = resp.getPayload(); // write directly to output buffer to avoid reallocation
+    
+}
+
 void wait_for_bt_command() {
 
     static bool sentElocStatus = false;
@@ -500,6 +532,28 @@ void wait_for_bt_command() {
             // vTaskDelay(pdMS_TO_TICKS(200));
 
             // btwrite("#"+String(getMicInfo().MicSampleRate)+"#"+String(getConfig().secondsPerFile)+"#"+gLocation);
+        }
+        // read data and check if command was entered
+        if (cmdBuffer.readSerialChar(&SerialBT))
+        {
+            // parse command line
+            if (cmdParser.parseCmd(&cmdBuffer) != CMDPARSER_ERROR)
+            {
+                const char* cmd = cmdParser.getCommand();
+                CmdResponse& cmdResponse = CmdResponse::getInstance();
+                cmdResponse.newCmd(cmd);
+                // search command in store and call function
+                // ignore return value "false" if command was not found
+                if (!cmdCallback.processCmd(&cmdParser))
+                {
+                    String msg;
+                    ESP_LOGE(TAG, "Invalid Command %s, Received %s", cmd, cmdBuffer.getStringFromBuffer());
+                    cmdResponse.setError(ESP_ERR_INVALID_ARG, cmdBuffer.getStringFromBuffer());
+                    // TODO: Add cmd response with error message and code
+                }
+                bt_sendResponse(cmdResponse);
+                cmdBuffer.clear();
+            }
         }
         // gotCommand=false;
         if (SerialBT.available()) {
@@ -739,6 +793,14 @@ void wakeup_task (void *pvParameters)
 
 esp_err_t BluetoothServerSetup(bool installGpioIsr) {
 
+
+    /** setup commands */
+    cmdBuffer.setEcho(false);
+    cmdParser.setOptKeyValue(true);    // use key value notation for command parameters, not positional
+    cmdParser.setOptSeperator('#');    // use '#' as separator not ' ' which is unused in JSON files
+    cmdParser.setOptIgnoreQuote(true); // required to read JSON syntax correctly
+    cmdCallback.addCmd("getHelp", &cmd_GetHelp);
+    //BtCommands::initCommands(cmdCallback);
 
     /** --- INTERRUPT CONFIGURATION PART ---- */
     

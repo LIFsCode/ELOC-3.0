@@ -33,7 +33,11 @@ class CmdAdvCallback : public CmdCallback<STORESIZE> {
   protected:
     CmdParserString m_helpList[STORESIZE];
   public:
-    CmdAdvCallback();
+    CmdAdvCallback() {
+      for (size_t i = 0; i < STORESIZE; i++) {
+          m_helpList[i] = "";
+      }
+    };
     virtual ~CmdAdvCallback() {};
     bool help(String& helpStr);
     using CmdCallback<STORESIZE>::addCmd;
@@ -43,7 +47,6 @@ class CmdAdvCallback : public CmdCallback<STORESIZE> {
         CmdBufferObject *cmdBuffer,
         Stream *         serial);
 };
-
 
 
 #endif // COMMANDS_CMDADVCALLBACK_HPP_

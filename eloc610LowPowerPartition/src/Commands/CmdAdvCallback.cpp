@@ -35,14 +35,6 @@
 static const char *TAG = "CmdAdvCallback";
 
 template <size_t STORESIZE>
-CmdAdvCallback<STORESIZE>::CmdAdvCallback()
-{
-    for (size_t i = 0; i < STORESIZE; i++)
-    {
-        m_helpList[i] = "";
-    }
-}
-template <size_t STORESIZE>
 bool CmdAdvCallback<STORESIZE>::help(String &helpStr)
 {
     helpStr.clear();
@@ -55,6 +47,18 @@ bool CmdAdvCallback<STORESIZE>::help(String &helpStr)
         helpStr += m_helpList[i];
     }
     // TODO: return help as JSON and check for errors
+    /* e.g. something like this
+      "commands": [
+            {
+            "cmd": "getHelp",
+            "help": "print help"
+            },
+            {
+            "cmd": "getConfig",
+            "help": "Config reader"
+            }
+        ]
+    */
     return true;
 }
 template <size_t STORESIZE>
@@ -68,27 +72,4 @@ bool CmdAdvCallback<STORESIZE>::addCmd(CmdParserString cmdStr, CmdCallFunct cbFu
     // add to store
     m_helpList[this->m_nextElement] = helpMsg;
     return this->addCmd(cmdStr, cbFunct);
-}
-
-template <size_t STORESIZE>
-void CmdAdvCallback<STORESIZE>::updateCmdProcessing(CmdParser *cmdParser,
-                                         CmdBufferObject *cmdBuffer,
-                                         Stream *serial)
-{
-    // read data and check if command was entered
-    if (cmdBuffer->readSerialChar(serial))
-    {
-        // parse command line
-        if (cmdParser->parseCmd(cmdBuffer) != CMDPARSER_ERROR)
-        {
-            // search command in store and call function
-            // ignore return value "false" if command was not found
-            if (!this->processCmd(cmdParser))
-            {
-                ESP_LOGE(TAG, "Invalid Command %s, Received %s", cmdParser->getCommand(), cmdBuffer->getStringFromBuffer());
-                // TODO: Add cmd response with error message and code
-            }
-            cmdBuffer->clear();
-        }
-    }
 }

@@ -87,7 +87,7 @@
 // undefine to skipt performance monitor
 #define USE_PERF_MONITOR
 
-
+#define MAX_COMMANDS 32
 
 // i2s config for reading from of I2S
 extern i2s_config_t i2s_mic_Config;

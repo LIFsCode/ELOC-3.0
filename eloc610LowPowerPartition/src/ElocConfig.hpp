@@ -90,8 +90,8 @@ bool writeConfig();
 
 void clearConfig();
 
-void printConfig(String& buf);
+bool printConfig(String& buf);
 
-esp_err_t updateConfig(const String& buf) ;
+esp_err_t updateConfig(const char* buf) ;
 
 #endif // ELOCCONFIG_HPP_

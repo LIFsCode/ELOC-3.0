@@ -48,7 +48,7 @@
 #include "Battery.hpp"
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
-#include "BluetoothServer.hpp"
+#include "Commands/BluetoothServer.hpp"
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
 

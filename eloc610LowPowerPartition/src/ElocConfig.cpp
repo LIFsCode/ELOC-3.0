@@ -281,13 +281,15 @@ void buildConfigFile(JsonDocument& doc) {
     micInfo["MicMountType"]                = gMicInfo.MicMountType.c_str();
 }
 
-void printConfig(String& buf) {
+bool printConfig(String& buf) {
 
     StaticJsonDocument<JSON_DOC_SIZE> doc;
     buildConfigFile(doc);
     if (serializeJsonPretty(doc, buf) == 0) {
         ESP_LOGE(TAG, "Failed serialize JSON config!");
+        return false;
     }
+    return true;
 }
 
 bool writeConfigFile(const char* filename) {
@@ -340,7 +342,7 @@ static void merge(JsonVariant dst, JsonVariantConst src) {
     }
 }
 
-esp_err_t updateConfig(const String& buf) {
+esp_err_t updateConfig(const char* buf) {
     static StaticJsonDocument<JSON_DOC_SIZE> newCfg;
     newCfg.clear();
 

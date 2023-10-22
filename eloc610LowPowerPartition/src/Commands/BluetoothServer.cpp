@@ -521,7 +521,7 @@ void wait_for_bt_command() {
             if (serialIN.startsWith("setConfig")) {
                 String cfg = serialIN.substring(serialIN.indexOf('#')+1);
                 ESP_LOGI(TAG, "updating config with %s", cfg.c_str());
-                esp_err_t err = updateConfig(cfg);
+                esp_err_t err = updateConfig(cfg.c_str());
                 char response[128];
                 snprintf(response, sizeof(response), "E%05d: %s", err, esp_err_to_name(err));
                 btwrite(String(response));

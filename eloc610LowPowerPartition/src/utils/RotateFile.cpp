@@ -199,12 +199,12 @@ bool RotateFile::open() {
 }
 
 void  RotateFile::close() {
-    if (!_fp) {
-        printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
-        return;
-    }
     if( xSemaphoreTake( mSemaphore, portMAX_DELAY ) == pdTRUE ) {
         MakeGuard(SemaphoreGive, mSemaphore);
+        if (!_fp) {
+            printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
+            return;
+        }
         // sync everything to filesystem before cosing the file
         fsync(fileno(_fp));
         fclose(_fp);
@@ -212,12 +212,12 @@ void  RotateFile::close() {
     }
 }
 bool RotateFile::write(const char *data) { 
-    if (_fp == NULL) {
-        printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
-        return false;
-    }
     if( xSemaphoreTake( mSemaphore, pdMS_TO_TICKS(LOCK_TIMEOUT_MS) ) == pdTRUE ) {
         MakeGuard(SemaphoreGive, mSemaphore);
+        if (_fp == NULL) {
+            printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
+            return false;
+        }
         if (!rotate()) {
             printf("%s() ABORT. Failed to rotate file and open new\n", __FUNCTION__);
             return false;
@@ -227,20 +227,18 @@ bool RotateFile::write(const char *data) {
     return true;
 }
 bool RotateFile::vprintf(const char *fmt, va_list args) { 
-    int iresult;
-
-    if (_fp == NULL) {
-        printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
-        return false;
-    }
     if( xSemaphoreTake( mSemaphore, pdMS_TO_TICKS(LOCK_TIMEOUT_MS) ) == pdTRUE ) {
         MakeGuard(SemaphoreGive, mSemaphore);
+        if (_fp == NULL) {
+            printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
+            return false;
+        }
         if (!rotate()) {
             printf("%s() ABORT. Failed to rotate file and open new\n", __FUNCTION__);
             return false;
         }
         // #1 Write to SPIFFS
-        iresult = vfprintf(_fp, fmt, args);
+        int iresult = vfprintf(_fp, fmt, args);
         if (iresult < 0) {
             printf("%s() ABORT. failed vfprintf() -> disable future vfprintf(_log_remote_fp) \n", __FUNCTION__);
             return false;

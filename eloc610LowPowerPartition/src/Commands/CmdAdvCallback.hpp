@@ -38,10 +38,26 @@ class CmdAdvCallback : public CmdCallback<STORESIZE> {
           m_helpList[i] = "";
       }
     };
-    virtual ~CmdAdvCallback() {};
-    bool help(String& helpStr);
+    virtual ~CmdAdvCallback() {};    
+    size_t getHelp(const CmdParserString*& cmdList, const CmdParserString*& helpList) {
+      cmdList = this->m_cmdList;
+      helpList = this->m_helpList;
+      if (this->m_nextElement >= STORESIZE) {
+            return STORESIZE;
+      }
+      return this->m_nextElement;
+    }
     using CmdCallback<STORESIZE>::addCmd;
-    bool addCmd(CmdParserString cmdStr, CmdCallFunct cbFunct, CmdParserString helpMsg);
+    bool addCmd(CmdParserString cmdStr, CmdCallFunct cbFunct, CmdParserString helpMsg) {
+      // Store is full
+      if (this->m_nextElement >= STORESIZE) {
+        return false;
+      }
+      // add to store
+      m_helpList[this->m_nextElement] = helpMsg;
+      return this->addCmd(cmdStr, cbFunct);
+    }
+
 
     void updateCmdProcessing(CmdParser *      cmdParser,
         CmdBufferObject *cmdBuffer,

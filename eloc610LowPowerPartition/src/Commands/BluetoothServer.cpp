@@ -51,6 +51,7 @@
 
 static const char *TAG = "BluetoothServer";
 
+static const char BT_RESP_TERMINATION = 0x04;
 
 static BluetoothSerial SerialBT;
 
@@ -276,12 +277,13 @@ void sendElocStatus() { // compiles and sends eloc config
 
 void sendSettings() {
 
-    btwrite("#" + String(getMicInfo().MicSampleRate) + "#" + String(getConfig().secondsPerFile) + "#" +
-            getDeviceInfo().location);
-    vTaskDelay(pdMS_TO_TICKS(100));
-    // btwrite("elocName: "+readNodeName() + " "+gFirmwareVersion);
-    vTaskDelay(pdMS_TO_TICKS(100));
-    // btwrite(String(gFreeSpace)+ " GB free");
+    SerialBT.print("{\"device\" : ");
+    SerialBT.print("ELOC 3.0");
+    SerialBT.print(", \"cmdVersion\" : ");
+    SerialBT.print("1");
+    SerialBT.println("}");
+    SerialBT.print(BT_RESP_TERMINATION);
+
 }
 
 void writeSettings(String settings) {
@@ -453,7 +455,6 @@ void writeSettings(String settings) {
 
 }
 
-static const char BT_RESP_TERMINATION = 0x04;
 void bt_sendResponse(const CmdResponse& cmdResponse) {
     if (!gBluetoothEnabled)
         return;
@@ -478,8 +479,25 @@ static CmdAdvCallback<MAX_COMMANDS> cmdCallback;
 
 void cmd_GetHelp(CmdParser* cmdParser) {
     CmdResponse& resp = CmdResponse::getInstance();
-    String& cfg = resp.getPayload(); // write directly to output buffer to avoid reallocation
+    String& help = resp.getPayload(); // write directly to output buffer to avoid reallocation
     
+    const CmdParserString* cmdStr;
+    const CmdParserString* helpMsg;
+    size_t numCmds = cmdCallback.getHelp(cmdStr, helpMsg);
+
+    StaticJsonDocument<256> doc;
+
+    JsonArray commands = doc.createNestedArray("commands");
+
+    for (int i = 0; i < numCmds; i++ ) {
+        JsonObject cmd = commands.createNestedObject();
+
+        cmd["cmd"] = cmdStr[i];
+        cmd["help"] = helpMsg[i];
+    }
+    serializeJsonPretty(doc, help);
+    resp.setResultSuccess(help);
+    return;
 }
 
 void wait_for_bt_command() {
@@ -556,146 +574,146 @@ void wait_for_bt_command() {
             }
         }
         // gotCommand=false;
-        if (SerialBT.available()) {
-            // handle case for sending initial default setup to app
-            serialIN = SerialBT.readString();
-            ESP_LOGI(TAG, "%s", serialIN.c_str());
-            // if (serialIN.startsWith("settingsRequest")) {
-            //    btwrite("#"+String(getMicInfo().MicSampleRate)+"#"+String(getConfig().secondsPerFile)+"#"+gLocation);
-            // }
+        // if (SerialBT.available()) {
+        //     // handle case for sending initial default setup to app
+        //     serialIN = SerialBT.readString();
+        //     ESP_LOGI(TAG, "%s", serialIN.c_str());
+        //     // if (serialIN.startsWith("settingsRequest")) {
+        //     //    btwrite("#"+String(getMicInfo().MicSampleRate)+"#"+String(getConfig().secondsPerFile)+"#"+gLocation);
+        //     // }
 
-            if (serialIN.startsWith("record")) {
-                btwrite("\n\nYou are using an old version of the Android app. Please upgrade\n\n");
-            }
-            if (serialIN.startsWith("getConfig")) {
-                String cfg;
-                printConfig(cfg);
-                btwrite(cfg);
-            }
-            if (serialIN.startsWith("setConfig")) {
-                String cfg = serialIN.substring(serialIN.indexOf('#')+1);
-                ESP_LOGI(TAG, "updating config with %s", cfg.c_str());
-                esp_err_t err = updateConfig(cfg.c_str());
-                char response[128];
-                snprintf(response, sizeof(response), "E%05d: %s", err, esp_err_to_name(err));
-                btwrite(String(response));
-            }
-            if (serialIN.startsWith("delConfig")) {
-                clearConfig();
-                btwrite("E00000: config file deleted, starting with default");
-            }
-            if (serialIN.startsWith("getStatus")) {
-                String status;
-                printStatus(status);
-                btwrite(status);
-            }
+        //     if (serialIN.startsWith("record")) {
+        //         btwrite("\n\nYou are using an old version of the Android app. Please upgrade\n\n");
+        //     }
+        //     if (serialIN.startsWith("getConfig")) {
+        //         String cfg;
+        //         printConfig(cfg);
+        //         btwrite(cfg);
+        //     }
+        //     if (serialIN.startsWith("setConfig")) {
+        //         String cfg = serialIN.substring(serialIN.indexOf('#')+1);
+        //         ESP_LOGI(TAG, "updating config with %s", cfg.c_str());
+        //         esp_err_t err = updateConfig(cfg.c_str());
+        //         char response[128];
+        //         snprintf(response, sizeof(response), "E%05d: %s", err, esp_err_to_name(err));
+        //         btwrite(String(response));
+        //     }
+        //     if (serialIN.startsWith("delConfig")) {
+        //         clearConfig();
+        //         btwrite("E00000: config file deleted, starting with default");
+        //     }
+        //     if (serialIN.startsWith("getStatus")) {
+        //         String status;
+        //         printStatus(status);
+        //         btwrite(status);
+        //     }
 
-            if (serialIN.startsWith("_setClk_")) {
-                ESP_LOGI(TAG, "setClk starting");
-                // string will look like _setClk_G__120____32456732728  //if google, 12 mins since last phone sync
-                //                    or _setClk_P__0____43267832648  //if phone, 0 min since last phone sync
+        //     if (serialIN.startsWith("_setClk_")) {
+        //         ESP_LOGI(TAG, "setClk starting");
+        //         // string will look like _setClk_G__120____32456732728  //if google, 12 mins since last phone sync
+        //         //                    or _setClk_P__0____43267832648  //if phone, 0 min since last phone sync
 
-                String everything = serialIN.substring(serialIN.indexOf("___") + 3, serialIN.length());
-                everything.trim();
-                String seconds = everything.substring(0, 10); // was 18
-                String milliseconds = everything.substring(10, everything.length());
-                String tmp = "timestamp in from android GMT " + everything + "  sec: " + seconds + "   millisec: " + milliseconds;
-                ESP_LOGI(TAG, "%s", tmp.c_str());
-                String minutesSinceSync = serialIN.substring(11, serialIN.indexOf("___"));
-                gSyncPhoneOrGoogle = serialIN.substring(8, 9);
-                // ESP_LOGI(TAG, minutesSinceSync);
-                // ESP_LOGI(TAG, "GorP: "+GorP);
-                // delay(8000);
-                // ESP_LOGI(TAG, test);
-                // ESP_LOGI(TAG, seconds);
-                // ESP_LOGI(TAG, milliseconds);
-                milliseconds.trim();
-                if (milliseconds.length() < 2)
-                    milliseconds = "0";
-                timeObject.setTime(atol(seconds.c_str()) + (TIMEZONE_OFFSET * 60L * 60L), (atol(milliseconds.c_str())) * 1000);
-                // timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
-                //  timestamps coming in from android are always GMT (minus 7 hrs)
-                //  if I not add timezone then timeobject is off
-                //  so timeobject does not seem to be adding timezone to system time.
-                //  timestamps are in gmt+0, so timestamp convrters
+        //         String everything = serialIN.substring(serialIN.indexOf("___") + 3, serialIN.length());
+        //         everything.trim();
+        //         String seconds = everything.substring(0, 10); // was 18
+        //         String milliseconds = everything.substring(10, everything.length());
+        //         String tmp = "timestamp in from android GMT " + everything + "  sec: " + seconds + "   millisec: " + milliseconds;
+        //         ESP_LOGI(TAG, "%s", tmp.c_str());
+        //         String minutesSinceSync = serialIN.substring(11, serialIN.indexOf("___"));
+        //         gSyncPhoneOrGoogle = serialIN.substring(8, 9);
+        //         // ESP_LOGI(TAG, minutesSinceSync);
+        //         // ESP_LOGI(TAG, "GorP: "+GorP);
+        //         // delay(8000);
+        //         // ESP_LOGI(TAG, test);
+        //         // ESP_LOGI(TAG, seconds);
+        //         // ESP_LOGI(TAG, milliseconds);
+        //         milliseconds.trim();
+        //         if (milliseconds.length() < 2)
+        //             milliseconds = "0";
+        //         timeObject.setTime(atol(seconds.c_str()) + (TIMEZONE_OFFSET * 60L * 60L), (atol(milliseconds.c_str())) * 1000);
+        //         // timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
+        //         //  timestamps coming in from android are always GMT (minus 7 hrs)
+        //         //  if I not add timezone then timeobject is off
+        //         //  so timeobject does not seem to be adding timezone to system time.
+        //         //  timestamps are in gmt+0, so timestamp convrters
 
-                struct timeval tv_now;
-                gettimeofday(&tv_now, NULL);
-                int64_t time_us = ((int64_t)tv_now.tv_sec * 1000000L) + (int64_t)tv_now.tv_usec;
-                time_us = time_us / 1000;
+        //         struct timeval tv_now;
+        //         gettimeofday(&tv_now, NULL);
+        //         int64_t time_us = ((int64_t)tv_now.tv_sec * 1000000L) + (int64_t)tv_now.tv_usec;
+        //         time_us = time_us / 1000;
 
-                // ESP_LOGI(TAG, "atol(minutesSinceSync.c_str()) *60L*1000L "+String(atol(minutesSinceSync.c_str()) *60L*1000L));
-                gLastSystemTimeUpdate = getTimeFromTimeObjectMS() - (atol(minutesSinceSync.c_str()) * 60L * 1000L);
-                timein = getSystemTimeMS();
-                // ESP_LOGI(TAG, "timestamp in from android GMT "+everything    +"  sec: "+seconds + "   millisec: "+milliseconds);
-                // ESP_LOGI("d", "new timestamp from new sys time (local time) %lld", time_us  ); //this is 7 hours too slow!
-                // ESP_LOGI("d","new timestamp from timeobJect (local time) %lld",gLastSystemTimeUpdate);
+        //         // ESP_LOGI(TAG, "atol(minutesSinceSync.c_str()) *60L*1000L "+String(atol(minutesSinceSync.c_str()) *60L*1000L));
+        //         gLastSystemTimeUpdate = getTimeFromTimeObjectMS() - (atol(minutesSinceSync.c_str()) * 60L * 1000L);
+        //         timein = getSystemTimeMS();
+        //         // ESP_LOGI(TAG, "timestamp in from android GMT "+everything    +"  sec: "+seconds + "   millisec: "+milliseconds);
+        //         // ESP_LOGI("d", "new timestamp from new sys time (local time) %lld", time_us  ); //this is 7 hours too slow!
+        //         // ESP_LOGI("d","new timestamp from timeobJect (local time) %lld",gLastSystemTimeUpdate);
 
-                // btwrite("time: "+timeObject.getDateTime()+"\n");
-                if (!sentElocStatus) {
-                    sentElocStatus = true;
-                    sendElocStatus();
-                }
-                ESP_LOGI(TAG, "setClk ending");
-            }
+        //         // btwrite("time: "+timeObject.getDateTime()+"\n");
+        //         if (!sentElocStatus) {
+        //             sentElocStatus = true;
+        //             sendElocStatus();
+        //         }
+        //         ESP_LOGI(TAG, "setClk ending");
+        //     }
 
-            if (serialIN.startsWith("setGPS")) {
-                // read the location on startup?
-                // only report recorded location status?
-                // need to differentiate between manual set and record set.
-                String locationCode = serialIN.substring(serialIN.indexOf("^") + 1, serialIN.indexOf("#"));
-                locationCode.trim();
-                String locationAccuracy = serialIN.substring(serialIN.indexOf("#") + 1, serialIN.length());
-                locationAccuracy.trim();
-                setLocationSettings(locationCode, locationAccuracy);
-                ESP_LOGI(TAG, "loc: %s   acc %s", locationCode.c_str(), locationAccuracy.c_str());
+        //     if (serialIN.startsWith("setGPS")) {
+        //         // read the location on startup?
+        //         // only report recorded location status?
+        //         // need to differentiate between manual set and record set.
+        //         String locationCode = serialIN.substring(serialIN.indexOf("^") + 1, serialIN.indexOf("#"));
+        //         locationCode.trim();
+        //         String locationAccuracy = serialIN.substring(serialIN.indexOf("#") + 1, serialIN.length());
+        //         locationAccuracy.trim();
+        //         setLocationSettings(locationCode, locationAccuracy);
+        //         ESP_LOGI(TAG, "loc: %s   acc %s", locationCode.c_str(), locationAccuracy.c_str());
 
-                File file = SPIFFS.open("/gps.txt", FILE_WRITE);
-                file.println(locationCode);
-                file.println(locationAccuracy);
-                ESP_LOGI(TAG, "Starting Recording...");
-                rec_req_t rec_req = REC_REQ_START;
-                xQueueSend(rec_req_evt_queue, &rec_req, NULL);
+        //         File file = SPIFFS.open("/gps.txt", FILE_WRITE);
+        //         file.println(locationCode);
+        //         file.println(locationAccuracy);
+        //         ESP_LOGI(TAG, "Starting Recording...");
+        //         rec_req_t rec_req = REC_REQ_START;
+        //         xQueueSend(rec_req_evt_queue, &rec_req, NULL);
 
-                // btwrite("GPS Location set");
-            }
-            if (serialIN.startsWith("stoprecord")) {
+        //         // btwrite("GPS Location set");
+        //     }
+        //     if (serialIN.startsWith("stoprecord")) {
 
-                ESP_LOGI(TAG, "Stopping Recording...");
-                rec_req_t rec_req = REC_REQ_STOP;
-                xQueueSend(rec_req_evt_queue, &rec_req, NULL);
-            }
+        //         ESP_LOGI(TAG, "Stopping Recording...");
+        //         rec_req_t rec_req = REC_REQ_STOP;
+        //         xQueueSend(rec_req_evt_queue, &rec_req, NULL);
+        //     }
 
-            if (serialIN.startsWith("_record_")) {
+        //     if (serialIN.startsWith("_record_")) {
 
-                ESP_LOGI(TAG, "Starting Recording...");
-                rec_req_t rec_req = REC_REQ_START;
-                xQueueSend(rec_req_evt_queue, &rec_req, NULL);
-            } else {
-                // const char *converted=serialIN.c_str();
-                /* if (serialIN.startsWith( "8k")){getMicInfo().MicSampleRate=8000;btwrite("sample rate changed to 8k");gotCommand=true;}
-                if (serialIN.startsWith( "16k")){getMicInfo().MicSampleRate=16000;btwrite("sample rate changed to 16k");gotCommand=true;}
-                if (serialIN.startsWith( "22k")){getMicInfo().MicSampleRate=22000;btwrite("sample rate changed to 22k");gotCommand=true;}
-                if (serialIN.startsWith( "32k")){getMicInfo().MicSampleRate=32000;btwrite("sample rate changed to 32k");gotCommand=true;}
-                if (serialIN.startsWith( "10s")){getConfig().secondsPerFile=10;btwrite("10 secs per file");gotCommand=true;}
-                if (serialIN.startsWith( "1m")){getConfig().secondsPerFile=60;btwrite("1 minute per file");gotCommand=true;}
-                if (serialIN.startsWith( "5m")){getConfig().secondsPerFile=300;btwrite("5 minutes per file");gotCommand=true;}
-                if (serialIN.startsWith( "1h")){getConfig().secondsPerFile=3600;btwrite("1 hour per file");gotCommand=true;}
-                if (serialIN.startsWith( "settingsRequest")){gotCommand=true;}
-                if (!gotCommand) btwrite("command not found. options are 8k 16k 22k 32k  and 10s 1m 5m 1h");
-                */
+        //         ESP_LOGI(TAG, "Starting Recording...");
+        //         rec_req_t rec_req = REC_REQ_START;
+        //         xQueueSend(rec_req_evt_queue, &rec_req, NULL);
+        //     } else {
+        //         // const char *converted=serialIN.c_str();
+        //         /* if (serialIN.startsWith( "8k")){getMicInfo().MicSampleRate=8000;btwrite("sample rate changed to 8k");gotCommand=true;}
+        //         if (serialIN.startsWith( "16k")){getMicInfo().MicSampleRate=16000;btwrite("sample rate changed to 16k");gotCommand=true;}
+        //         if (serialIN.startsWith( "22k")){getMicInfo().MicSampleRate=22000;btwrite("sample rate changed to 22k");gotCommand=true;}
+        //         if (serialIN.startsWith( "32k")){getMicInfo().MicSampleRate=32000;btwrite("sample rate changed to 32k");gotCommand=true;}
+        //         if (serialIN.startsWith( "10s")){getConfig().secondsPerFile=10;btwrite("10 secs per file");gotCommand=true;}
+        //         if (serialIN.startsWith( "1m")){getConfig().secondsPerFile=60;btwrite("1 minute per file");gotCommand=true;}
+        //         if (serialIN.startsWith( "5m")){getConfig().secondsPerFile=300;btwrite("5 minutes per file");gotCommand=true;}
+        //         if (serialIN.startsWith( "1h")){getConfig().secondsPerFile=3600;btwrite("1 hour per file");gotCommand=true;}
+        //         if (serialIN.startsWith( "settingsRequest")){gotCommand=true;}
+        //         if (!gotCommand) btwrite("command not found. options are 8k 16k 22k 32k  and 10s 1m 5m 1h");
+        //         */
 
-                if (serialIN.startsWith("#settings")) {
-                    writeSettings(serialIN);
-                    vTaskDelay(pdMS_TO_TICKS(200));
-                    writeConfig();
-                    vTaskDelay(pdMS_TO_TICKS(200));
-                    btwrite("settings updated");
-                    vTaskDelay(pdMS_TO_TICKS(500));
-                    sendElocStatus();
-                }
-            }
-        }
+        //         if (serialIN.startsWith("#settings")) {
+        //             writeSettings(serialIN);
+        //             vTaskDelay(pdMS_TO_TICKS(200));
+        //             writeConfig();
+        //             vTaskDelay(pdMS_TO_TICKS(200));
+        //             btwrite("settings updated");
+        //             vTaskDelay(pdMS_TO_TICKS(500));
+        //             sendElocStatus();
+        //         }
+        //     }
+        //}
     } else {
         sentSettings = false;
         sentElocStatus = false;
@@ -799,8 +817,8 @@ esp_err_t BluetoothServerSetup(bool installGpioIsr) {
     cmdParser.setOptKeyValue(true);    // use key value notation for command parameters, not positional
     cmdParser.setOptSeperator('#');    // use '#' as separator not ' ' which is unused in JSON files
     cmdParser.setOptIgnoreQuote(true); // required to read JSON syntax correctly
-    cmdCallback.addCmd("getHelp", &cmd_GetHelp);
-    //BtCommands::initCommands(cmdCallback);
+    cmdCallback.addCmd("getHelp", &cmd_GetHelp, "Print all available command and their help as JSON");
+    BtCommands::initCommands(cmdCallback);
 
     /** --- INTERRUPT CONFIGURATION PART ---- */
     

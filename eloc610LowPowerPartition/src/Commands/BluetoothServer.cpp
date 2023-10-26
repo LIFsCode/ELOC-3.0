@@ -537,8 +537,8 @@ void wait_for_bt_command() {
             sendSettings();
             vTaskDelay(pdMS_TO_TICKS(200));
             freeSpace();
-            vTaskDelay(pdMS_TO_TICKS(200));
-            btwrite("getClk\n");
+            // vTaskDelay(pdMS_TO_TICKS(200));
+            // btwrite("getClk\n");
             // vTaskDelay(pdMS_TO_TICKS(50));
             // vTaskDelay(pdMS_TO_TICKS(800));
             // sendElocStatus();

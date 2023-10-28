@@ -1,5 +1,7 @@
 #include "I2SMEMSSampler.h"
 #include "soc/i2s_reg.h"
+
+#include "esp_err.h"
 #include "esp_log.h"
 
 static const char *TAG = "I2SMEMSSampler";
@@ -8,7 +10,11 @@ I2SMEMSSampler::I2SMEMSSampler(
     i2s_port_t i2s_port,
     i2s_pin_config_t &i2s_pins,
     i2s_config_t i2s_config,
-    bool fixSPH0645) : I2SSampler(i2s_port, i2s_config)
+    int bitShift,
+    bool listenOnly,
+    bool fixSPH0645) :  I2SSampler(i2s_port, i2s_config),
+                        mBitShift(bitShift),
+                        mListenOnly(listenOnly)
 {
     m_i2sPins = i2s_pins;
     m_fixSPH0645 = fixSPH0645;
@@ -178,4 +184,9 @@ int I2SMEMSSampler::read(int count)
     
     free(raw_samples);
     return samples_read;
+}
+
+I2SMEMSSampler::~I2SMEMSSampler(){
+
+
 }

@@ -2,6 +2,7 @@
 
 #include "I2SSampler.h"
 #include "WAVFileWriter.h"
+#include "config.h"
 #include "/home/projects/Rumble_Detector/include/ei_inference.h"
 #include "/home/projects/Rumble_Detector/include/config_build.h"
 class I2SMEMSSampler : public I2SSampler
@@ -9,6 +10,10 @@ class I2SMEMSSampler : public I2SSampler
 private:
     i2s_pin_config_t m_i2sPins;
     bool m_fixSPH0645;
+    int  mBitShift;
+    bool mListenOnly;
+
+
     WAVFileWriter *writer = nullptr;
 
     // Set some reasonable values as default
@@ -30,7 +35,18 @@ public:
         i2s_port_t i2s_port,
         i2s_pin_config_t &i2s_pins,
         i2s_config_t i2s_config,
+        int  bitShift = I2S_DEFAULT_BIT_SHIFT,
+        bool listenOnly = false,
         bool fixSPH0645 = false);
+
+    virtual ~I2SMEMSSampler();
+
+    virtual void setBitShift(int bitShift) {
+        mBitShift = bitShift;
+    }
+    virtual void setListenOnly(bool listenOnly) {
+        mListenOnly = listenOnly;
+    }
 
     /**
      * @brief Zero the appropiate TX DMA buffer for the I2S port

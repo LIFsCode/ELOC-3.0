@@ -60,8 +60,6 @@
 // But if you do results in errors: '.... insn does not satisfy its constraints'
 #define EIDSP_QUANTIZE_FILTERBANK 0
 
-#define I2S_DATA_SCALING_FACTOR 1
-
 #include "trumpet_trimmed_inferencing.h"
 #include "test_samples.h"
 #include "ei_inference.h"
@@ -110,19 +108,18 @@ uint32_t gFreeSpaceKB = 0;
 
 // String gTimeDifferenceCode; //see getTimeDifferenceCode() below
 
-#ifdef USE_SPI_VERSION || USE_SDIO_VERSION
-    #define SDCARD_BUFFER 50 * 1024 // TODO: Need this??
-    SDCard *sd_card = nullptr;
+#ifdef USE_SPI_VERSION
+    SDCard *sd_card;
 #endif
 
-#ifdef SDCARD_WRITING_ENABLED
-  WAVFileWriter *writer = nullptr;
-  #define RECORDING_TIME 30
+#ifdef USE_SDIO_VERSION
+    SDCardSDIO *sd_card;
 #endif
 
 
-// Need to have global access to I2S mic
 I2SMEMSSampler *input = nullptr;
+WAVFileWriter *writer = nullptr;
+QueueHandle_t rec_req_evt_queue = NULL;
 
 void writeSettings(String settings);
 void doDeepSleep();
@@ -138,50 +135,51 @@ extern "C"
 
 void resetPeripherals()
 {
-    /*
-    periph_module_reset( PERIPH_I2S0_MODULE);
-        periph_module_reset( PERIPH_BT_MODULE);
-        periph_module_reset( PERIPH_WIFI_BT_COMMON_MODULE);
-        periph_module_reset( PERIPH_BT_MODULE);
-        periph_module_reset(  PERIPH_BT_BASEBAND_MODULE);
+    ESP_LOGV(TAG, "Func: %s", __func__);
+
+    if(0){
+        periph_module_reset(PERIPH_I2S0_MODULE);
+        periph_module_reset(PERIPH_BT_MODULE);
+        periph_module_reset(PERIPH_WIFI_BT_COMMON_MODULE);
+        periph_module_reset(PERIPH_BT_MODULE);
+        periph_module_reset(PERIPH_BT_BASEBAND_MODULE);
         periph_module_reset(PERIPH_BT_LC_MODULE);
         //periph_module_reset(PERIPH_UART0_MODULE);    //this used by debugger?
         periph_module_reset(PERIPH_UART1_MODULE);  //this was it! bug stops bluetooth
                                                 //from re-broadcasting in other partition on  https://github.com/espressif/esp-idf/issues/9971
 
         periph_module_reset(PERIPH_UART2_MODULE); //just in case
-
-    */
+    }
 }
 
 void printRevision()
 {
+    ESP_LOGV(TAG, "Func: %s", __func__);
 
-    /*
-      esp_chip_info_t chip_info;
-      esp_chip_info(&chip_info);
-      printf("\nThis is ESP32 chip with %d CPU cores, WiFi%s%s, ",
-              chip_info.cores,
-              (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
-              (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "");
-
-      printf("silicon revision %d, ", chip_info.revision);
-
-      printf("%dMB %s flash\n", spi_flash_get_chip_size() / (1024 * 1024),
-              (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
-      */
+    if(0){
+        esp_chip_info_t chip_info;
+        esp_chip_info(&chip_info);
+        printf("\nThis is ESP32 chip with %d CPU cores, WiFi%s%s, ",
+                chip_info.cores,
+                (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
+                (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "");
+        printf("silicon revision %d, ", chip_info.revision);
+        printf("%dMB %s flash\n", spi_flash_get_chip_size() / (1024 * 1024),
+                (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+    }
 }
 
 void delay(int ms)
 {
+    ESP_LOGV(TAG, "Func: %s", __func__);
+
     vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
 void testInput()
 {
-    ESP_LOGI(TAG, "testInput()");
-    // Moved to global scope
-    // I2SSampler *input;
+    ESP_LOGV(TAG, "Func: %s", __func__);
+
     for (uint32_t i = 1000; i < 34000; i = i + 2000)
     {
         i2s_mic_Config.sample_rate = i;
@@ -193,16 +191,19 @@ void testInput()
         ESP_LOGI(TAG, "Clockrate: %f", i2s_get_clk(I2S_NUM_0));
         input->stop();
         delay(100);
-        // delete input;
-        // delay(100);
     }
-    // delete input;
+
+    delete input;
+    input = nullptr;
+    delay(100);
+
 }
 
 void resetESP32()
 {
+    ESP_LOGV(TAG, "Func: %s", __func__);
 
-    ESP_LOGI(TAG, "Resetting in some ms");
+    ESP_LOGI(TAG, "Resetting..");
     resetPeripherals();
     // esp_task_wdt_init(30, false); //bump it up to 30 econds doesn't work.
     rtc_wdt_protect_off(); // Disable RTC WDT write protection
@@ -222,6 +223,7 @@ void resetESP32()
 
 void printMemory()
 {
+    ESP_LOGV(TAG, "Func: %s", __func__);
 
     ESP_LOGI(TAG, "\n\n\n\n");
     ESP_LOGI(TAG, "Total Free mem default %d", heap_caps_get_free_size(MALLOC_CAP_DEFAULT));
@@ -242,6 +244,8 @@ void printMemory()
 
 int64_t getSystemTimeMS()
 {
+    ESP_LOGV(TAG, "Func: %s", __func__);
+
     struct timeval tv_now;
     gettimeofday(&tv_now, NULL);
     int64_t time_us = ((int64_t)tv_now.tv_sec * 1000000L) + (int64_t)tv_now.tv_usec;
@@ -249,10 +253,10 @@ int64_t getSystemTimeMS()
     return (time_us);
 }
 
-QueueHandle_t rec_req_evt_queue = NULL;
-
 static void IRAM_ATTR buttonISR(void *args)
 {
+    ESP_LOGV(TAG, "Func: %s", __func__);
+
     // return;
     // ESP_LOGI(TAG, "button pressed");
     // delay(5000);
@@ -264,8 +268,10 @@ static void IRAM_ATTR buttonISR(void *args)
 
 static void LEDflashError()
 {
+    ESP_LOGV(TAG, "Func: %s", __func__);
+
     ESP_LOGI(TAG, "-----fast flash------------");
-    for (int i = 0; i < 10; i++)
+    for (auto i = 0; i < 10; i++)
     {
         gpio_set_level(STATUS_LED, 1);
         vTaskDelay(pdMS_TO_TICKS(40));
@@ -274,8 +280,14 @@ static void LEDflashError()
     }
 }
 
+/**
+ * Iterate through partitions & output to console
+*/
 void printPartitionInfo()
-{ /// will always set boot partition back to partition0 except if it
+{
+    ESP_LOGV(TAG, "Func: %s", __func__);
+    
+    // will always set boot partition back to partition0 except if it
 
     esp_partition_iterator_t it;
 
@@ -289,12 +301,14 @@ void printPartitionInfo()
         const esp_partition_t *part = esp_partition_get(it);
         ESP_LOGI(TAG, "\tfound partition '%s' at offset 0x%" PRIx32 " with size 0x%" PRIx32, part->label, part->address, part->size);
     }
+
     // Release the partition iterator to release memory allocated for it
     esp_partition_iterator_release(it);
 
     ESP_LOGI(TAG, "Currently running partitions: ");
     const esp_partition_t *running = esp_ota_get_running_partition();
     ESP_LOGI(TAG, "\t '%s' at offset 0x%" PRIx32 " with size 0x%" PRIx32, running->label, running->address, running->size);
+    
     esp_app_desc_t running_app_info;
     if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK)
     {
@@ -302,21 +316,34 @@ void printPartitionInfo()
     }
 }
 
+
 long getTimeFromTimeObjectMS()
 {
+    ESP_LOGV(TAG, "Func: %s", __func__);
+
     return (timeObject.getEpoch() * 1000L + timeObject.getMillis());
 }
 
+/**
+ * Function ??
+*/
 void time()
 {
+    ESP_LOGV(TAG, "Func: %s", __func__);
+
     struct timeval tv_now;
     gettimeofday(&tv_now, NULL);
     int64_t time_us = ((int64_t)tv_now.tv_sec * 1000000L) + (int64_t)tv_now.tv_usec;
     time_us = time_us / 1000;
 }
 
+/**
+ * Function??
+*/
 String uint64ToString(uint64_t input)
 {
+    ESP_LOGV(TAG, "Func: %s", __func__);
+
     String result = "";
     uint8_t base = 10;
 
@@ -331,24 +358,30 @@ String uint64ToString(uint64_t input)
             c += 'A' - 10;
         result = c + result;
     } while (input);
+    
     return result;
 }
 
+/**
+ * Set device time?
+*/
 void setTime(long epoch, int ms)
 {
+    ESP_LOGV(TAG, "Func: %s", __func__);
+    
     /*
 
     setTime(atol(seconds.c_str())+(TIMEZONE_OFFSET*60L*60L),  (atol(milliseconds.c_str()))*1000    );
-                    //timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
-                    // timestamps coming in from android are always GMT (minus 7 hrs)
-                    // if I not add timezone then timeobject is off
-                    // so timeobject does not seem to be adding timezone to system time.
-                    // timestamps are in gmt+0, so timestamp convrters
+    //timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
+    // timestamps coming in from android are always GMT (minus 7 hrs)
+    // if I not add timezone then timeobject is off
+    // so timeobject does not seem to be adding timezone to system time.
+    // timestamps are in gmt+0, so timestamp convrters
 
-                    struct timeval tv_now;
-                    gettimeofday(&tv_now, NULL);
-                    int64_t time_us = (     (int64_t)tv_now.tv_sec      * 1000000L) + (int64_t)tv_now.tv_usec;
-                    time_us=time_us/1000;
+    struct timeval tv_now;
+    gettimeofday(&tv_now, NULL);
+    int64_t time_us = (     (int64_t)tv_now.tv_sec      * 1000000L) + (int64_t)tv_now.tv_usec;
+    time_us=time_us/1000;
     */
 
     struct timeval tv;
@@ -357,7 +390,10 @@ void setTime(long epoch, int ms)
     settimeofday(&tv, NULL);
 }
 
-// set initial time. If time is not set the getLocalTime() will stuck for 5 ms due to invalid timestamp
+/**
+ * @brief Set initial time
+ * @note If time is not set the getLocalTime() will stuck for 5 ms due to invalid timestamp
+*/
 void initTime()
 {
     struct tm tm;
@@ -367,6 +403,9 @@ void initTime()
     ESP_LOGI(TAG, "Setting initial time to build date: %s", BUILDDATE);
 }
 
+/**
+ * @brief Create folder on SD card
+*/
 bool createSessionFolder()
 {
     String fname;
@@ -391,6 +430,9 @@ bool createSessionFolder()
     return true;
 }
 
+/**
+ * @brief Create filename on SD card
+*/
 bool createFilename(char *fname, size_t size)
 {
 
@@ -408,6 +450,10 @@ bool createFilename(char *fname, size_t size)
     return true;
 }
 
+/**
+ * @brief Get wall clock time & date
+ * @return String
+*/
 String getProperDateTime()
 {
 
@@ -468,6 +514,7 @@ bool mountSDCard()
             mkdir(ELOC_FOLDER, 0777);
         }
     }
+
 #endif
     return gMountedSDCard;
 }
@@ -563,7 +610,7 @@ void saveStatusToSD()
  * @note Possible configuration sources are:
  *         1. '.config' file on SD card
  *         2. '.config' file on SPIFFS
- *         4. Setting in src/config.h
+ *         3. Setting in src/config.h
  * TODO: Confirm the priority of the configuration sources??
  * @return i2s_config_t
  */
@@ -791,7 +838,7 @@ static void microphone_inference_end(void)
     }
 
     input->stop();
-    i2s_deinit();
+
     ei_free(inference.buffers[0]);
     ei_free(inference.buffers[1]);
 
@@ -1046,8 +1093,6 @@ void app_main(void)
         ESP_LOGI(TAG, "EI results filename: %s", ei_results_filename.c_str());
     }
 
-    // static_assert(I2S_DEFAULT_SAMPLE_RATE == EI_CLASSIFIER_FREQUENCY, "I2S sample rate must match EI_CLASSIFIER_FREQUENCY");
-
     // summary of inferencing settings (from model_metadata.h)
     ESP_LOGI(TAG, "Edge Impulse Inferencing settings:");
     ESP_LOGI(TAG, "Interval: %f ms.", (float)EI_CLASSIFIER_INTERVAL_MS);
@@ -1073,9 +1118,9 @@ void app_main(void)
         signal.get_data = &microphone_audio_signal_get_data;
         ei_impulse_result_t result = {0};
 
-        inference.buffer = (int16_t *)heap_caps_malloc(EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+        inference.buffers[0] = (int16_t *)heap_caps_malloc(EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t), MALLOC_CAP_SPIRAM);
 
-        if (!inference.buffer)
+        if (!inference.buffers[0])
         {
             ESP_LOGW(TAG, "ERR: Failed to allocate buffer for signal\n");
             // Skip the rest of the test
@@ -1085,7 +1130,7 @@ void app_main(void)
         // Artifically fill buffer with test data
         for (auto i = 0; i < EI_CLASSIFIER_RAW_SAMPLE_COUNT; i++)
         {
-            inference.buffer[i] = trumpet_test[i];
+            inference.buffers[0][i] = trumpet_test[i];
         }
 
         // Mark buffer as ready
@@ -1109,8 +1154,8 @@ void app_main(void)
         }
 
         // Free buffer
-        if (inference.buffer)
-            heap_caps_free(inference.buffer);
+        if (inference.buffers[0])
+            heap_caps_free(inference.buffers[0]);
     }
 
 #endif
@@ -1143,56 +1188,55 @@ void app_main(void)
     ESP_LOGI(TAG, "waiting for button or bluetooth");
     ESP_LOGI(TAG, "voltage is %.3f", Battery::GetInstance().getVoltage());
 
-#ifdef EDGE_IMPULSE_ENABLED
+    getI2sConfig();
+    input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);                
 
     // Wait for system to settle..
     delay(1000);
-    #ifdef SDCARD_WRITING_ENABLED
-        static int file_idx = 0;
-        static char file_name[100]; // needs to persist outside this scope??
-        static FILE *fp = NULL;
-    #endif
+    static int file_idx = 0;
+    static char file_name[100]; // needs to persist outside this scope??
+    static FILE *fp = NULL;
 
     while (true)
     {
 
-        #ifdef SDCARD_WRITING_ENABLED
+        if (fp == NULL)
+        {
+        sprintf(file_name, "/sdcard/eloc/test%d.wav", file_idx);
+        ESP_LOGI(TAG, "Saving audio to %s", file_name);
 
-            if (fp == NULL)
-            {
-            sprintf(file_name, "/sdcard/eloc/test%d.wav", file_idx);
-            ESP_LOGI(TAG, "Saving audio to %s", file_name);
+        // open the file on the sdcard
+        fp = fopen(file_name, "wb");
 
-            // open the file on the sdcard
-            fp = fopen(file_name, "wb");
+        if (fp == NULL)
+        {
+            ESP_LOGE(TAG, "Failed to open file for writing");
+            return;
+        }
+        else
+        {
+            // create a new wave file writer
+            auto i2s_config = getI2sConfig();
+            writer = new WAVFileWriter(fp, i2s_config.bits_per_sample);
+        }
 
-            if (fp == NULL)
-            {
-                ESP_LOGE(TAG, "Failed to open file for writing");
-                return;
+        if (writer == nullptr)
+        {
+            ESP_LOGE(TAG, "Failed to create WAVFileWriter");
+        }
+        else
+        {
+            // Block until properly registered
+            // Otherwise will get error later
+            while (input->register_wavFileWriter(writer) == false){
+            ESP_LOGI(TAG, "Waiting for WAVFileWriter to register");
+            delay(100);
             }
-            else
-            {
-                // create a new wave file writer
-                writer = new WAVFileWriter(fp, EI_CLASSIFIER_FREQUENCY);
-            }
+        }
+        }
 
-            if (writer == nullptr)
-            {
-                ESP_LOGE(TAG, "Failed to create WAVFileWriter");
-            }
-            else
-            {
-                // Block until properly registered
-                // Otherwise will get error later
-                while (input->register_wavFileWriter(writer) == false){
-                ESP_LOGI(TAG, "Waiting for WAVFileWriter to register");
-                ei_sleep(100);
-                }
-            }
-            }
+#ifdef EDGE_IMPULSE_ENABLED
 
-        #endif // SDCARD_WRITING_ENABLED
 
         if (microphone_inference_start(EI_CLASSIFIER_RAW_SAMPLE_COUNT) == false)
         {
@@ -1204,7 +1248,7 @@ void app_main(void)
             continue;
         }
 
-        while (record_status == true)
+        if (record_status == true)
         {
             bool m = microphone_inference_record();
             // Blocking function - unblocks when buffer is full
@@ -1213,7 +1257,6 @@ void app_main(void)
                 ESP_LOGE(TAG, "ERR: Failed to record audio...");
                 return;
             }
-
 
             signal_t signal;
             signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
@@ -1265,7 +1308,13 @@ void app_main(void)
                     // }
                 }
 
-                #ifdef SDCARD_WRITING_ENABLED
+#if EI_CLASSIFIER_HAS_ANOMALY == 1
+                ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
+#endif
+
+                print_results = 0;
+            }
+#endif // SDCARD_WRITING_ENABLED
 
                 if (writer != nullptr && writer->ready_to_save() == true)
                 {
@@ -1286,19 +1335,8 @@ void app_main(void)
                     writer = nullptr;
                 }
 
-                #else
 
-                // Feed the dog..
-                delay(1);
 
-                #endif // SDCARD_WRITING_ENABLED
-
-#if EI_CLASSIFIER_HAS_ANOMALY == 1
-                ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
-#endif
-
-                print_results = 0;
-            }
 
         } // end while(record_status == true)
 
@@ -1330,7 +1368,7 @@ void app_main(void)
                 {
                     getI2sConfig();
                     input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-                    record(input);
+                    //record(input);
                 }
             }
         }

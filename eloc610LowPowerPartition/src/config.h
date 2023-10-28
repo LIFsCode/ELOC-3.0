@@ -71,6 +71,8 @@
         #define I2S_BITS_PER_SAMPLE 24        
         #define I2S_SAMPLE_RATE_MIN 4000                // Not certain from datasheet 
         #define I2S_SAMPLE_RATE_MAX 51600               // Not certain from datasheet
+        #define I2S_SCALING_FACTOR 6                    // Increase volume of sample
+        #define I2S_DEFAULT_BIT_SHIFT 14                // Default bit shift for this mic
 
         // sdcard (unused, as SDIO is fixed to its Pins)
         #define PIN_NUM_MISO GPIO_NUM_2

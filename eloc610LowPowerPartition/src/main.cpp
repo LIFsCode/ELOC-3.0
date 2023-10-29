@@ -305,11 +305,6 @@ void printPartitionInfo() {  ///will always set boot partition back to partition
 
 }
 
-long getTimeFromTimeObjectMS() {
-    return(timeObject.getEpoch()*1000L+timeObject.getMillis());
-
-}
-
 
 
 

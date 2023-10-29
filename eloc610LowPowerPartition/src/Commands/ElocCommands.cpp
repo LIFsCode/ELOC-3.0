@@ -39,9 +39,7 @@
 #include "config.h"
 
 
-namespace BtCommands {
 
-static const char* TAG = "BtCmds";
 
 /********** BUGME: encapsulate ELOC status and make it threadsafe!!!*/ 
 //BUGME: global status
@@ -55,6 +53,8 @@ extern ESP32Time timeObject;
 
 //BUGME: global constant from config.h
 extern String gFirmwareVersion;
+namespace BtCommands {
+static const char* TAG = "BtCmds";
 
 void printStatus(String& buf) {
 
@@ -126,11 +126,116 @@ void cmd_DelConfig(CmdParser *cmdParser) {
     return;
 }
 
+
+static String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
+static long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
+long getTimeFromTimeObjectMS() {
+    return(timeObject.getEpoch()*1000L+timeObject.getMillis());
+
+}
+
+void cmd_SetTime(CmdParser *cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    const char* time = cmdParser->getValueFromKey("time");
+    if (!time) {
+        const char* errMsg = "Missing key 'time'";
+        ESP_LOGE(TAG, "%s", errMsg);
+        resp.setError(ESP_ERR_INVALID_ARG, errMsg);
+        return;
+    }
+    ESP_LOGI(TAG, "updating time with %s", time);
+    StaticJsonDocument<256> timeCfg;
+
+    DeserializationError error = deserializeJson(timeCfg, time);
+    if (error) {
+        ESP_LOGE(TAG, "Parsing time config failed with %s!", error.c_str());
+        resp.setError(ESP_ERR_INVALID_ARG, error.c_str());
+        return;
+    }
+    if (!timeCfg.containsKey("seconds")) {
+        resp.setError(ESP_ERR_INVALID_ARG, "Missing JSON key 'seconds'");
+        return;
+    }
+    long seconds = timeCfg["seconds"];
+    long milliseconds = timeCfg["ms"];
+    const char* type = timeCfg["type"] | "?";
+    long timeZone_offset = timeCfg["timezone"] | TIMEZONE_OFFSET;
+    ESP_LOGI(TAG, "timestamp in from type %s Time Zone: %ld sec: %ld millisec: %ld", type, timeZone_offset, seconds, milliseconds);
+    // TODO: why is this needed and what should it be used for?
+    const char* minutesSinceSync = "";//serialIN.substring(11, serialIN.indexOf("___"));
+    
+    timeObject.setTime(seconds + (timeZone_offset * 60L * 60L), milliseconds * 1000);
+    // timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
+    //  timestamps coming in from android are always GMT (minus 7 hrs)
+    //  if I not add timezone then timeobject is off
+    //  so timeobject does not seem to be adding timezone to system time.
+    //  timestamps are in gmt+0, so timestamp convrters
+
+    struct timeval tv_now;
+    gettimeofday(&tv_now, NULL);
+    int64_t time_us = ((int64_t)tv_now.tv_sec * 1000000L) + (int64_t)tv_now.tv_usec;
+    time_us = time_us / 1000;
+
+    // ESP_LOGI(TAG, "atol(minutesSinceSync.c_str()) *60L*1000L "+String(atol(minutesSinceSync.c_str()) *60L*1000L));
+    // gLastSystemTimeUpdate = getTimeFromTimeObjectMS() - (atol(minutesSinceSync.c_str()) * 60L * 1000L);
+    // ESP_LOGI(TAG, "timestamp in from android GMT "+everything    +"  sec: "+seconds + "   millisec: "+milliseconds);
+    ESP_LOGI(TAG, "new timestamp from new sys time (local time) %lld", time_us  ); //this is 7 hours too slow!
+    ESP_LOGI(TAG,"new timestamp from timeobJect (local time) %ld",getTimeFromTimeObjectMS());
+
+    String& response = resp.getPayload();
+    response = "{\"Time[ms]\" : ";
+    response += getTimeFromTimeObjectMS();
+    response += "}";
+    resp.setResultSuccess(response);
+    return;
+}
+
+void cmd_SetRecordMode(CmdParser* cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    const char* mode = cmdParser->getValueFromKey("mode");
+    rec_req_t rec_req;
+    if (!mode) {
+        // if no explicit mode is set, recording mode is toggled
+        rec_req = gRecording ? REC_REQ_STOP : REC_REQ_START;
+    }
+    else {
+        if (!strcasecmp(mode, "start")) {
+            rec_req = REC_REQ_START;
+        }
+        else if (!strcasecmp(mode, "stop")) {
+            rec_req = REC_REQ_STOP;
+        }
+        else {
+            char errMsg[64];
+            snprintf(errMsg, sizeof(errMsg), "Invalid mode %s", mode);
+            ESP_LOGE(TAG, "%s", errMsg);
+            resp.setError(ESP_ERR_INVALID_ARG, errMsg);
+        }
+    }
+    const char* newMode = "";
+    if (rec_req == REC_REQ_START) {
+        newMode = "Start";
+    }
+    if (rec_req == REC_REQ_STOP) {
+        newMode = "Stop";
+    }
+    String& status = resp.getPayload(); 
+    status += "{\"recordingState\" : ";
+    status += String(rec_req == REC_REQ_START);
+    status += "\"}";
+    ESP_LOGI(TAG, "%s Recording...", newMode);
+    xQueueSend(rec_req_evt_queue, &rec_req, NULL);
+    resp.setResultSuccess(status);
+}
+
 bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     bool success = true;
     success &= cmdCallback.addCmd("setConfig", &cmd_SetConfig, "Write config key as json, e.g. setConfig#cfg={\"device\":{\"location\":\"not_set\"}}");
     success &= cmdCallback.addCmd("getConfig", &cmd_GetConfig, "Read config as json, e.g. getConfig --> return{\"device\":{\"location\":\"not_set\"}}");
     success &= cmdCallback.addCmd("delConfig", &cmd_DelConfig, "Delete the current config file. Current config is not reset to default until next reboot");
+    success &= cmdCallback.addCmd("getStatus", &cmd_GetStatus, "Returns the current status in JSON format");
+    success &= cmdCallback.addCmd("setTime", &cmd_SetTime, "Set the current Time. Time format is given as JSON, e.g. setTime#time={\"seconds\":1351824120,\"ms\":42,\"timezone\":6,\"type\":\"G\"}");
+    success &= cmdCallback.addCmd("setRecordMode", &cmd_SetRecordMode, "Start/Stop recording. If used without arguments, current mode is toggled(start/stop). Otherwise set recording to specified mode, e.g. setRecordMode#mode=start");
     if (!success) {
         ESP_LOGE(TAG, "Failed to add all BT commands!");
     }

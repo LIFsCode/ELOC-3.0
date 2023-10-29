@@ -84,9 +84,6 @@ void IRAM_ATTR int_signal_handler (void *args)
 
 static bool gBluetoothEnabled = false;
 
-static String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
-static long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
-
 // the last time a BT node was connected
 static int lastBtConnectionTimeS = 0;
 

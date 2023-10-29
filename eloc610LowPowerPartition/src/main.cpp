@@ -637,7 +637,7 @@ static const uint32_t sample_buffer_size = 2048;
 static signed short sampleBuffer[sample_buffer_size];
 static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
 static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
-static bool record_status = true;
+static bool ei_running_status = true;
 
 bool inference_result_file_SD_available = false;
 
@@ -685,7 +685,7 @@ static void capture_samples(void *arg)
   size_t i2s_samples_to_read = i2s_bytes_to_read >> 1;
 
   // Enter a continual loop to collect new data from I2S
-  while (record_status)
+  while (ei_running_status)
   {
     int samples_read = input->read(i2s_samples_to_read);
 
@@ -701,7 +701,7 @@ static void capture_samples(void *arg)
     //   sampleBuffer[x] = ((int16_t)sampleBuffer[x]) * I2S_DATA_SCALING_FACTOR;
     // }
 
-    // if (record_status)
+    // if (ei_running_status)
     // {
     //   audio_inference_callback(i2s_bytes_to_read);
     // }
@@ -724,51 +724,61 @@ static void capture_samples(void *arg)
  */
 static bool microphone_inference_start(uint32_t n_samples)
 {
-  inference.buffers[0] = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+    inference.buffers[0] = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
 
-  if (inference.buffers[0] == NULL)
-  {
-    ESP_LOGE(TAG, "Failed to allocate %d bytes for inference buffer", n_samples * sizeof(int16_t));
-    return false;
-  }
+    if (inference.buffers[0] == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to allocate %d bytes for inference buffer", n_samples * sizeof(int16_t));
+        return false;
+    }
 
-  inference.buffers[1] = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+    inference.buffers[1] = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
 
-  if (inference.buffers[1] == NULL)
-  {
-    ei_free(inference.buffers[0]);
-    return false;
-  }
+    if (inference.buffers[1] == NULL)
+    {
+        ei_free(inference.buffers[0]);
+        return false;
+    }
 
-  inference.buf_select = 0;
-  inference.buf_count = 0;
-  inference.n_samples = n_samples;
-  inference.buf_ready = 0;
+    inference.buf_select = 0;
+    inference.buf_count = 0;
+    inference.n_samples = n_samples;
+    inference.buf_ready = 0;
 
-  if (i2s_init(I2S_SAMPLING_FREQUENCY))
-  {
-    ESP_LOGI(TAG, "Failed to start I2S!");
-  }
+    // if (i2s_init(I2S_SAMPLING_FREQUENCY))
+    // {
+    //     ESP_LOGI(TAG, "Failed to start I2S!");
+    // }
 
-  ei_sleep(100);
+    getI2sConfig();
 
-  record_status = true;
+    if (input != nullptr)
+    {
+        // From restart an instance may already exist
+        ESP_LOGE(TAG, "I2SMEMSSampler input != nullptr");
+        return false;
+    }
+    input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
 
-  if (input == nullptr)
-  {
-    ESP_LOGE(TAG, "%s - MEMSampler == nullptr", __func__);
-  }
-  else
-  {
-    input->register_ei_inference(&inference, EI_CLASSIFIER_FREQUENCY);
-  }
+    ei_sleep(100);
 
-  // Stack size of 16K - experimentally determined
-  // (void*)sample_buffer_size - pass in the number of samples to read
-  // Should match 
-  xTaskCreate(capture_samples, "CaptureSamples", 1024 * 16, (void*)sample_buffer_size, 10, NULL);
+    ei_running_status = true;
 
-  return true;
+    if (input == nullptr)
+    {
+        ESP_LOGE(TAG, "%s - I2SMEMSSampler == nullptr", __func__);
+    }
+    else
+    {
+        input->register_ei_inference(&inference, EI_CLASSIFIER_FREQUENCY);
+    }
+
+    // Stack size of 16K - experimentally determined
+    // (void*)sample_buffer_size - pass in the number of samples to read
+    // Should match
+    xTaskCreate(capture_samples, "CaptureSamples", 1024 * 16, (void *)sample_buffer_size, 10, NULL);
+
+    return true;
 }
 
 /**
@@ -827,7 +837,7 @@ static void microphone_inference_end(void)
 {
     ESP_LOGI(TAG, "microphone_inference_end()");
 
-    record_status = false;
+    ei_running_status = false;
     // Wait for 'capture_samples' thread to terminate
     delay(1000);
 
@@ -1191,8 +1201,8 @@ void app_main(void)
     getI2sConfig();
     input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);                
 
-    static int file_idx = 0;
-    static char file_name[100]; // needs to persist outside this scope??
+    FILE *fp=NULL;
+    char file_name[100]; // needs to persist outside this scope??
     i2s_config_t i2s_config = {};
 
     rec_req_t rec_req = REC_REQ_NONE;
@@ -1216,47 +1226,40 @@ void app_main(void)
                 {
                     getI2sConfig();
                     input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-                    gRecording = true;      // TODO: set time out??
+                    gRecording = true;      // TODO: set time out for this??
                 }
             }
         }
 
         if (fp == NULL && gRecording == true)
         {
+            createFilename(file_name, sizeof(file_name));
+            fp = fopen(file_name, "wb");
 
-        createFilename();
-
-        sprintf(file_name, "/sdcard/eloc/test%d.wav", file_idx);
-        ESP_LOGI(TAG, "Saving audio to %s", file_name);
-
-        // open the file on the sdcard
-        fp = fopen(file_name, "wb");
-
-        if (fp == NULL)
-        {
-            ESP_LOGE(TAG, "Failed to open file for writing");
-            return;
-        }
-        else
-        {
-            // create a new wave file writer
-            i2s_config = getI2sConfig();
-            writer = new WAVFileWriter(fp, i2s_config.bits_per_sample);
-        }
-
-        if (writer == nullptr)
-        {
-            ESP_LOGE(TAG, "Failed to create WAVFileWriter");
-        }
-        else
-        {
-            // Block until properly registered
-            // Otherwise will get error later
-            while (input->register_wavFileWriter(writer) == false){
-            ESP_LOGI(TAG, "Waiting for WAVFileWriter to register");
-            delay(100);
+            if (fp == NULL)
+            {
+                ESP_LOGE(TAG, "Failed to open file for writing");
+                return;
             }
-        }
+            else
+            {
+                // create a new wave file writer & make sure sample rate is up to date
+                writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_NUM_0)));
+            }
+
+            if (writer == nullptr)
+            {
+                ESP_LOGE(TAG, "Failed to create WAVFileWriter");
+            }
+            else
+            {
+                // Block until properly registered
+                // Otherwise will get error later
+                while (input->register_wavFileWriter(writer) == false){
+                ESP_LOGI(TAG, "Waiting for WAVFileWriter to register");
+                delay(100);
+                }
+            }
         }
 
 #ifdef EDGE_IMPULSE_ENABLED
@@ -1271,7 +1274,7 @@ void app_main(void)
             continue;
         }
 
-        if (record_status == true)
+        if (ei_running_status == true)
         {
             bool m = microphone_inference_record();
             // Blocking function - unblocks when buffer is full
@@ -1294,7 +1297,7 @@ void app_main(void)
                 ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
                 // TODO: Debug
                 // return;
-                record_status = false;
+                ei_running_status = false;
                 continue;
             }
 
@@ -1343,68 +1346,36 @@ void app_main(void)
 
                 if (writer != nullptr && writer->ready_to_save() == true)
                 {
-
                 writer->write();
                 }
 
-                    if (writer != nullptr && writer->get_file_size() >= i2s_config.bits_per_sample * RECORDING_TIME)
+                if (writer != nullptr && writer->get_file_size() >= i2s_config.bits_per_sample * RECORDING_TIME)
                 {
-                    // TODO: Figure out how to save active buffer portion
-                    // and finish the writing
                     ESP_LOGI(TAG, "Finishing SD writing\n");
                     writer->finish();
                     fclose(fp);
                     delete writer;
-                    file_idx++;
                     fp = NULL;
                     writer = nullptr;
                 }
 
+        } // end while(ei_running_status == true)
 
-
-
-        } // end while(record_status == true)
-
-        // record_status = false;
+#ifdef EDGE_IMPULSE_ENABLED
+        // ei_running_status = false;
         // Prepare to restart
         microphone_inference_end();
         delay(2000);
 
     } // end while(1)
 
-#else // EDGE_IMPULSE_ENABLED
-
-    while (true)
-    {
-        // Code from before EI implementation
-        rec_req_t rec_req = REC_REQ_NONE;
-        if (xQueueReceive(rec_req_evt_queue, &rec_req, pdMS_TO_TICKS(500)))
-        {
-            ESP_LOGI(TAG, "REC_REQ = %d", rec_req);
-            if (rec_req == REC_REQ_START)
-            {
-                if (esp_err_t err = checkSDCard() != ESP_OK)
-                {
-                    ESP_LOGE(TAG, "Cannot start recording due to SD error %s", esp_err_to_name(err));
-                    // TODO: set status here and let LED flash as long as the device is in error state
-                    LEDflashError();
-                }
-                else
-                {
-                    getI2sConfig();
-                    input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-                    //record(input);
-                }
-            }
-        }
-    }
-
 #endif // EDGE_IMPULSE_ENABLED
 
     ESP_LOGI(TAG, "app_main done");
 }
 
-
-#if !defined(EI_CLASSIFIER_SENSOR) || EI_CLASSIFIER_SENSOR != EI_CLASSIFIER_SENSOR_MICROPHONE
-#error "Invalid model for current sensor."
+#ifdef EDGE_IMPULSE_ENABLED
+    #if !defined(EI_CLASSIFIER_SENSOR) || EI_CLASSIFIER_SENSOR != EI_CLASSIFIER_SENSOR_MICROPHONE
+    #error "Invalid model for current sensor."
+    #endif
 #endif

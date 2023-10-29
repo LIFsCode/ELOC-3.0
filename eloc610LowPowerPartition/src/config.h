@@ -56,9 +56,6 @@
         // TODO: check if we want these configurable
         #define I2S_DMA_BUFFER_COUNT 18
         #define I2S_DMA_BUFFER_LEN   1000
-        // #define I2S_DEFAULT_SAMPLE_RATE 20000
-        // For Edge Impulse/ ML 
-        // I2S_DEFAULT_SAMPLE_RATE needs to equal EI_CLASSIFIER_FREQUENCY
         // WARNING: This value will be overridden by '.config' on SD card or SPIFFS
         #define I2S_DEFAULT_SAMPLE_RATE 16000
 
@@ -101,6 +98,9 @@
 
 // undefine to skip performance monitor
 #define USE_PERF_MONITOR
+
+// How long (in sec) wav files should be
+#define RECORDING_TIME 30
 
 // i2s config for reading from of I2S
 extern i2s_config_t i2s_mic_Config;

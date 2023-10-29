@@ -1,9 +1,12 @@
+#pragma once
+
+#ifndef _CONFIG_H_
+#define _CONFIG_H_
+
 #include <freertos/FreeRTOS.h>
 #include <driver/i2s.h>
 #include <driver/adc.h>
 #include "lis3dh_types.h"
-
-
 
 //#define USE_SPI_VERSION
 #define USE_SDIO_VERSION
@@ -106,3 +109,5 @@
 extern i2s_config_t i2s_mic_Config;
 // i2s microphone pins
 extern i2s_pin_config_t i2s_mic_pins;
+
+#endif // _CONFIG_H_

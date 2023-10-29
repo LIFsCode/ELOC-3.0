@@ -181,6 +181,7 @@ void cmd_SetTime(CmdParser *cmdParser) {
     // ESP_LOGI(TAG, "timestamp in from android GMT "+everything    +"  sec: "+seconds + "   millisec: "+milliseconds);
     ESP_LOGI(TAG, "new timestamp from new sys time (local time) %lld", time_us  ); //this is 7 hours too slow!
     ESP_LOGI(TAG,"new timestamp from timeobJect (local time) %ld",getTimeFromTimeObjectMS());
+    ESP_LOGI(TAG,"new time set to (local time) %s",timeObject.getDateTime().c_str());
 
     String& response = resp.getPayload();
     response = "{\"Time[ms]\" : ";
@@ -222,7 +223,7 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
     String& status = resp.getPayload(); 
     status += "{\"recordingState\" : ";
     status += String(rec_req == REC_REQ_START);
-    status += "\"}";
+    status += "}";
     ESP_LOGI(TAG, "%s Recording...", newMode);
     xQueueSend(rec_req_evt_queue, &rec_req, NULL);
     resp.setResultSuccess(status);

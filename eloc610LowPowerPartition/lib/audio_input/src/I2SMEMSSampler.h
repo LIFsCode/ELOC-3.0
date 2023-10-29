@@ -2,9 +2,8 @@
 
 #include "I2SSampler.h"
 #include "WAVFileWriter.h"
-#include "config.h"
-#include "/home/projects/Rumble_Detector/include/ei_inference.h"
-#include "/home/projects/Rumble_Detector/include/config_build.h"
+#include "/home/projects/ELOC-3.0/eloc610LowPowerPartition/include/ei_inference.h"
+
 class I2SMEMSSampler : public I2SSampler
 {
 private:
@@ -17,8 +16,8 @@ private:
     WAVFileWriter *writer = nullptr;
 
     // Set some reasonable values as default
-    uint32_t i2s_sampling_rate = 16000;
-    uint32_t ei_sampling_freq = 16000;
+    uint32_t i2s_sampling_rate = 16000; // TODO: Use value from config.h but problem linking file
+    uint32_t ei_sampling_freq = 16000;  // TODO: Use value from config.h but problem linking file
     
     // Handle scenario where EI_CLASSIFIER_FREQUENCY != I2S sample rate
     // Will skip packing EI buffer at this rate
@@ -35,7 +34,7 @@ public:
         i2s_port_t i2s_port,
         i2s_pin_config_t &i2s_pins,
         i2s_config_t i2s_config,
-        int  bitShift = I2S_DEFAULT_BIT_SHIFT,
+        int  bitShift = 14,     // TODO: Use value I2S_DEFAULT_BIT_SHIFT from config.h but problem linking file
         bool listenOnly = false,
         bool fixSPH0645 = false);
 

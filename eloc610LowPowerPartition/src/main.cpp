@@ -1191,17 +1191,41 @@ void app_main(void)
     getI2sConfig();
     input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);                
 
-    // Wait for system to settle..
-    delay(1000);
     static int file_idx = 0;
     static char file_name[100]; // needs to persist outside this scope??
-    static FILE *fp = NULL;
+    i2s_config_t i2s_config = {};
+
+    rec_req_t rec_req = REC_REQ_NONE;
 
     while (true)
     {
-
-        if (fp == NULL)
+    
+        if (xQueueReceive(rec_req_evt_queue, &rec_req, pdMS_TO_TICKS(500)))
         {
+            ESP_LOGI(TAG, "REC_REQ = %d", rec_req);
+            rec_req_t rec_req = REC_REQ_NONE;
+
+            if (rec_req == REC_REQ_START)
+            {
+                if (esp_err_t err = checkSDCard() != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "Cannot start recording due to SD error %s", esp_err_to_name(err));
+                    LEDflashError();
+                }
+                else
+                {
+                    getI2sConfig();
+                    input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+                    gRecording = true;      // TODO: set time out??
+                }
+            }
+        }
+
+        if (fp == NULL && gRecording == true)
+        {
+
+        createFilename();
+
         sprintf(file_name, "/sdcard/eloc/test%d.wav", file_idx);
         ESP_LOGI(TAG, "Saving audio to %s", file_name);
 
@@ -1216,7 +1240,7 @@ void app_main(void)
         else
         {
             // create a new wave file writer
-            auto i2s_config = getI2sConfig();
+            i2s_config = getI2sConfig();
             writer = new WAVFileWriter(fp, i2s_config.bits_per_sample);
         }
 
@@ -1236,7 +1260,6 @@ void app_main(void)
         }
 
 #ifdef EDGE_IMPULSE_ENABLED
-
 
         if (microphone_inference_start(EI_CLASSIFIER_RAW_SAMPLE_COUNT) == false)
         {
@@ -1314,7 +1337,9 @@ void app_main(void)
 
                 print_results = 0;
             }
-#endif // SDCARD_WRITING_ENABLED
+        
+            
+#endif // EDGE_IMPULSE_ENABLED
 
                 if (writer != nullptr && writer->ready_to_save() == true)
                 {
@@ -1322,7 +1347,7 @@ void app_main(void)
                 writer->write();
                 }
 
-                    if (writer != nullptr && writer->get_file_size() >= EI_CLASSIFIER_RAW_SAMPLE_COUNT * RECORDING_TIME)
+                    if (writer != nullptr && writer->get_file_size() >= i2s_config.bits_per_sample * RECORDING_TIME)
                 {
                     // TODO: Figure out how to save active buffer portion
                     // and finish the writing

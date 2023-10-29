@@ -20,7 +20,7 @@ static const uint32_t sample_buffer_size = 2048;
 static signed short sampleBuffer[sample_buffer_size];
 static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
 static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
-static bool record_status = true;
+static bool ei_running_status = true;
 
 /**
  * Get raw audio signal data

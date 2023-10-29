@@ -3,10 +3,12 @@
 
 static const char *TAG = "WAVFileWriter";
 
-WAVFileWriter::WAVFileWriter(FILE *fp, int sample_rate)
+WAVFileWriter::WAVFileWriter(FILE *fp, int sample_rate, int ch_count /*=1*/)
 {
   m_fp = fp;
-  m_header.setSample_rate(sample_rate);
+  setChannelCount(ch_count);
+  setSample_rate(sample_rate);
+  m_header.sample_rate = sample_rate;
   // write out the header - we'll fill in some of the blanks later
   fwrite(&m_header, sizeof(wav_header_t), 1, m_fp);
   m_file_size = sizeof(wav_header_t);
@@ -72,4 +74,15 @@ bool WAVFileWriter::finish()
   this->swap_buffers();
 
   return true;
+}
+
+void WAVFileWriter::setSample_rate (int sample_rate) {
+  m_header.sample_rate = sample_rate;
+  m_header.byte_rate = m_header.sample_rate * m_header.num_channels * (m_header.bit_depth / 8);
+}
+
+void WAVFileWriter::setChannelCount(int channel_count) {
+    m_header.num_channels = channel_count;
+    m_header.byte_rate = m_header.sample_rate*2*channel_count;      // Number of bytes per second. sample_rate * num_channels * Bytes Per Sample
+    m_header.sample_alignment = channel_count*(m_header.bit_depth / 8); // num_channels * Bytes Per Sample
 }

@@ -200,10 +200,10 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
         rec_req = gRecording ? REC_REQ_STOP : REC_REQ_START;
     }
     else {
-        if (!strcasecmp(mode, "start")) {
+        if (!strcasecmp(mode, "on")) {
             rec_req = REC_REQ_START;
         }
-        else if (!strcasecmp(mode, "stop")) {
+        else if (!strcasecmp(mode, "off")) {
             rec_req = REC_REQ_STOP;
         }
         else {
@@ -236,7 +236,7 @@ bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     success &= cmdCallback.addCmd("delConfig", &cmd_DelConfig, "Delete the current config file. Current config is not reset to default until next reboot");
     success &= cmdCallback.addCmd("getStatus", &cmd_GetStatus, "Returns the current status in JSON format");
     success &= cmdCallback.addCmd("setTime", &cmd_SetTime, "Set the current Time. Time format is given as JSON, e.g. setTime#time={\"seconds\":1351824120,\"ms\":42,\"timezone\":6,\"type\":\"G\"}");
-    success &= cmdCallback.addCmd("setRecordMode", &cmd_SetRecordMode, "Start/Stop recording. If used without arguments, current mode is toggled(start/stop). Otherwise set recording to specified mode, e.g. setRecordMode#mode=start");
+    success &= cmdCallback.addCmd("setRecordMode", &cmd_SetRecordMode, "Enable/disable recording. If used without arguments, current mode is toggled(on/off). Otherwise set recording to specified mode, e.g. setRecordMode#mode=on");
     if (!success) {
         ESP_LOGE(TAG, "Failed to add all BT commands!");
     }

@@ -53,7 +53,7 @@
 #include "PerfMonitor.hpp"
 
 // TODO: Remove this..
-#define EDGE_IMPULSE_ENABLED
+// #define EDGE_IMPULSE_ENABLED
 
 #ifdef EDGE_IMPULSE_ENABLED
 // If your target is limited in memory remove this macro to save 10K RAM
@@ -69,7 +69,7 @@
 static const char *TAG = "main";
 
 bool gMountedSDCard = false;
-bool gRecording = false;
+bool gRecording = true;    // TODO: rename to wav_recording ??
 
 // int32_t *graw_samples;
 
@@ -676,7 +676,7 @@ static void audio_inference_callback(uint32_t n_bytes)
 static void capture_samples(void *arg)
 {
 
-  ESP_LOGI(TAG, "%s", __func__);
+  ESP_LOGV(TAG, "%s", __func__);
 
   const int32_t i2s_bytes_to_read = (uint32_t)arg;
 
@@ -1124,7 +1124,9 @@ void app_main(void)
         // Run stored audio samples through the model to test it
         ESP_LOGI(TAG, "Testing model against pre-recorded sample data...");
 
-        // static_assert(EI_CLASSIFIER_RAW_SAMPLE_COUNT == TEST_SAMPLE_LENGTH ,"EI_CLASSIFIER_RAW_SAMPLE_COUNT must match TEST_SAMPLE_LENGTH");
+        if (EI_CLASSIFIER_RAW_SAMPLE_COUNT != TEST_SAMPLE_LENGTH){
+            ESP_LOGW(TAG, "TEST_SAMPLE does not appear to match this model, expect poor results");
+        }
 
         signal_t signal;
         signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
@@ -1135,18 +1137,20 @@ void app_main(void)
 
         if (!inference.buffers[0])
         {
-            ESP_LOGW(TAG, "ERR: Failed to allocate buffer for signal\n");
+            ESP_LOGW(TAG, "ERR: Failed to allocate buffer for signal");
             // Skip the rest of the test
             return;
         }
 
         // Artifically fill buffer with test data
-        for (auto i = 0; i < EI_CLASSIFIER_RAW_SAMPLE_COUNT; i++)
+        // WARNING: Limit to buffer size
+        for (auto i = 0; (i < EI_CLASSIFIER_RAW_SAMPLE_COUNT) && (i < TEST_SAMPLE_LENGTH); i++)
         {
             inference.buffers[0][i] = trumpet_test[i];
         }
 
         // Mark buffer as ready
+        inference.buf_select = 1;   // Mark active buffer as inference.buffers[1], inference run on inactive buffer
         inference.buf_count = 0;
         inference.buf_ready = 1;
 
@@ -1213,9 +1217,14 @@ void app_main(void)
 
     // wav file
     FILE *fp=NULL;
-    char file_name[100]; // needs to persist outside this scope??
+    char file_name[100];
+    //Populate gSessionIdentifier for wav filename
+    createSessionFolder();
 
     rec_req_t rec_req = REC_REQ_NONE;
+
+    // TODO: Define conditions on which device shuld exit this while() loop
+    // e.g. SD card full or I2S error?
 
     while (true)
     {
@@ -1254,7 +1263,8 @@ void app_main(void)
             else
             {
                 // create a new wave file writer & make sure sample rate is up to date
-                writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)));
+                //writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)));
+                writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), NUMBER_OF_CHANNELS);
             }
 
             if (writer == nullptr)
@@ -1378,6 +1388,8 @@ void app_main(void)
     }
 
     ESP_LOGI(TAG, "app_main done");
+
+    // TODO: Trigger reset here & then restart??
 }
 
 #ifdef EDGE_IMPULSE_ENABLED

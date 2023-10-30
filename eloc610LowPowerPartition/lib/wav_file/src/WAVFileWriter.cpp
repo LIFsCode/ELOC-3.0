@@ -5,6 +5,8 @@ static const char *TAG = "WAVFileWriter";
 
 WAVFileWriter::WAVFileWriter(FILE *fp, int sample_rate, int ch_count /*=1*/)
 {
+  ESP_LOGV(TAG, "Func: %s", __func__);
+  
   m_fp = fp;
   setChannelCount(ch_count);
   setSample_rate(sample_rate);

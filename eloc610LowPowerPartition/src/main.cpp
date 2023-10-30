@@ -53,7 +53,7 @@
 #include "PerfMonitor.hpp"
 
 // TODO: Remove this..
-// #define EDGE_IMPULSE_ENABLED
+#define EDGE_IMPULSE_ENABLED
 
 #ifdef EDGE_IMPULSE_ENABLED
 // If your target is limited in memory remove this macro to save 10K RAM
@@ -109,13 +109,12 @@ uint32_t gFreeSpaceKB = 0;
 // String gTimeDifferenceCode; //see getTimeDifferenceCode() below
 
 #ifdef USE_SPI_VERSION
-    SDCard *sd_card;
+    SDCard *sd_card = nullptr;
 #endif
 
 #ifdef USE_SDIO_VERSION
-    SDCardSDIO *sd_card;
+    SDCardSDIO *sd_card = nullptr;
 #endif
-
 
 I2SMEMSSampler *input = nullptr;
 WAVFileWriter *writer = nullptr;
@@ -144,11 +143,10 @@ void resetPeripherals()
         periph_module_reset(PERIPH_BT_MODULE);
         periph_module_reset(PERIPH_BT_BASEBAND_MODULE);
         periph_module_reset(PERIPH_BT_LC_MODULE);
-        //periph_module_reset(PERIPH_UART0_MODULE);    //this used by debugger?
-        periph_module_reset(PERIPH_UART1_MODULE);  //this was it! bug stops bluetooth
-                                                //from re-broadcasting in other partition on  https://github.com/espressif/esp-idf/issues/9971
-
-        periph_module_reset(PERIPH_UART2_MODULE); //just in case
+        //periph_module_reset(PERIPH_UART0_MODULE); //this used by debugger?
+        periph_module_reset(PERIPH_UART1_MODULE);   //this was it! bug stops bluetooth
+                                                    //from re-broadcasting in other partition on  https://github.com/espressif/esp-idf/issues/9971
+        periph_module_reset(PERIPH_UART2_MODULE);   //just in case
     }
 }
 
@@ -196,7 +194,6 @@ void testInput()
     delete input;
     input = nullptr;
     delay(100);
-
 }
 
 void resetESP32()
@@ -325,7 +322,7 @@ long getTimeFromTimeObjectMS()
 }
 
 /**
- * Function ??
+ * Purpose ??
 */
 void time()
 {
@@ -338,7 +335,7 @@ void time()
 }
 
 /**
- * Function??
+ * Purpose ??
 */
 String uint64ToString(uint64_t input)
 {
@@ -435,7 +432,6 @@ bool createSessionFolder()
 */
 bool createFilename(char *fname, size_t size)
 {
-
     char timeStr[64] = {};
     tm timeinfo = timeObject.getTimeStruct();
     strftime(timeStr, sizeof(timeStr), "%F_%H_%M_%S", &timeinfo);
@@ -480,7 +476,6 @@ String getProperDateTime()
 
 void doDeepSleep()
 {
-
     esp_sleep_enable_ext0_wakeup(GPIO_BUTTON, 0); // try commenting this out
 
     // printf("Going to sleep now");
@@ -521,7 +516,6 @@ bool mountSDCard()
 
 void freeSpace()
 {
-
     FATFS *fs;
     uint32_t fre_clust, fre_sect, tot_sect;
     FRESULT res;
@@ -541,6 +535,11 @@ void freeSpace()
     printf("\n %u KB free\n", gFreeSpaceKB);
 }
 
+/**
+ * @brief Checks if SD card is mounted and has sufficient free space (> 0.5 GB)
+ * 
+ * @return esp_err_t 
+ */
 esp_err_t checkSDCard()
 {
 
@@ -645,11 +644,12 @@ bool inference_result_file_SD_available = false;
 // https://docs.edgeimpulse.com/docs/tutorials/advanced-inferencing/continuous-audio-sampling
 
 /**
- * This function is repeatedly called by capture_samples()
+ * @brief This function is repeatedly called by capture_samples()
  * When sufficient samples are collected:
  *  1. inference.buf_ready = 1
  *  2. microphone_inference_record() is unblocked
  *  3. classifier is run in main loop()
+ *  @deprecated Accomplished in I2SMEMSSampler::read()
  */
 static void audio_inference_callback(uint32_t n_bytes)
 {
@@ -750,27 +750,28 @@ static bool microphone_inference_start(uint32_t n_samples)
     //     ESP_LOGI(TAG, "Failed to start I2S!");
     // }
 
-    getI2sConfig();
+    // getI2sConfig();
 
-    if (input != nullptr)
-    {
-        // From restart an instance may already exist
-        ESP_LOGE(TAG, "I2SMEMSSampler input != nullptr");
-        return false;
-    }
-    input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+    // if (input != nullptr)
+    // {
+    //     // From restart an instance may already exist
+    //     ESP_LOGE(TAG, "I2SMEMSSampler input != nullptr");
+    //     return false;
+    // }
+    // input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
 
-    ei_sleep(100);
-
-    ei_running_status = true;
-
+    // ei_sleep(100);
+   
+    // Microphone should have already been setup
     if (input == nullptr)
     {
         ESP_LOGE(TAG, "%s - I2SMEMSSampler == nullptr", __func__);
+        ei_running_status = false;
     }
     else
     {
         input->register_ei_inference(&inference, EI_CLASSIFIER_FREQUENCY);
+        ei_running_status = true;
     }
 
     // Stack size of 16K - experimentally determined
@@ -810,6 +811,7 @@ static bool microphone_inference_record(void)
     // }
     // else
     // {
+      // Service watchdog
       delay(1);
     //}
   }
@@ -832,6 +834,7 @@ static int microphone_audio_signal_get_data(size_t offset, size_t length, float 
 
 /**
  * @brief      Stop PDM and release buffers
+ * @deprecated Use I2SMEMSSampler::stop() instead
  */
 static void microphone_inference_end(void)
 {
@@ -970,7 +973,7 @@ void app_main(void)
              VERSIONTAG);
 
 #ifdef EDGE_IMPULSE_ENABLED
-    ESP_LOGI(TAG, "Edge Impulse framework enabled\n");
+    ESP_LOGI(TAG, "Edge Impulse framework enabled");
 #endif
 
     initTime();
@@ -1198,18 +1201,25 @@ void app_main(void)
     ESP_LOGI(TAG, "waiting for button or bluetooth");
     ESP_LOGI(TAG, "voltage is %.3f", Battery::GetInstance().getVoltage());
 
-    getI2sConfig();
-    input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);                
+    /**
+     * Get the configuration of the I2S microphone & start it
+     * @warning TODO: Check requirements if the configuration changes after this point? Restart required?
+     */
+    auto i2s_config = getI2sConfig();
+    input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+    input->start();
+    // Zero DMA buffer, prevents popping sound on start
+    input->zero_dma_buffer(I2S_DEFAULT_PORT);              
 
+    // wav file
     FILE *fp=NULL;
     char file_name[100]; // needs to persist outside this scope??
-    i2s_config_t i2s_config = {};
 
     rec_req_t rec_req = REC_REQ_NONE;
 
     while (true)
     {
-    
+        // Recording request?
         if (xQueueReceive(rec_req_evt_queue, &rec_req, pdMS_TO_TICKS(500)))
         {
             ESP_LOGI(TAG, "REC_REQ = %d", rec_req);
@@ -1221,17 +1231,17 @@ void app_main(void)
                 {
                     ESP_LOGE(TAG, "Cannot start recording due to SD error %s", esp_err_to_name(err));
                     LEDflashError();
+                    gRecording = false;
                 }
                 else
                 {
-                    getI2sConfig();
-                    input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
                     gRecording = true;      // TODO: set time out for this??
                 }
             }
         }
 
-        if (fp == NULL && gRecording == true)
+        // Start a new recording?
+        if (fp == NULL && gRecording == true && checkSDCard() == ESP_OK)
         {
             createFilename(file_name, sizeof(file_name));
             fp = fopen(file_name, "wb");
@@ -1244,7 +1254,7 @@ void app_main(void)
             else
             {
                 // create a new wave file writer & make sure sample rate is up to date
-                writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_NUM_0)));
+                writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)));
             }
 
             if (writer == nullptr)
@@ -1257,7 +1267,7 @@ void app_main(void)
                 // Otherwise will get error later
                 while (input->register_wavFileWriter(writer) == false){
                 ESP_LOGI(TAG, "Waiting for WAVFileWriter to register");
-                delay(100);
+                delay(10);
                 }
             }
         }
@@ -1270,8 +1280,6 @@ void app_main(void)
             ESP_LOGE(TAG, "ERR: microphone_inference_start failed, restarting...");
             delay(500);
             microphone_inference_end();
-            delay(500);
-            continue;
         }
 
         if (ei_running_status == true)
@@ -1281,7 +1289,7 @@ void app_main(void)
             if (!m)
             {
                 ESP_LOGE(TAG, "ERR: Failed to record audio...");
-                return;
+                continue;
             }
 
             signal_t signal;
@@ -1295,8 +1303,6 @@ void app_main(void)
             if (r != EI_IMPULSE_OK)
             {
                 ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
-                // TODO: Debug
-                // return;
                 ei_running_status = false;
                 continue;
             }
@@ -1325,23 +1331,15 @@ void app_main(void)
                 if (checkSDCard() == ESP_OK)
                 {
                     save_inference_result_SD(ei_results_filename, file_str);
-
-                    // TODO: Commence saving wav file
-                    // Something like this:
-                    // if (gRecording == false){
-                    //     record();
-
-                    // }
                 }
 
-#if EI_CLASSIFIER_HAS_ANOMALY == 1
+            #if EI_CLASSIFIER_HAS_ANOMALY == 1
                 ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
-#endif
-
+            #endif
                 print_results = 0;
             }
-        
-            
+        }// end while(ei_running_status == true)
+
 #endif // EDGE_IMPULSE_ENABLED
 
                 if (writer != nullptr && writer->ready_to_save() == true)
@@ -1359,17 +1357,25 @@ void app_main(void)
                     writer = nullptr;
                 }
 
-        } // end while(ei_running_status == true)
+    } // end while(true)
 
-#ifdef EDGE_IMPULSE_ENABLED
-        // ei_running_status = false;
-        // Prepare to restart
-        microphone_inference_end();
-        delay(2000);
+    // Should never get here
+    if (input != nullptr){
+        input->stop();
+        delete input;
+        input = nullptr;
+    }
+    
+    if (writer != nullptr){
+        writer->finish();
+        delete writer;
+        writer = nullptr;
+    }
 
-    } // end while(1)
-
-#endif // EDGE_IMPULSE_ENABLED
+    if (sd_card != nullptr){
+        delete sd_card;
+        sd_card = nullptr;
+    }
 
     ESP_LOGI(TAG, "app_main done");
 }

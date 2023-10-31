@@ -37,6 +37,7 @@
 #include "ElocConfig.hpp"
 #include "Battery.hpp"
 #include "config.h"
+#include "utils/macros.hpp"
 
 
 
@@ -62,19 +63,19 @@ void printStatus(String& buf) {
     JsonObject battery = doc.createNestedObject("battery");
     battery["type"]                = Battery::GetInstance().getBatType();
     battery["state"]               = Battery::GetInstance().getState();
-    battery["SoC[%]"]              = Battery::GetInstance().getSoC();
-    battery["voltage[V]"]          = Battery::GetInstance().getVoltage();
+    battery["SoC[%]"]              = round(Battery::GetInstance().getSoC(), 1);
+    battery["voltage[V]"]          = round(Battery::GetInstance().getVoltage(), 2);
 
     JsonObject session = doc.createNestedObject("session");
     session["identifier"]                = gSessionIdentifier;
-    session["recordingState"]            = String(gRecording);
-    session["recordingTime[h]"]          = String((float)gSessionRecordTime / 1000 / 1000 / 60 / 60);
+    session["recordingState"]            = gRecording;
+    session["recordingTime[h]"]          = (float)gSessionRecordTime / 1000 / 1000 / 60 / 60;
     
     JsonObject device = doc.createNestedObject("device");
     device["firmware"]                   = gFirmwareVersion;
-    device["timeStamp"]                  = String((float)esp_timer_get_time() / 1000 / 1000 / 60 / 60);
-    device["totalRecordingTime[h]"]      = String(((float)gTotalRecordTimeSinceReboot + gSessionRecordTime) / 1000 / 1000 / 60 / 60);
-    device["SdCardFreeSpace[GB]"]        = String(gFreeSpaceGB);
+    device["timeStamp"]                  = (float)esp_timer_get_time() / 1000 / 1000 / 60 / 60;
+    device["totalRecordingTime[h]"]      = ((float)gTotalRecordTimeSinceReboot + gSessionRecordTime) / 1000 / 1000 / 60 / 60;
+    device["SdCardFreeSpace[GB]"]        = round(gFreeSpaceGB,2);
 
     if (serializeJsonPretty(doc, buf) == 0) {
         ESP_LOGE(TAG, "Failed serialize JSON config!");

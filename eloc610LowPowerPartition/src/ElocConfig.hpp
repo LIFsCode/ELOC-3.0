@@ -71,14 +71,10 @@ bool setSecondsPerFile(int secondsPerFile);
 typedef struct {
     String location;
     String locationCode;
-    String locationAccuracy;
+    double locationAccuracy;
     String nodeName;
 }elocDeviceInfo_T;
 const elocDeviceInfo_T& getDeviceInfo();
-
-void setLocationName(const String& location);
-void setLocationSettings(const String& code, const String& accuracy);
-bool setNodeName(const String& nodeName);
 
 /// @brief load configuration from filesystem
 void readConfig();

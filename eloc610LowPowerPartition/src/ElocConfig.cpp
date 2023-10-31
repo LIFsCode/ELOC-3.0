@@ -112,29 +112,12 @@ void setBluetoothOnOrOffDuringRecord(bool MicBluetoothOnOrOff) {
 static const elocDeviceInfo_T C_ElocDeviceInfo_Default {
     .location = "not_set",
     .locationCode = "unknown", 
-    .locationAccuracy = "99",
+    .locationAccuracy = 99,
     .nodeName = "ELOC_NONAME",
 };
 elocDeviceInfo_T gElocDeviceInfo = C_ElocDeviceInfo_Default;
 const elocDeviceInfo_T& getDeviceInfo() {
     return gElocDeviceInfo;
-}
-
-void setLocationName(const String& location) {
-    gElocDeviceInfo.location = location;
-}
-void setLocationSettings(const String& code, const String& accuracy) {
-    gElocDeviceInfo.locationCode = code;
-    gElocDeviceInfo.locationAccuracy = accuracy;
-}
-
-bool setNodeName(const String& nodeName) {
-    if (nodeName.length() == 0) {
-        ESP_LOGE(TAG, "Invalid Node Name! Node Name must at least hold 1 character!");
-        return false;
-    }
-    gElocDeviceInfo.nodeName = nodeName;
-    return true;
 }
 
 /**************************************************************************************************/
@@ -255,7 +238,7 @@ void buildConfigFile(JsonDocument& doc) {
     JsonObject device = doc.createNestedObject("device");
     device["location"]                    = gElocDeviceInfo.location.c_str();
     device["locationCode"]                = gElocDeviceInfo.locationCode.c_str();
-    device["locationAccuracy"]            = gElocDeviceInfo.locationAccuracy.c_str();
+    device["locationAccuracy"]            = gElocDeviceInfo.locationAccuracy;
     device["nodeName"]                    = gElocDeviceInfo.nodeName.c_str();
 
     JsonObject config = doc.createNestedObject("config");

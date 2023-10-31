@@ -348,7 +348,9 @@ esp_err_t updateConfig(const char* buf) {
     JsonObject mic = doc["mic"];
     loadMicInfo(mic);
 
-    writeConfig();
+    if (!writeConfig()) {
+        return ESP_ERR_FLASH_BASE;
+    }
 
     return ESP_OK;
 }

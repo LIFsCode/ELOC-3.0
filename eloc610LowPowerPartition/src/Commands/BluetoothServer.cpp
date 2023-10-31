@@ -141,7 +141,7 @@ extern String gFirmwareVersion;
 void sendSettings() {
 
     SerialBT.print("{\"device\" : ");
-    SerialBT.print("ELOC 3.0");
+    SerialBT.print("\"ELOC 3.0\"");
     SerialBT.print(", \"cmdVersion\" : ");
     SerialBT.print("1");
     SerialBT.println("}");

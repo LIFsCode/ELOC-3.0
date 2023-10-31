@@ -29,6 +29,7 @@ CmdResponse::CmdResponse() {
     this->clear();
     // reserve 2kByte for payload to avoid future reallocations
     mReturnValue.Payload.reserve(2048);
+    mReturnValue.ErrMsg.reserve(512);
 };
 
 void CmdResponse::clear()
@@ -36,6 +37,7 @@ void CmdResponse::clear()
     mReturnValue.ErrCode = ESP_FAIL; // set to generic fail will be cleared on valid result
     mReturnValue.Payload.clear();
     mReturnValue.Cmd.clear();
+    mReturnValue.ErrMsg.clear();
 };
 void CmdResponse::newCmd(const char* cmd) {
     this->clear();
@@ -45,16 +47,16 @@ void CmdResponse::newCmd(const char* cmd) {
 void CmdResponse::setError(esp_err_t errCode, const char* errMsg)
 {
     mReturnValue.ErrCode = errCode;
-    mReturnValue.Payload = errMsg;
+    mReturnValue.ErrMsg = errMsg;
 };
 void CmdResponse::setResultSuccess(const String &payload)
 {
     mReturnValue.Payload = payload;
-    mReturnValue.ErrCode = ESP_OK;
+    this->setResult(static_cast<esp_err_t>(ESP_OK));
 }
 
 void CmdResponse::setResultSuccess (const char* payload /*= ""*/) 
 {
     mReturnValue.Payload = payload;
-    mReturnValue.ErrCode = ESP_OK;
+    this->setResult(static_cast<esp_err_t>(ESP_OK));
 }

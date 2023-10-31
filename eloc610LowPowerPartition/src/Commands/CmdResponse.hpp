@@ -34,6 +34,7 @@ private:
     typedef struct {
         uint16_t ErrCode;
         String Payload;
+        String ErrMsg;
         String Cmd;
     }ReturnValue_t;
     ReturnValue_t mReturnValue;

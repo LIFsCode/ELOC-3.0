@@ -159,7 +159,9 @@ void bt_sendResponse(const CmdResponse& cmdResponse) {
         //TODO: check if this can be done via ArduinoJSON without too much stack usage overhead
         SerialBT.print("{\"ecode\" : ");
         SerialBT.print(cmdResponse.getReturnValue().ErrCode);
-        SerialBT.print(", \"cmd\" : \"");
+        SerialBT.print(", \"error\" : \"");
+        SerialBT.print(cmdResponse.getReturnValue().ErrMsg);
+        SerialBT.print("\", \"cmd\" : \"");
         SerialBT.print(cmdResponse.getReturnValue().Cmd);
         SerialBT.print("\", \"payload\" : ");
         SerialBT.print(cmdResponse.getReturnValue().Payload);

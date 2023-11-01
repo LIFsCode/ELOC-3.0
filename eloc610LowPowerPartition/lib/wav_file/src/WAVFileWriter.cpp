@@ -22,6 +22,8 @@ WAVFileWriter::WAVFileWriter(FILE *fp, int sample_rate, int buffer_time, int ch_
   buf_count = 0;
   buffer_size = sample_rate * buffer_time;
 
+  ESP_LOGI(TAG, "buffer_size = %d", buffer_size);
+
   buffers[0] = (int16_t *)heap_caps_malloc(buffer_size * sizeof(int16_t), MALLOC_CAP_SPIRAM);
 
   if (buffers[0] == NULL)

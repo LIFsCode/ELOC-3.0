@@ -21,7 +21,6 @@ i2s_config_t i2s_mic_Config = {
 i2s_pin_config_t i2s_mic_pins = {
 
     .mck_io_num = I2S_PIN_NO_CHANGE, // tbg removed new api?
-
     .bck_io_num = I2S_MIC_SERIAL_CLOCK,
     .ws_io_num = I2S_MIC_LEFT_RIGHT_CLOCK,
     .data_out_num = I2S_PIN_NO_CHANGE,

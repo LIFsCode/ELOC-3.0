@@ -1246,7 +1246,7 @@ void app_main(void)
     };
 
    // input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-    input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, false);
+    input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, true);
     
     input->start();
     // Zero DMA buffer, prevents popping sound on start
@@ -1301,7 +1301,7 @@ void app_main(void)
             {
                 // create a new wave file writer & make sure sample rate is up to date
                 //writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)));
-                writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 1, NUMBER_OF_CHANNELS);
+                writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 4, NUMBER_OF_CHANNELS);
             }
 
             if (writer == nullptr)
@@ -1333,63 +1333,63 @@ void app_main(void)
             }
         }
 
-        if (ei_running_status == true)
-        {
-            bool m = microphone_inference_record();
-            // Blocking function - unblocks when buffer is full
-            if (!m)
-            {
-                ESP_LOGE(TAG, "ERR: Failed to record audio...");
-                continue;
-            }
+        // if (ei_running_status == true)
+        // {
+        //     bool m = microphone_inference_record();
+        //     // Blocking function - unblocks when buffer is full
+        //     if (!m)
+        //     {
+        //         ESP_LOGE(TAG, "ERR: Failed to record audio...");
+        //         continue;
+        //     }
 
-            signal_t signal;
-            signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
-            signal.get_data = &microphone_audio_signal_get_data;
-            ei_impulse_result_t result = {0};
+        //     signal_t signal;
+        //     signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
+        //     signal.get_data = &microphone_audio_signal_get_data;
+        //     ei_impulse_result_t result = {0};
 
-            // If changing to non-continuous ensure to use:
-            // EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
-            EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
-            if (r != EI_IMPULSE_OK)
-            {
-                ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
-                ei_running_status = false;
-                continue;
-            }
+        //     // If changing to non-continuous ensure to use:
+        //     // EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
+        //     EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
+        //     if (r != EI_IMPULSE_OK)
+        //     {
+        //         ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
+        //         ei_running_status = false;
+        //         continue;
+        //     }
 
-            if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))
-            {
-                // print the predictions
-                ESP_LOGI(TAG, "Predictions ");
-                ESP_LOGI(TAG, "(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
-                         result.timing.dsp, result.timing.classification, result.timing.anomaly);
+        //     if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))
+        //     {
+        //         // print the predictions
+        //         ESP_LOGI(TAG, "Predictions ");
+        //         ESP_LOGI(TAG, "(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
+        //                  result.timing.dsp, result.timing.classification, result.timing.anomaly);
 
-                String file_str;
+        //         String file_str;
 
-                for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
-                {
-                    ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
+        //         for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
+        //         {
+        //             ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
 
-                    // Build string to save to inference results file
-                    file_str += ", ";
-                    file_str += result.classification[ix].value;
-                }
+        //             // Build string to save to inference results file
+        //             file_str += ", ";
+        //             file_str += result.classification[ix].value;
+        //         }
 
-                file_str += "\n";
-                // Save results to file
-                // TODO: Only save results & wav file if classification value exceeds a threshold?
-                if (checkSDCard() == ESP_OK)
-                {
-                    save_inference_result_SD(ei_results_filename, file_str);
-                }
+        //         file_str += "\n";
+        //         // Save results to file
+        //         // TODO: Only save results & wav file if classification value exceeds a threshold?
+        //         if (checkSDCard() == ESP_OK)
+        //         {
+        //             save_inference_result_SD(ei_results_filename, file_str);
+        //         }
 
-            #if EI_CLASSIFIER_HAS_ANOMALY == 1
-                ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
-            #endif
-                print_results = 0;
-            }
-        }// end while(ei_running_status == true)
+        //     #if EI_CLASSIFIER_HAS_ANOMALY == 1
+        //         ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
+        //     #endif
+        //         print_results = 0;
+        //     }
+        // }// end while(ei_running_status == true)
 
 #endif // EDGE_IMPULSE_ENABLED
 
@@ -1401,7 +1401,7 @@ void app_main(void)
         if (writer != nullptr && writer->get_file_size_sec() >= WAV_RECORDING_TIME)
         {
             ESP_LOGI(TAG, "Finishing SD writing\n");
-            input->deregister_wavFileWriter();
+            //input->deregister_wavFileWriter();
             writer->finish();
             delete writer;
             

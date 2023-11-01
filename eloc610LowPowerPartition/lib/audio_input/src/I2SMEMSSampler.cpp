@@ -164,7 +164,7 @@ int I2SMEMSSampler::read(int count)
             //int16_t processed_sample = (raw_samples[i] * I2S_SCALING_FACTOR);
             // 8 & true not working
             // 14 & true near silence
-            int16_t processed_sample = (raw_samples[i] >> 14);
+            int16_t processed_sample = (raw_samples[i] >> 11);
             //int16_t processed_sample = (raw_samples[i] * I2S_SCALING_FACTOR); 
 
             if (mListenOnly == false && writer != nullptr){
@@ -175,6 +175,9 @@ int I2SMEMSSampler::read(int count)
                     // Swap buffers and set buf_ready
                     writer->buf_select ^= 1;
                     writer->buf_count = 0;
+                    if (writer->buf_ready == 1){
+                        ESP_LOGE(TAG, "writer buffer overrun");
+                    }
                     writer->buf_ready = 1;
 
                     // Note: Trying to write to SD card here causes poor performance
@@ -192,6 +195,9 @@ int I2SMEMSSampler::read(int count)
                 {
                 inference->buf_select ^= 1;
                 inference->buf_count = 0;
+                if (writer->buf_ready == 1){
+                    ESP_LOGE(TAG, "inference buffer overrun");
+                }
                 inference->buf_ready = 1;
                 }
             }

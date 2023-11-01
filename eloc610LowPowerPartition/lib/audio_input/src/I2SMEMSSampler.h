@@ -9,10 +9,8 @@ class I2SMEMSSampler : public I2SSampler
 private:
     i2s_pin_config_t m_i2sPins;
     bool m_fixSPH0645;
-    int  mBitShift;
-    bool mListenOnly;
-
-
+    int  mBitShift = 14;        // TODO: Use default from config.h
+    bool mListenOnly = false;
     WAVFileWriter *writer = nullptr;
 
     // Set some reasonable values as default
@@ -63,6 +61,13 @@ public:
      * @return true success
      */
     virtual bool register_wavFileWriter(WAVFileWriter *writer);
+
+    /**
+     * @brief Deregister or remove the WAVFileWriter
+     * @return true 
+     * @return false writer not previously registered
+     */
+    virtual bool deregister_wavFileWriter();
 
     /**
      * @brief Register a edge impulse inference structure

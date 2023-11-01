@@ -42,7 +42,7 @@ public:
     virtual int read(int count) = 0;
     
     /**
-     * @brief Unintsall the I2S port
+     * @brief Uninstall the I2S port
      * TODO: This really should be renamed uninstall, not stop
      * 
      */

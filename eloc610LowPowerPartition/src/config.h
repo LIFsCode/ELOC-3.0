@@ -62,7 +62,11 @@
         // WARNING: This value will be overridden by '.config' on SD card or SPIFFS
         #define I2S_DEFAULT_SAMPLE_RATE 16000
 
-        // ELOC 3.2
+        /**
+         * The following are for the ELOC 3.2 board
+         * 
+         */
+
         // Uses TDK/ INVENSENSE ICS-43434 mic
         // https://invensense.tdk.com/download-pdf/ics-43434-datasheet
         // " The output data word length is 24 bits per channel. The default data format is I2S
@@ -71,8 +75,8 @@
         #define I2S_BITS_PER_SAMPLE 24        
         #define I2S_SAMPLE_RATE_MIN 4000                // Not certain from datasheet 
         #define I2S_SAMPLE_RATE_MAX 51600               // Not certain from datasheet
-        #define I2S_SCALING_FACTOR 6                    // Increase volume of sample
-        #define I2S_DEFAULT_BIT_SHIFT 14                // Default bit shift for this mic
+        #define I2S_SCALING_FACTOR 11                    // Increase volume of sample
+        #define I2S_DEFAULT_BIT_SHIFT 11                // Default bit shift for this mic
         #define I2S_DEFAULT_PORT I2S_NUM_0              // Default port for this mic
 
         // sdcard (unused, as SDIO is fixed to its Pins)
@@ -104,7 +108,7 @@
 #define USE_PERF_MONITOR
 
 // How long (in sec) wav files should be
-#define RECORDING_TIME 30
+#define WAV_RECORDING_TIME 30
 
 // i2s config for reading from of I2S
 extern i2s_config_t i2s_mic_Config;

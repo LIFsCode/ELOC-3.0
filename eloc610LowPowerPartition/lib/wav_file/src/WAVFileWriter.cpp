@@ -3,22 +3,61 @@
 
 static const char *TAG = "WAVFileWriter";
 
-WAVFileWriter::WAVFileWriter(FILE *fp, int sample_rate, int ch_count /*=1*/)
+WAVFileWriter::WAVFileWriter(FILE *fp, int sample_rate, int buffer_time, int ch_count /*=1*/)
 {
   ESP_LOGV(TAG, "Func: %s", __func__);
   
   m_fp = fp;
+  m_sample_rate = sample_rate;
+
   setChannelCount(ch_count);
   setSample_rate(sample_rate);
   m_header.sample_rate = sample_rate;
   // write out the header - we'll fill in some of the blanks later
   fwrite(&m_header, sizeof(wav_header_t), 1, m_fp);
   m_file_size = sizeof(wav_header_t);
-
+  
+  buf_ready = 0;
   buf_select = 0;
   buf_count = 0;
+  buffer_size = sample_rate * buffer_time;
+
+  buffers[0] = (int16_t *)heap_caps_malloc(buffer_size * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+
+  if (buffers[0] == NULL)
+  {
+      ESP_LOGE(TAG, "Failed to allocate %d bytes for wav file buffer[0]", buffer_size * sizeof(int16_t));
+  }
+
+  buffers[1] = (int16_t *)heap_caps_malloc(buffer_size * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+
+  if (buffers[1] == NULL)
+  {
+      ESP_LOGE(TAG, "Failed to allocate %d bytes for wav file buffer[1]", buffer_size * sizeof(int16_t));
+      heap_caps_free(buffers[0]);
+  }
+
   buffers[0][0] = {0};
   buffers[1][0] = {0};
+}
+
+WAVFileWriter::~WAVFileWriter(){
+  ESP_LOGV(TAG, "Func: %s", __func__);
+
+  if (m_fp != NULL)
+  {
+      fclose(m_fp);
+  }
+
+  if (buffers[0] != NULL)
+  {
+      heap_caps_free(buffers[0]);
+  }
+  
+  if (buffers[1] != NULL)
+  {
+      heap_caps_free(buffers[1]);
+  }
 }
 
 bool WAVFileWriter::buffer_is_full(){
@@ -45,7 +84,7 @@ void WAVFileWriter::write()
 {
   auto buffer_inactive = buf_select ? 0 : 1;
   
-  ESP_LOGI(TAG, "Writing wav file size: %d", m_file_size);
+  ESP_LOGV(TAG, "Writing wav file size: %d", m_file_size);
   
   if (m_fp == NULL){
     ESP_LOGE(TAG, "File pointer is NULL");
@@ -72,8 +111,8 @@ bool WAVFileWriter::finish()
 
   m_file_size = 0;
   m_fp = NULL;
-    
-  this->swap_buffers();
+
+  // Don't swap buffers?? Could be filling
 
   return true;
 }

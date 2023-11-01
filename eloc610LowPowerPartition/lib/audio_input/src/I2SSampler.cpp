@@ -24,6 +24,11 @@ bool I2SSampler::start()
     // set up the I2S configuration from the subclass
     ret = configureI2S();
 
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Func: %s, configureI2S", __func__);
+    }
+
     return ret;
 }
 

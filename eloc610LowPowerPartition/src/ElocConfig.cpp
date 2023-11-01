@@ -38,11 +38,10 @@ static const uint32_t JSON_DOC_SIZE = 1024;
 static const char* CFG_FILE = "/spiffs/eloc.config";
 static const char* CFG_FILE_SD = "/sdcard/eloctest.txt";
 
-
 //BUGME: encapsulate these in a struct & implement a getter
 static const micInfo_t C_MicInfo_Default {
     .MicType="ns",
-    .MicBitShift=11,
+    .MicBitShift=I2S_DEFAULT_BIT_SHIFT,
     .MicSampleRate = I2S_DEFAULT_SAMPLE_RATE,
     .MicUseAPLL = true,
     .MicUseTimingFix = true,

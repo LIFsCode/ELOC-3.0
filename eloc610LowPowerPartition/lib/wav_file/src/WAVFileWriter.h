@@ -1,8 +1,8 @@
 #pragma once
 
 #include <stdio.h>
+#include <esp_heap_caps.h>
 #include "WAVFile.h"
-
 class WAVFileWriter
 {
 private:
@@ -10,6 +10,7 @@ private:
 
   FILE *m_fp = NULL;
   wav_header_t m_header;
+  int m_sample_rate = 16000;  // Reasonable default
   
   /* TODO: check if it is better to have this functions as member of wav_header_t *
     * however this leave wav_header_t as non POD struct.  */
@@ -21,29 +22,43 @@ public:
    * Use a double buffer system
    * Active buffer -> fill with data
    * Inactive buffer -> write to file
-   * These are public to alow access from I2SMEMSSampler
+   * These are public to alow access from I2SMEMSSampler (or make friend class?)
    * @param buf_select which buffer is active?
    * @param buf_count index of next element to write to
-   * @param buffers[2][16000] 2 buffers of 16000 elements each, 1 active, 1 inactive
+   * @param buffers pointer array to 2 buffers, 1 active, 1 inactive
    */
   size_t buf_select = 0;
   int buf_ready = 0;
-  const static size_t buffer_size = 16000;
+  size_t buffer_size = 16000; // Reasonable default
   size_t buf_count;
-  int16_t buffers[2][buffer_size];
+  signed short *buffers[2];
 
   /**
    * @brief Construct a new WAVFileWriter object
-   * @param fp file pointer
-   * @param sample_rate
+   * @param fp file pointer to write to (already created)
+   * @param sample_rate I2S sample rate
+   * @param buffer_time Buffer size required (seconds) 
+   * @param ch_count number of channels
    */
-  WAVFileWriter(FILE *fp, int sample_rate, int ch_count =1);
+  WAVFileWriter(FILE *fp, int sample_rate, int buffer_time, int ch_count = 1);
+
+  /**
+   * @brief Destroy the WAVFileWriter object
+   */
+  ~WAVFileWriter();
 
   /**
    * @brief Get the current file size
    * @return u_int32_t file size in bytes
    */
-  u_int32_t get_file_size() { return m_file_size; }
+  u_int32_t get_file_size_bytes() { return m_file_size; }
+
+  /**
+   * @brief Get the current file size
+   * @note Uses sample rate to convert to seconds
+   * @return u_int32_t file size in seconds
+   */
+  u_int32_t get_file_size_sec() { return m_file_size / (sizeof(int16_t) * m_sample_rate); }
 
   /**
    * @brief Set current file size to 0
@@ -51,7 +66,7 @@ public:
   void zero_file_size() { m_file_size = 0; }
 
   /**
-   * @brief Get wether file ready to save
+   * @brief Check if file ready to save
    * @return true if ready to save
    */
   int ready_to_save() {return buf_ready;}
@@ -67,7 +82,7 @@ public:
 
   /**
    * @brief Swap buffers
-   *
+   * @deprecated Note required? Implemented directly in I2SMEMSSampler::read()
    */
   void swap_buffers();
 

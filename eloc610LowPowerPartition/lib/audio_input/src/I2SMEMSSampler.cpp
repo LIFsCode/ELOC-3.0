@@ -23,13 +23,23 @@ I2SMEMSSampler::I2SMEMSSampler(
 
     writer = nullptr;
     inference = {};
+
+    if(1){
+        ESP_LOGI(TAG, "i2s_port = %d", i2s_port);
+        ESP_LOGI(TAG, "i2s_sampling_rate = %d", i2s_sampling_rate);
+        ESP_LOGI(TAG, "mBitShift = %d", mBitShift);
+        ESP_LOGI(TAG, "mListenOnly = %d", mListenOnly);
+        ESP_LOGI(TAG, "m_fixSPH0645 = %d", m_fixSPH0645);
+    }
+    
 }
 
 bool I2SMEMSSampler::configureI2S()
 {
     if (m_fixSPH0645)
     {
-        // FIXES for SPH0645
+        // Undocumented (?!) manipulation of I2S peripheral registers
+        // to fix MSB timing issues with some I2S microphones
         REG_SET_BIT(I2S_TIMING_REG(m_i2sPort), BIT(9));
         REG_SET_BIT(I2S_CONF_REG(m_i2sPort), I2S_RX_MSB_SHIFT);
     }
@@ -67,6 +77,18 @@ bool I2SMEMSSampler::register_wavFileWriter(WAVFileWriter *ext_writer){
     }
 }
 
+bool I2SMEMSSampler::deregister_wavFileWriter(){
+    
+    if (writer == nullptr){
+        ESP_LOGE(TAG, "deregister_wavFileWriter() - WAVFileWriter not previously registered");
+        return false;
+    }else{
+        writer = nullptr;
+        return true;
+    }
+
+}
+
 bool I2SMEMSSampler::register_ei_inference(inference_t *ext_inference, int ext_ei_sampling_freq){
 
     ESP_LOGV(TAG, "Func: %s", __func__);
@@ -84,11 +106,14 @@ int I2SMEMSSampler::read(int count)
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
-    // Increase volume of sample
-    #define I2S_SCALING_FACTOR 6
+    // Increase volume of sample 
+    // TODO: This should be taken from config.h instead
+    #define I2S_SCALING_FACTOR 4
 
     // Allocate a buffer of BYTES sufficient for sample size
+    
     int32_t *raw_samples = (int32_t *)malloc(sizeof(int32_t) * count);
+    //int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * count), MALLOC_CAP_SPIRAM);
 
     if (raw_samples == NULL)
     {
@@ -129,27 +154,32 @@ int I2SMEMSSampler::read(int count)
             ESP_LOGW(TAG, "Partial I2S read");
         }
 
-        for (int i = 0; i < samples_read; i++)
+        for (auto i = 0; i < samples_read; i++)
         {   
-            // For the SPH0645LM4H-B MEMS microphone
+            // The ELOC 3.2 board uses Uses TDK/ INVENSENSE ICS-43434 mic
             // The Data Format is I2S, 24-bit, 2’s compliment, MSB first.
-            // The data precision is 18 bits; unused bits are zeros.
-            // Note! Scale data, then shift to 18 bits, otherwise lose lower end volume
-            int16_t processed_sample = (raw_samples[i] * I2S_SCALING_FACTOR) >> 14;  
+            // The data precision is 24 bits
+            // Note! Scale data, then shift, otherwise lose lower end volume
+            //int16_t processed_sample = ((raw_samples[i] * I2S_SCALING_FACTOR) >> 8);
+            //int16_t processed_sample = (raw_samples[i] * I2S_SCALING_FACTOR);
+            // 8 & true not working
+            // 14 & true near silence
+            int16_t processed_sample = (raw_samples[i] >> 14);
+            //int16_t processed_sample = (raw_samples[i] * I2S_SCALING_FACTOR); 
 
-        #ifdef SDCARD_WRITING_ENABLED
-            // Store into wav file buffer
-            writer->buffers[writer->buf_select][writer->buf_count++] = processed_sample;
+            if (mListenOnly == false && writer != nullptr){
 
-            if (writer->buf_count >= writer->buffer_size){
-                // Swap buffers and set buf_ready
-                writer->buf_select ^= 1;
-                writer->buf_count = 0;
-                writer->buf_ready = 1;
+                // Store into wav file buffer
+                writer->buffers[writer->buf_select][writer->buf_count++] = processed_sample;
+                if (writer->buf_count >= writer->buffer_size){
+                    // Swap buffers and set buf_ready
+                    writer->buf_select ^= 1;
+                    writer->buf_count = 0;
+                    writer->buf_ready = 1;
 
-                // Note: Trying to write to SD card here causes poor performance
+                    // Note: Trying to write to SD card here causes poor performance
+                }
             }
-        #endif // SDCARD_WRITING_ENABLED
 
             // Store into edge-impulse buffer taking into requirement to skip if necessary
             if (skip_current >= ei_skip_rate){

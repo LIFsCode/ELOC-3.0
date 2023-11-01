@@ -578,7 +578,7 @@ void saveStatusToSD()
 
     sendstring = sendstring + "File Header:  " + getDeviceInfo().location + "\n"; // file header
 
-    sendstring = sendstring + "Bluetooh on when Record?:   " + (getConfig().bluetoothEnableDuringRecord ? "on" : "off") + "\n";
+    sendstring = sendstring + "Bluetooth on when Record?:   " + (getConfig().bluetoothEnableDuringRecord ? "on" : "off") + "\n";
 
     sendstring = sendstring + "Sample Rate:  " + String(getMicInfo().MicSampleRate) + "\n";
     sendstring = sendstring + "Seconds Per File:  " + String(getConfig().secondsPerFile) + "\n";
@@ -632,11 +632,12 @@ i2s_config_t getI2sConfig()
 /** Audio buffers, pointers and selectors */
 
 static inference_t inference;
+// @deprecated sampleBuffer
 static const uint32_t sample_buffer_size = 2048;
 static signed short sampleBuffer[sample_buffer_size];
 static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
 static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
-static bool ei_running_status = true;
+static bool ei_running_status = false;
 
 bool inference_result_file_SD_available = false;
 
@@ -1078,11 +1079,17 @@ void app_main(void)
     xQueueReset(rec_req_evt_queue);
     ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
 
+#ifndef EDGE_IMPULSE_ENABLED
+    /**
+     * TODO: Appears to be memory exhaustion when using Edge Impulse & Bluetooth
+     * 
+     */
     ESP_LOGI(TAG, "Creating Bluetooth  task...");
     if (esp_err_t err = BluetoothServerSetup(false))
     {
         ESP_LOGI(TAG, "BluetoothServerSetup failed with %s", esp_err_to_name(err));
     }
+#endif
 
 #ifdef USE_PERF_MONITOR
     ESP_LOGI(TAG, "Creating Performance Monitor task...");
@@ -1125,7 +1132,7 @@ void app_main(void)
         ESP_LOGI(TAG, "Testing model against pre-recorded sample data...");
 
         if (EI_CLASSIFIER_RAW_SAMPLE_COUNT != TEST_SAMPLE_LENGTH){
-            ESP_LOGW(TAG, "TEST_SAMPLE does not appear to match this model, expect poor results");
+            ESP_LOGW(TAG, "TEST_SAMPLE does not appear to be compatible with this Edge Impulse model, expect poor test results");
         }
 
         signal_t signal;
@@ -1209,8 +1216,38 @@ void app_main(void)
      * Get the configuration of the I2S microphone & start it
      * @warning TODO: Check requirements if the configuration changes after this point? Restart required?
      */
-    auto i2s_config = getI2sConfig();
-    input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+    // auto i2s_config = getI2sConfig();
+
+    // i2s config for reading from I2S
+    i2s_config_t i2s_mic_Config = {
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
+        .sample_rate = I2S_DEFAULT_SAMPLE_RATE, //fails when hardcoded to 22050
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,
+        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT, // Left channel only for ELOC 3.2
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        .intr_alloc_flags = I2S_INTR_PIRO,
+        .dma_buf_count = I2S_DMA_BUFFER_COUNT,  //so 2000 sample  buffer at 16khz sr gives us 125ms to do our writing
+        .dma_buf_len = I2S_DMA_BUFFER_LEN,      // 8 buffers gives us half  second
+        .use_apll = true,                       //the only thing that works with LowPower/APLL is 16khz 12khz??
+        .tx_desc_auto_clear = false,
+        .fixed_mclk = 0,
+        //.mclk_multiple =I2S_MCLK_MULTIPLE_DEFAULT,   // I2S_MCLK_MULTIPLE_DEFAULT= 0,       /*!< Default value. mclk = sample_rate * 256 */
+        //.bits_per_chan=I2S_BITS_PER_CHAN_DEFAULT
+    };
+
+    // i2s microphone pins
+    i2s_pin_config_t i2s_mic_pins = {
+
+        .mck_io_num = I2S_PIN_NO_CHANGE, // tbg removed new api?
+        .bck_io_num = I2S_MIC_SERIAL_CLOCK,
+        .ws_io_num = I2S_MIC_LEFT_RIGHT_CLOCK,
+        .data_out_num = I2S_PIN_NO_CHANGE,
+        .data_in_num = I2S_MIC_SERIAL_DATA
+    };
+
+   // input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+    input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, false);
+    
     input->start();
     // Zero DMA buffer, prevents popping sound on start
     input->zero_dma_buffer(I2S_DEFAULT_PORT);              
@@ -1264,7 +1301,7 @@ void app_main(void)
             {
                 // create a new wave file writer & make sure sample rate is up to date
                 //writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)));
-                writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), NUMBER_OF_CHANNELS);
+                writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 1, NUMBER_OF_CHANNELS);
             }
 
             if (writer == nullptr)
@@ -1283,13 +1320,17 @@ void app_main(void)
         }
 
 #ifdef EDGE_IMPULSE_ENABLED
+        // TODO: Don't run if Bluetooth is active?
 
-        if (microphone_inference_start(EI_CLASSIFIER_RAW_SAMPLE_COUNT) == false)
-        {
-            // ESP_LOGE(TAG, "ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
-            ESP_LOGE(TAG, "ERR: microphone_inference_start failed, restarting...");
-            delay(500);
-            microphone_inference_end();
+        // Try to restart if not running
+        if (ei_running_status == false){
+            if (microphone_inference_start(EI_CLASSIFIER_RAW_SAMPLE_COUNT) == false)
+            {
+                // ESP_LOGE(TAG, "ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+                ESP_LOGE(TAG, "ERR: microphone_inference_start failed, restarting...");
+                delay(500);
+                microphone_inference_end();
+            }
         }
 
         if (ei_running_status == true)
@@ -1352,20 +1393,25 @@ void app_main(void)
 
 #endif // EDGE_IMPULSE_ENABLED
 
-                if (writer != nullptr && writer->ready_to_save() == true)
-                {
-                writer->write();
-                }
+        if (writer != nullptr && writer->ready_to_save() == true)
+        {
+        writer->write();
+        }
 
-                if (writer != nullptr && writer->get_file_size() >= i2s_config.bits_per_sample * RECORDING_TIME)
-                {
-                    ESP_LOGI(TAG, "Finishing SD writing\n");
-                    writer->finish();
-                    fclose(fp);
-                    delete writer;
-                    fp = NULL;
-                    writer = nullptr;
-                }
+        if (writer != nullptr && writer->get_file_size_sec() >= WAV_RECORDING_TIME)
+        {
+            ESP_LOGI(TAG, "Finishing SD writing\n");
+            input->deregister_wavFileWriter();
+            writer->finish();
+            delete writer;
+            
+            fclose(fp);
+            fp = NULL;
+            writer = nullptr;
+        }
+
+        // Don't forget the watchdog
+        delay(1);
 
     } // end while(true)
 

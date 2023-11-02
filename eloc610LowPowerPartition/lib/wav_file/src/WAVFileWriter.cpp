@@ -91,19 +91,21 @@ void WAVFileWriter::swap_buffers(){
 void WAVFileWriter::write()
 {
   auto buffer_inactive = buf_select ? 0 : 1;
-  
-  ESP_LOGV(TAG, "Writing wav file size: %d", m_file_size);
-  
+    
   if (m_fp == NULL){
     ESP_LOGE(TAG, "File pointer is NULL");
     return;
   }
 
   fwrite(buffers[buffer_inactive], sizeof(int16_t), buffer_size, m_fp);
+
   m_file_size += sizeof(int16_t) * buffer_size;
 
   // Don't swap buffers here, I2MEMSSampler::read() to do it
   buf_ready = 0;
+
+  ESP_LOGI(TAG, "WAV file size bytes: %d, secs: %d", m_file_size, (m_file_size / (sizeof(int16_t) * m_sample_rate)));
+
 }
 
 bool WAVFileWriter::write_start_thread()

@@ -1269,25 +1269,25 @@ void app_main(void)
     while (true)
     {
         // Recording request?
-        if (xQueueReceive(rec_req_evt_queue, &rec_req, pdMS_TO_TICKS(500)))
-        {
-            ESP_LOGI(TAG, "REC_REQ = %d", rec_req);
-            rec_req_t rec_req = REC_REQ_NONE;
+        // if (xQueueReceive(rec_req_evt_queue, &rec_req, pdMS_TO_TICKS(500)))
+        // {
+        //     ESP_LOGI(TAG, "REC_REQ = %d", rec_req);
+        //     rec_req_t rec_req = REC_REQ_NONE;
 
-            if (rec_req == REC_REQ_START)
-            {
-                if (esp_err_t err = checkSDCard() != ESP_OK)
-                {
-                    ESP_LOGE(TAG, "Cannot start recording due to SD error %s", esp_err_to_name(err));
-                    LEDflashError();
-                    gRecording = false;
-                }
-                else
-                {
-                    gRecording = true;      // TODO: set time out for this??
-                }
-            }
-        }
+        //     if (rec_req == REC_REQ_START)
+        //     {
+        //         if (esp_err_t err = checkSDCard() != ESP_OK)
+        //         {
+        //             ESP_LOGE(TAG, "Cannot start recording due to SD error %s", esp_err_to_name(err));
+        //             LEDflashError();
+        //             gRecording = false;
+        //         }
+        //         else
+        //         {
+        //             gRecording = true;      // TODO: set time out for this??
+        //         }
+        //     }
+        // }
 
         // Start a new recording?
         if (fp == NULL && gRecording == true && checkSDCard() == ESP_OK)

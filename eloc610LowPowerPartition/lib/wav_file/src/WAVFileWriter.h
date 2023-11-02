@@ -92,6 +92,13 @@ public:
   void write();
 
   /**
+   * @brief Start a thread of the method write()
+   * @note Terminates when write complete
+   * TODO: Investigate making this perpetual
+  */
+  bool write_start_thread();
+
+  /**
    * @brief Create header and write to file
    * @note This will reset the buf_count to 0
    * @return true success

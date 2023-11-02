@@ -1,5 +1,11 @@
+#ifndef __WAVFILEWRITER_H__
+#define __WAVFILEWRITER_H__
+
 #include "esp_log.h"
 #include "WAVFileWriter.h"
+//#include "freertos/FreeRTOS.h"
+//#include "freertos/task.h"
+//#include "freertos/queue.h"
 
 static const char *TAG = "WAVFileWriter";
 
@@ -100,6 +106,14 @@ void WAVFileWriter::write()
   buf_ready = 0;
 }
 
+bool WAVFileWriter::write_start_thread()
+{
+   // xTaskCreate(write, "write_wav", 1024 * 1, , 10, NULL);
+
+   return true;
+}
+
+
 bool WAVFileWriter::finish()
 {
   // Have to consider the case where file has reached its  
@@ -129,3 +143,5 @@ void WAVFileWriter::setChannelCount(int channel_count) {
     m_header.byte_rate = m_header.sample_rate*2*channel_count;      // Number of bytes per second. sample_rate * num_channels * Bytes Per Sample
     m_header.sample_alignment = channel_count*(m_header.bit_depth / 8); // num_channels * Bytes Per Sample
 }
+
+#endif // __WAVFILEWRITER_H__

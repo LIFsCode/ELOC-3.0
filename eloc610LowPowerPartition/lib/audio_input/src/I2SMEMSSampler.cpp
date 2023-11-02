@@ -110,8 +110,18 @@ int I2SMEMSSampler::read(int count)
     // TODO: This should be taken from config.h instead
     #define I2S_SCALING_FACTOR 4
 
-    // Allocate a buffer of BYTES sufficient for sample size
+    /** 
+     * Flag if there's buffer overruns - for debug purposes
+     * 
+     * @note: The buffers are designed to overrun when with the 
+     * inference is not running or wav recording is not in progress.
+     * It is the responsibility of the consuming task (i.e. inference or
+     * wav writer) to cope with this situation.
+    */
+    bool writer_buffer_overrun = false;
+    bool inference_buffer_overrun = false;
     
+    // Allocate a buffer of BYTES sufficient for sample size
     int32_t *raw_samples = (int32_t *)malloc(sizeof(int32_t) * count);
     //int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * count), MALLOC_CAP_SPIRAM);
 
@@ -167,16 +177,21 @@ int I2SMEMSSampler::read(int count)
             int16_t processed_sample = (raw_samples[i] >> 11);
             //int16_t processed_sample = (raw_samples[i] * I2S_SCALING_FACTOR); 
 
-            if (mListenOnly == false && writer != nullptr){
-
-                // Store into wav file buffer
-                writer->buffers[writer->buf_select][writer->buf_count++] = processed_sample;
+            // Store into wav file buffer
+            writer->buffers[writer->buf_select][writer->buf_count++] = processed_sample;
+            
+            if(writer != nullptr){
+                /*
+                 * @warning If writer == nullptr (file not created) these buffers won't exist!
+                 */ 
                 if (writer->buf_count >= writer->buffer_size){
                     // Swap buffers and set buf_ready
                     writer->buf_select ^= 1;
                     writer->buf_count = 0;
+
+                    // Flag overrun for later
                     if (writer->buf_ready == 1){
-                        ESP_LOGE(TAG, "writer buffer overrun");
+                        writer_buffer_overrun = true;
                     }
                     writer->buf_ready = 1;
 
@@ -195,9 +210,12 @@ int I2SMEMSSampler::read(int count)
                 {
                 inference->buf_select ^= 1;
                 inference->buf_count = 0;
-                if (writer->buf_ready == 1){
-                    ESP_LOGE(TAG, "inference buffer overrun");
+
+                // Flag overrun for later
+                if(inference->buf_ready == 1){
+                    inference_buffer_overrun = true;
                 }
+                
                 inference->buf_ready = 1;
                 }
             }
@@ -217,7 +235,16 @@ int I2SMEMSSampler::read(int count)
         ESP_LOGI(TAG, "inference.buf_select = %d", inference->buf_select);
         ESP_LOGI(TAG, "inference.buf_ready = %d", inference->buf_ready);
     }
+
+    if (writer_buffer_overrun == true){
+        ESP_LOGE(TAG, "writer buffer overrun");
+    }
     
+    if (inference_buffer_overrun == true){
+        ESP_LOGE(TAG, "inference buffer overrun");
+    }
+
+
     free(raw_samples);
     return samples_read;
 }

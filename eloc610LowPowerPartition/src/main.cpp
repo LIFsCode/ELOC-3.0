@@ -69,7 +69,8 @@
 static const char *TAG = "main";
 
 bool gMountedSDCard = false;
-bool gRecording = true;    // TODO: rename to wav_recording ??
+bool gRecording = true;         // TODO: rename to wav_recording ??
+bool ai_run_enable = true;      // Should inference be run on sound samples? 
 
 // int32_t *graw_samples;
 
@@ -1177,7 +1178,9 @@ void app_main(void)
             ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
         }
 
-        // Free buffer
+        // Reset & free buffers
+        inference.buf_select = 0;
+        inference.buf_ready = 0;
         if (inference.buffers[0])
             heap_caps_free(inference.buffers[0]);
     }
@@ -1301,7 +1304,7 @@ void app_main(void)
             {
                 // create a new wave file writer & make sure sample rate is up to date
                 //writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)));
-                writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 4, NUMBER_OF_CHANNELS);
+                writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 1, NUMBER_OF_CHANNELS);
             }
 
             if (writer == nullptr)
@@ -1314,7 +1317,7 @@ void app_main(void)
                 // Otherwise will get error later
                 while (input->register_wavFileWriter(writer) == false){
                 ESP_LOGI(TAG, "Waiting for WAVFileWriter to register");
-                delay(10);
+                delay(5);
                 }
             }
         }
@@ -1333,7 +1336,7 @@ void app_main(void)
             }
         }
 
-        // if (ei_running_status == true)
+        // if (ai_run_enable == true && ei_running_status == true)
         // {
         //     bool m = microphone_inference_record();
         //     // Blocking function - unblocks when buffer is full
@@ -1395,7 +1398,7 @@ void app_main(void)
 
         if (writer != nullptr && writer->ready_to_save() == true)
         {
-        writer->write();
+            writer->write();
         }
 
         if (writer != nullptr && writer->get_file_size_sec() >= WAV_RECORDING_TIME)

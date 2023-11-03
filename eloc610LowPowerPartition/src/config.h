@@ -75,7 +75,7 @@
         #define I2S_BITS_PER_SAMPLE 24        
         #define I2S_SAMPLE_RATE_MIN 4000                // Not certain from datasheet 
         #define I2S_SAMPLE_RATE_MAX 51600               // Not certain from datasheet
-        #define I2S_SCALING_FACTOR 11                    // Increase volume of sample
+
         #define I2S_DEFAULT_BIT_SHIFT 11                // Default bit shift for this mic
         #define I2S_DEFAULT_PORT I2S_NUM_0              // Default port for this mic
 
@@ -106,9 +106,6 @@
 
 // undefine to skip performance monitor
 #define USE_PERF_MONITOR
-
-// How long (in sec) wav files should be
-#define WAV_RECORDING_TIME 30
 
 // i2s config for reading from of I2S
 extern i2s_config_t i2s_mic_Config;

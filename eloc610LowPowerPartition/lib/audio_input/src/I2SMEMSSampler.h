@@ -2,7 +2,8 @@
 
 #include "I2SSampler.h"
 #include "WAVFileWriter.h"
-#include "/home/projects/ELOC-3.0/eloc610LowPowerPartition/include/ei_inference.h"
+#include "../../../include/ei_inference.h"
+
 
 class I2SMEMSSampler : public I2SSampler
 {

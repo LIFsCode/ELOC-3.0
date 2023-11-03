@@ -106,9 +106,7 @@ int I2SMEMSSampler::read(int count)
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
-    // Increase volume of sample 
-    // TODO: This should be taken from config.h instead
-    #define I2S_SCALING_FACTOR 4
+    #define I2S_VOLUME_SCALING_FACTOR 8             // Increase volume by this factor
 
     /** 
      * Flag if there's buffer overruns - for debug purposes
@@ -169,13 +167,12 @@ int I2SMEMSSampler::read(int count)
             // The ELOC 3.2 board uses Uses TDK/ INVENSENSE ICS-43434 mic
             // The Data Format is I2S, 24-bit, 2’s compliment, MSB first.
             // The data precision is 24 bits
-            // Note! Scale data, then shift, otherwise lose lower end volume
-            //int16_t processed_sample = ((raw_samples[i] * I2S_SCALING_FACTOR) >> 8);
-            //int16_t processed_sample = (raw_samples[i] * I2S_SCALING_FACTOR);
-            // 8 & true not working
-            // 14 & true near silence
-            int16_t processed_sample = (raw_samples[i] >> 11);
-            //int16_t processed_sample = (raw_samples[i] * I2S_SCALING_FACTOR); 
+            // Note! Scale data, then shift, otherwise lose lower end volume?
+            // shift 11 - tiny sound
+            // shift 8 - distortion
+            // shift 14 - good but low volume, needs scaling of at least 5
+            // shift 16 - very low volume, needs scaling of at least 10
+            int16_t processed_sample = ((raw_samples[i] >> mBitShift) * I2S_VOLUME_SCALING_FACTOR);
 
             // Store into wav file buffer
             writer->buffers[writer->buf_select][writer->buf_count++] = processed_sample;

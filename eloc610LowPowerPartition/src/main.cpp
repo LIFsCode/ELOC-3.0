@@ -1080,17 +1080,11 @@ void app_main(void)
     xQueueReset(rec_req_evt_queue);
     ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
 
-#ifndef EDGE_IMPULSE_ENABLED
-    /**
-     * TODO: Appears to be memory exhaustion when using Edge Impulse & Bluetooth
-     * 
-     */
     ESP_LOGI(TAG, "Creating Bluetooth  task...");
     if (esp_err_t err = BluetoothServerSetup(false))
     {
         ESP_LOGI(TAG, "BluetoothServerSetup failed with %s", esp_err_to_name(err));
     }
-#endif
 
 #ifdef USE_PERF_MONITOR
     ESP_LOGI(TAG, "Creating Performance Monitor task...");
@@ -1219,38 +1213,9 @@ void app_main(void)
      * Get the configuration of the I2S microphone & start it
      * @warning TODO: Check requirements if the configuration changes after this point? Restart required?
      */
-    // auto i2s_config = getI2sConfig();
+    getI2sConfig();
 
-    // i2s config for reading from I2S
-    i2s_config_t i2s_mic_Config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
-        .sample_rate = I2S_DEFAULT_SAMPLE_RATE, //fails when hardcoded to 22050
-        .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,
-        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT, // Left channel only for ELOC 3.2
-        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .intr_alloc_flags = I2S_INTR_PIRO,
-        .dma_buf_count = I2S_DMA_BUFFER_COUNT,  //so 2000 sample  buffer at 16khz sr gives us 125ms to do our writing
-        .dma_buf_len = I2S_DMA_BUFFER_LEN,      // 8 buffers gives us half  second
-        .use_apll = true,                       //the only thing that works with LowPower/APLL is 16khz 12khz??
-        .tx_desc_auto_clear = false,
-        .fixed_mclk = 0,
-        //.mclk_multiple =I2S_MCLK_MULTIPLE_DEFAULT,   // I2S_MCLK_MULTIPLE_DEFAULT= 0,       /*!< Default value. mclk = sample_rate * 256 */
-        //.bits_per_chan=I2S_BITS_PER_CHAN_DEFAULT
-    };
-
-    // i2s microphone pins
-    i2s_pin_config_t i2s_mic_pins = {
-
-        .mck_io_num = I2S_PIN_NO_CHANGE, // tbg removed new api?
-        .bck_io_num = I2S_MIC_SERIAL_CLOCK,
-        .ws_io_num = I2S_MIC_LEFT_RIGHT_CLOCK,
-        .data_out_num = I2S_PIN_NO_CHANGE,
-        .data_in_num = I2S_MIC_SERIAL_DATA
-    };
-
-   // input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-    input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, true);
-    
+    input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
     input->start();
     // Zero DMA buffer, prevents popping sound on start
     input->zero_dma_buffer(I2S_DEFAULT_PORT);              
@@ -1304,7 +1269,7 @@ void app_main(void)
             {
                 // create a new wave file writer & make sure sample rate is up to date
                 //writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)));
-                writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 1, NUMBER_OF_CHANNELS);
+                writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 2, NUMBER_OF_CHANNELS);
             }
 
             if (writer == nullptr)
@@ -1336,63 +1301,63 @@ void app_main(void)
             }
         }
 
-        // if (ai_run_enable == true && ei_running_status == true)
-        // {
-        //     bool m = microphone_inference_record();
-        //     // Blocking function - unblocks when buffer is full
-        //     if (!m)
-        //     {
-        //         ESP_LOGE(TAG, "ERR: Failed to record audio...");
-        //         continue;
-        //     }
+        if (ai_run_enable == true && ei_running_status == true)
+        {
+            bool m = microphone_inference_record();
+            // Blocking function - unblocks when buffer is full
+            if (!m)
+            {
+                ESP_LOGE(TAG, "ERR: Failed to record audio...");
+                continue;
+            }
 
-        //     signal_t signal;
-        //     signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
-        //     signal.get_data = &microphone_audio_signal_get_data;
-        //     ei_impulse_result_t result = {0};
+            signal_t signal;
+            signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
+            signal.get_data = &microphone_audio_signal_get_data;
+            ei_impulse_result_t result = {0};
 
-        //     // If changing to non-continuous ensure to use:
-        //     // EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
-        //     EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
-        //     if (r != EI_IMPULSE_OK)
-        //     {
-        //         ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
-        //         ei_running_status = false;
-        //         continue;
-        //     }
+            // If changing to non-continuous ensure to use:
+            // EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
+            EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
+            if (r != EI_IMPULSE_OK)
+            {
+                ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
+                ei_running_status = false;
+                continue;
+            }
 
-        //     if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))
-        //     {
-        //         // print the predictions
-        //         ESP_LOGI(TAG, "Predictions ");
-        //         ESP_LOGI(TAG, "(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
-        //                  result.timing.dsp, result.timing.classification, result.timing.anomaly);
+            if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))
+            {
+                // print the predictions
+                ESP_LOGI(TAG, "Predictions ");
+                ESP_LOGI(TAG, "(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
+                         result.timing.dsp, result.timing.classification, result.timing.anomaly);
 
-        //         String file_str;
+                String file_str;
 
-        //         for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
-        //         {
-        //             ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
+                for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
+                {
+                    ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
 
-        //             // Build string to save to inference results file
-        //             file_str += ", ";
-        //             file_str += result.classification[ix].value;
-        //         }
+                    // Build string to save to inference results file
+                    file_str += ", ";
+                    file_str += result.classification[ix].value;
+                }
 
-        //         file_str += "\n";
-        //         // Save results to file
-        //         // TODO: Only save results & wav file if classification value exceeds a threshold?
-        //         if (checkSDCard() == ESP_OK)
-        //         {
-        //             save_inference_result_SD(ei_results_filename, file_str);
-        //         }
+                file_str += "\n";
+                // Save results to file
+                // TODO: Only save results & wav file if classification value exceeds a threshold?
+                if (checkSDCard() == ESP_OK)
+                {
+                    save_inference_result_SD(ei_results_filename, file_str);
+                }
 
-        //     #if EI_CLASSIFIER_HAS_ANOMALY == 1
-        //         ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
-        //     #endif
-        //         print_results = 0;
-        //     }
-        // }// end while(ei_running_status == true)
+            #if EI_CLASSIFIER_HAS_ANOMALY == 1
+                ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
+            #endif
+                print_results = 0;
+            }
+        }// end while(ei_running_status == true)
 
 #endif // EDGE_IMPULSE_ENABLED
 
@@ -1401,7 +1366,7 @@ void app_main(void)
             writer->write();
         }
 
-        if (writer != nullptr && writer->get_file_size_sec() >= WAV_RECORDING_TIME)
+        if (writer != nullptr && writer->get_file_size_sec() >= getConfig().secondsPerFile)
         {
             ESP_LOGI(TAG, "Finishing SD writing\n");
             //input->deregister_wavFileWriter();

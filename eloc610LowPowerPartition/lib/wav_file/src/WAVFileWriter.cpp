@@ -3,9 +3,8 @@
 
 #include "esp_log.h"
 #include "WAVFileWriter.h"
-//#include "freertos/FreeRTOS.h"
-//#include "freertos/task.h"
-//#include "freertos/queue.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "WAVFileWriter";
 
@@ -110,9 +109,9 @@ void WAVFileWriter::write()
 
 bool WAVFileWriter::write_start_thread()
 {
-   // xTaskCreate(write, "write_wav", 1024 * 1, , 10, NULL);
+  //xTaskCreate(write, "write_wav", 1024 * 1, void( *)NULL, 10, NULL);
 
-   return true;
+  return true;
 }
 
 

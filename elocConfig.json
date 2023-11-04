@@ -7,7 +7,6 @@
   },
   "config": {
     "secondsPerFile": 60,
-    "listenOnly": false,
     "cpuMaxFrequencyMHZ": 80,
     "cpuMinFrequencyMHZ": 10,
     "cpuEnableLightSleep": true,
@@ -22,9 +21,6 @@
     "MicSampleRate": 20000,
     "MicUseAPLL": true,
     "MicUseTimingFix": true,
-    "MicGPSCoords": "ns",
     "MicPointingDirectionDegrees": "ns",
-    "MicHeight": "ns",
-    "MicMountType": "ns"
   }
 }

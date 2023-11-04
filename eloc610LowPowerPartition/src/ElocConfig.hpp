@@ -36,15 +36,8 @@ typedef struct {
     uint32_t MicSampleRate; // TODO: this should finally be moved to Mic Info for consistency
     bool     MicUseAPLL;
     bool     MicUseTimingFix;
-    String   MicGPSCoords;
     String   MicPointingDirectionDegrees;
-    String   MicHeight;
-    String   MicMountType;
 }micInfo_t;
-
-void setMicBitShift(int MicBitShift);
-void setMicType(String MicType);
-void setBluetoothOnOrOffDuringRecord(bool MicBluetoothOnOrOff);
 
 const micInfo_t& getMicInfo();
 

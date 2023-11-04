@@ -46,19 +46,9 @@ static const micInfo_t C_MicInfo_Default {
     .MicSampleRate = I2S_DEFAULT_SAMPLE_RATE,
     .MicUseAPLL = true,
     .MicUseTimingFix = true,
-    .MicGPSCoords="ns",
-    .MicPointingDirectionDegrees="ns",
-    .MicHeight="ns",
-    .MicMountType="ns",
+    .MicPointingDirectionDegrees="ns"
 };
 micInfo_t gMicInfo = C_MicInfo_Default;
-
-void setMicBitShift(int MicBitShift) {
-    gMicInfo.MicBitShift = MicBitShift;
-}
-void setMicType(String MicType) {
-    gMicInfo.MicType = MicType;
-}
 
 const micInfo_t& getMicInfo() {
     return gMicInfo;
@@ -135,7 +125,7 @@ void loadDevideInfo(const JsonObject& device) {
 }
 void loadConfig(const JsonObject& config) {
     gElocConfig.secondsPerFile              = config["secondsPerFile"]              | C_ElocConfig_Default.secondsPerFile;             
-    gElocConfig.listenOnly                  = config["listenOnly"]                  | C_ElocConfig_Default.listenOnly;            
+    gElocConfig.listenOnly                  = /* TODO: unusedconfig["listenOnly"] |*/ C_ElocConfig_Default.listenOnly;            
     gElocConfig.cpuMaxFrequencyMHZ          = config["cpuMaxFrequencyMHZ"]          | C_ElocConfig_Default.cpuMaxFrequencyMHZ;    
     gElocConfig.cpuMinFrequencyMHZ          = config["cpuMinFrequencyMHZ"]          | C_ElocConfig_Default.cpuMinFrequencyMHZ;    
     gElocConfig.cpuEnableLightSleep         = config["cpuEnableLightSleep"]         | C_ElocConfig_Default.cpuEnableLightSleep;   
@@ -151,10 +141,7 @@ void loadMicInfo(const JsonObject& micInfo) {
     gMicInfo.MicSampleRate               = micInfo["MicSampleRate"]               | C_MicInfo_Default.MicSampleRate;   
     gMicInfo.MicUseAPLL                  = micInfo["MicUseAPLL"]                  | C_MicInfo_Default.MicUseAPLL;             
     gMicInfo.MicUseTimingFix             = micInfo["MicUseTimingFix"]             | C_MicInfo_Default.MicUseTimingFix;
-    gMicInfo.MicGPSCoords                = micInfo["MicGPSCoords"]                | C_MicInfo_Default.MicGPSCoords;           
     gMicInfo.MicPointingDirectionDegrees = micInfo["MicPointingDirectionDegrees"] | C_MicInfo_Default.MicPointingDirectionDegrees;
-    gMicInfo.MicHeight                   = micInfo["MicHeight"]                   | C_MicInfo_Default.MicHeight;
-    gMicInfo.MicMountType                = micInfo["MicMountType"]                | C_MicInfo_Default.MicMountType;
 }     
 
 bool readConfigFile(const char* filename) {
@@ -243,7 +230,6 @@ void buildConfigFile(JsonDocument& doc) {
 
     JsonObject config = doc.createNestedObject("config");
     config["secondsPerFile"]              = gElocConfig.secondsPerFile;
-    config["listenOnly"]                  = gElocConfig.listenOnly;
     config["cpuMaxFrequencyMHZ"]          = gElocConfig.cpuMaxFrequencyMHZ;
     config["cpuMinFrequencyMHZ"]          = gElocConfig.cpuMinFrequencyMHZ;
     config["cpuEnableLightSleep"]         = gElocConfig.cpuEnableLightSleep;
@@ -258,10 +244,7 @@ void buildConfigFile(JsonDocument& doc) {
     micInfo["MicSampleRate"]               = gMicInfo.MicSampleRate;
     micInfo["MicUseAPLL"]                  = gMicInfo.MicUseAPLL;
     micInfo["MicUseTimingFix"]             = gMicInfo.MicUseTimingFix;
-    micInfo["MicGPSCoords"]                = gMicInfo.MicGPSCoords.c_str();
     micInfo["MicPointingDirectionDegrees"] = gMicInfo.MicPointingDirectionDegrees.c_str();
-    micInfo["MicHeight"]                   = gMicInfo.MicHeight.c_str();
-    micInfo["MicMountType"]                = gMicInfo.MicMountType.c_str();
 }
 
 bool printConfig(String& buf) {

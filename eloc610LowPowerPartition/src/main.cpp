@@ -1284,6 +1284,10 @@ void app_main(void)
                 ESP_LOGI(TAG, "Waiting for WAVFileWriter to register");
                 delay(5);
                 }
+                
+                writer->set_enable_wav_file_write(true);
+                // Start thread to continously write to wav file
+                writer->start_wav_write_task();
             }
         }
 
@@ -1361,14 +1365,20 @@ void app_main(void)
 
 #endif // EDGE_IMPULSE_ENABLED
 
-        if (writer != nullptr && writer->ready_to_save() == true)
+        /* if (writer != nullptr && writer->check_if_ready_to_save() == true)
         {
             writer->write();
-        }
+        } */
 
         if (writer != nullptr && writer->get_file_size_sec() >= getConfig().secondsPerFile)
         {
             ESP_LOGI(TAG, "Finishing SD writing\n");
+
+            // Stop thread that is writing out to wav file
+            writer->set_enable_wav_file_write(false);
+
+            // TODO: delete thread
+
             //input->deregister_wavFileWriter();
             writer->finish();
             delete writer;
@@ -1376,6 +1386,7 @@ void app_main(void)
             fclose(fp);
             fp = NULL;
             writer = nullptr;
+
         }
 
         // Don't forget the watchdog

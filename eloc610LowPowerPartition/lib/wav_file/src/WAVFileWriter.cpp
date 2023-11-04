@@ -107,13 +107,25 @@ void WAVFileWriter::write()
 
 }
 
-bool WAVFileWriter::write_start_thread()
+void WAVFileWriter::start_write_thread()
 {
-  //xTaskCreate(write, "write_wav", 1024 * 1, void( *)NULL, 10, NULL);
+    while(enable_wav_file_write){
+      
+      if (this->buf_ready){
+        if (m_fp == nullptr){
+          ESP_LOGE(TAG, "enable_wav_file_write enabled & file pointer == nullptr");
+        }
+        else{
+          this->write();
+        }
+      }
+      else
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 
-  return true;
+    vTaskDelete(NULL);
+
 }
-
 
 bool WAVFileWriter::finish()
 {
@@ -143,6 +155,19 @@ void WAVFileWriter::setChannelCount(int channel_count) {
     m_header.num_channels = channel_count;
     m_header.byte_rate = m_header.sample_rate*2*channel_count;      // Number of bytes per second. sample_rate * num_channels * Bytes Per Sample
     m_header.sample_alignment = channel_count*(m_header.bit_depth / 8); // num_channels * Bytes Per Sample
+}
+
+void WAVFileWriter::start_wav_writer_wrapper(void * _this){
+
+  ((WAVFileWriter*)_this)->start_write_thread();
+
+}
+
+int WAVFileWriter::start_wav_write_task(){
+
+  int ret = xTaskCreate(this->start_wav_writer_wrapper, "Wav file writer", 1024, this, 8, NULL);
+
+  return ret;
 }
 
 #endif // __WAVFILEWRITER_H__

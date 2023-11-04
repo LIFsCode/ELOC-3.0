@@ -6,16 +6,23 @@
 class WAVFileWriter
 {
 private:
-  u_int32_t m_file_size; // Size of the file in bytes
-
-  FILE *m_fp = NULL;
-  wav_header_t m_header;
-  int m_sample_rate = 16000;  // Reasonable default
+  u_int32_t m_file_size;              // Size of wav file in bytes
+  FILE *m_fp = NULL;                  // pointer to wav file
+  wav_header_t m_header;              // struct of wav header
+  int m_sample_rate = 16000;          // I2S sample rate, reasonable default
+  bool enable_wav_file_write = true;  // Continue to write to wav file while true
   
   /* TODO: check if it is better to have this functions as member of wav_header_t *
     * however this leave wav_header_t as non POD struct.  */
   void setSample_rate (int sample_rate);
   void setChannelCount(int channel_count);
+
+  /**
+   * @brief Start a thread of the method write()
+   * @note  Called by wrapper method, not directly
+   *        Runs until enable_wav_file_write == false
+  */
+  void start_write_thread();
 
 public:
   /**
@@ -66,10 +73,17 @@ public:
   void zero_file_size() { m_file_size = 0; }
 
   /**
+   * @brief Setter for enable_wav_file_write
+   * @note Used to halt thread that continuously saves sound to wav file
+   * @param value bool value
+  */
+  void set_enable_wav_file_write(bool value) {enable_wav_file_write = value;}
+
+  /**
    * @brief Check if file ready to save
    * @return true if ready to save
    */
-  int ready_to_save() {return buf_ready;}
+  int check_if_ready_to_save() {return buf_ready;}
 
   /**
    * @brief Called when a buffer is full
@@ -92,11 +106,10 @@ public:
   void write();
 
   /**
-   * @brief Start a thread of the method write()
-   * @note Terminates when write complete
-   * TODO: Investigate making this perpetual
-  */
-  bool write_start_thread();
+   * @brief Stop the write thread
+   * @warning Must be called before finish()
+   */
+  // void stop_write_thread( ) {vTaskDelete(taskHandle);}
 
   /**
    * @brief Create header and write to file
@@ -105,12 +118,15 @@ public:
    */
   bool finish();
 
-  // /**
-  //  * @brief Transfer contents from external buffer to internal buffer
-  //  * @param external_buffer
-  //  * @param external_buffer_size number of elements in external_buffer
-  //  * @return true success
-  //  * @return false
-  //  */
-  // bool pack_buffer(&external_buffer, size_t external_buffer_size);
+  /**
+   * @brief Wrapper to start a task in a thread
+   * @note Must be static for FreeRTOS
+   * @param _this pointer to `this`
+  */
+  static void start_wav_writer_wrapper(void * _this);
+
+  /**
+   * @brief Wrapper to start thread to write out to wav file
+  */
+  int start_wav_write_task();
 };

@@ -69,7 +69,7 @@ bool setSecondsPerFile(int secondsPerFile);
 
 /// @brief Holds all Device Meta data, such as Name, location, etc.
 typedef struct {
-    String location;
+    String fileHeader;
     String locationCode;
     double locationAccuracy;
     String nodeName;

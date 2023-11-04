@@ -378,7 +378,7 @@ void initTime() {
 bool createSessionFolder () {
     String fname;
     //TODO: check if another session identifier based on ISO time for mat would be more helpful
-    gSessionIdentifier = getDeviceInfo().nodeName + uint64ToString(getSystemTimeMS());
+    gSessionIdentifier = getDeviceInfo().fileHeader + uint64ToString(getSystemTimeMS());
     fname = "/sdcard/eloc/" + gSessionIdentifier;
     ESP_LOGI(TAG, "Creating session folder %s", fname.c_str());
     mkdir(fname.c_str(), 0777);
@@ -692,7 +692,7 @@ void saveStatusToSD() {
 
     sendstring = sendstring + "Firmware Version:  " + gFirmwareVersion + "\n"; // firmware
 
-    sendstring = sendstring + "File Header:  " + getDeviceInfo().location + "\n"; // file header
+    sendstring = sendstring + "File Header:  " + getDeviceInfo().fileHeader + "\n"; // file header
 
     sendstring = sendstring + "Bluetooh on when Record?:   " + (getConfig().bluetoothEnableDuringRecord ? "on" : "off") + "\n";
 

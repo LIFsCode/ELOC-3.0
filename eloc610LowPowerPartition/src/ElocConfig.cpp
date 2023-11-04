@@ -110,7 +110,7 @@ void setBluetoothOnOrOffDuringRecord(bool MicBluetoothOnOrOff) {
 }
 
 static const elocDeviceInfo_T C_ElocDeviceInfo_Default {
-    .location = "not_set",
+    .fileHeader = "not_set",
     .locationCode = "unknown", 
     .locationAccuracy = 99,
     .nodeName = "ELOC_NONAME",
@@ -128,7 +128,7 @@ extern bool gMountedSDCard;
 
 
 void loadDevideInfo(const JsonObject& device) {
-    gElocDeviceInfo.location         = device["location"]         | C_ElocDeviceInfo_Default.location; 
+    gElocDeviceInfo.fileHeader       = device["fileHeader"]       | C_ElocDeviceInfo_Default.fileHeader; 
     gElocDeviceInfo.locationCode     = device["locationCode"]     | C_ElocDeviceInfo_Default.locationCode;
     gElocDeviceInfo.locationAccuracy = device["locationAccuracy"] | C_ElocDeviceInfo_Default.locationAccuracy;
     gElocDeviceInfo.nodeName         = device["nodeName"]         | C_ElocDeviceInfo_Default.nodeName;
@@ -236,7 +236,7 @@ void readConfig() {
 void buildConfigFile(JsonDocument& doc) {
     doc.clear();
     JsonObject device = doc.createNestedObject("device");
-    device["location"]                    = gElocDeviceInfo.location.c_str();
+    device["fileHeader"]                  = gElocDeviceInfo.fileHeader.c_str();
     device["locationCode"]                = gElocDeviceInfo.locationCode.c_str();
     device["locationAccuracy"]            = gElocDeviceInfo.locationAccuracy;
     device["nodeName"]                    = gElocDeviceInfo.nodeName.c_str();

@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <esp_heap_caps.h>
 #include "WAVFile.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
 class WAVFileWriter
 {
 private:
@@ -11,6 +14,8 @@ private:
   wav_header_t m_header;              // struct of wav header
   int m_sample_rate = 16000;          // I2S sample rate, reasonable default
   bool enable_wav_file_write = true;  // Continue to write to wav file while true
+
+  SemaphoreHandle_t xSemaphore_m_fp_access;       // Semaphore to protect file writes & closure
   
   /* TODO: check if it is better to have this functions as member of wav_header_t *
     * however this leave wav_header_t as non POD struct.  */
@@ -36,7 +41,12 @@ public:
    */
   size_t buf_select = 0;
   int buf_ready = 0;
-  size_t buffer_size = 16000; // Reasonable default
+
+  /**
+   * @note In order to optimize write times the buffer size
+   *       should be a multiple of 512 bytes (SD card block size)
+   */
+  size_t buffer_size = (int(16000/512)) * 512; 
   size_t buf_count;
   signed short *buffers[2];
 
@@ -106,12 +116,6 @@ public:
   void write();
 
   /**
-   * @brief Stop the write thread
-   * @warning Must be called before finish()
-   */
-  // void stop_write_thread( ) {vTaskDelete(taskHandle);}
-
-  /**
    * @brief Create header and write to file
    * @note This will reset the buf_count to 0
    * @return true success
@@ -127,6 +131,7 @@ public:
 
   /**
    * @brief Wrapper to start thread to write out to wav file
+   * @note This will start a thread that runs until enable_wav_file_write == false
   */
   int start_wav_write_task();
 };

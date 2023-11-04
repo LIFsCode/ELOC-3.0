@@ -3,8 +3,7 @@
 
 #include "esp_log.h"
 #include "WAVFileWriter.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+
 
 static const char *TAG = "WAVFileWriter";
 
@@ -25,8 +24,9 @@ WAVFileWriter::WAVFileWriter(FILE *fp, int sample_rate, int buffer_time, int ch_
   buf_ready = 0;
   buf_select = 0;
   buf_count = 0;
-  buffer_size = sample_rate * buffer_time;
 
+  // Make buffer size a multiple of 512
+  buffer_size = int((sample_rate * buffer_time) / 512) * 512;
   ESP_LOGI(TAG, "buffer_size = %d", buffer_size);
 
   buffers[0] = (int16_t *)heap_caps_malloc(buffer_size * sizeof(int16_t), MALLOC_CAP_SPIRAM);
@@ -46,6 +46,10 @@ WAVFileWriter::WAVFileWriter(FILE *fp, int sample_rate, int buffer_time, int ch_
 
   buffers[0][0] = {0};
   buffers[1][0] = {0};
+
+  // TODO: Replace finish() with a task implementation & use 
+  xSemaphore_m_fp_access = xSemaphoreCreateBinary();
+  xSemaphoreGive(xSemaphore_m_fp_access);
 }
 
 WAVFileWriter::~WAVFileWriter(){
@@ -109,26 +113,37 @@ void WAVFileWriter::write()
 
 void WAVFileWriter::start_write_thread()
 {
-    while(enable_wav_file_write){
-      
-      if (this->buf_ready){
-        if (m_fp == nullptr){
-          ESP_LOGE(TAG, "enable_wav_file_write enabled & file pointer == nullptr");
-        }
-        else{
-          this->write();
-        }
-      }
-      else
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
+    while(1){
 
-    vTaskDelete(NULL);
+        xSemaphoreTake(xSemaphore_m_fp_access, (portTickType)10);
+
+          if(enable_wav_file_write){
+            if (this->buf_ready){
+              if (m_fp == NULL){
+                ESP_LOGE(TAG, "enable_wav_file_write enabled & file pointer == nullptr");
+              }
+              else{
+                this->write();
+              }
+            }
+            else{
+              vTaskDelay(pdMS_TO_TICKS(100));
+            }
+          }
+          else{
+            vTaskDelete(NULL);
+          }
+
+        xSemaphoreGive(xSemaphore_m_fp_access);
+    }
 
 }
 
 bool WAVFileWriter::finish()
 {
+
+  xSemaphoreTake(xSemaphore_m_fp_access, (portTickType)10);
+
   // Have to consider the case where file has reached its  
   // max size & other buffer is being filled
   ESP_LOGI(TAG, "Finishing wav file size: %d", m_file_size);
@@ -142,6 +157,8 @@ bool WAVFileWriter::finish()
   m_fp = NULL;
 
   // Don't swap buffers?? Could be filling
+
+  xSemaphoreGive(xSemaphore_m_fp_access);
 
   return true;
 }
@@ -165,7 +182,7 @@ void WAVFileWriter::start_wav_writer_wrapper(void * _this){
 
 int WAVFileWriter::start_wav_write_task(){
 
-  int ret = xTaskCreate(this->start_wav_writer_wrapper, "Wav file writer", 1024, this, 8, NULL);
+  int ret = xTaskCreate(this->start_wav_writer_wrapper, "Wav file writer", 1024 * 2, this, 8, NULL);
 
   return ret;
 }

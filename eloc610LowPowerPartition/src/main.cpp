@@ -1377,8 +1377,6 @@ void app_main(void)
             // Stop thread that is writing out to wav file
             writer->set_enable_wav_file_write(false);
 
-            // TODO: delete thread
-
             //input->deregister_wavFileWriter();
             writer->finish();
             delete writer;

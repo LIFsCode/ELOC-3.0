@@ -93,8 +93,6 @@ ESP32Time timeObject;
 //WebServer server(80);
 //bool updateFinished=false;
 bool gWillUpdate=false;
-float gFreeSpaceGB=0.0;
-uint32_t  gFreeSpaceKB=0;
 
 //String gTimeDifferenceCode; //see getTimeDifferenceCode() below
 
@@ -617,7 +615,6 @@ void record(I2SSampler *input) {
 
 
 bool mountSDCard() {
-    gMountedSDCard=false;
     #ifdef USE_SPI_VERSION
           ESP_LOGI(TAG, "TRYING to mount SDCArd, SPI ");
           theSDCardObject = new SDCard("/sdcard",PIN_NUM_MISO, PIN_NUM_MOSI, PIN_NUM_CLK, PIN_NUM_CS);
@@ -627,37 +624,20 @@ bool mountSDCard() {
 
         ESP_LOGI(TAG, "TRYING to mount SDCArd, SDIO ");
         theSDCardObject = new SDCardSDIO("/sdcard");
-        if (gMountedSDCard) {
+        if (theSDCardObject->isMounted()) {
             ESP_LOGI(TAG, "SD card mounted ");
             const char* ELOC_FOLDER = "/sdcard/eloc";
             if (!ffsutil::folderExists(ELOC_FOLDER)) {
                 ESP_LOGI(TAG, "%s does not exist, creating empty folder", ELOC_FOLDER);
                 mkdir(ELOC_FOLDER, 0777);
             }
+            float freeSpace = theSDCardObject->freeSpaceGB();
+            float totalSpace = theSDCardObject->getCapacityMB()/1024;
+            ESP_LOGI(TAG, "SD card %f / %f GB free", freeSpace, totalSpace);
         }
     #endif
+    gMountedSDCard = theSDCardObject->isMounted();
     return gMountedSDCard;
-}
-
-void freeSpace() {
-
-    FATFS *fs;
-    uint32_t fre_clust, fre_sect, tot_sect;
-    FRESULT res;
-    /* Get volume information and free clusters of drive 0 */
-    res = f_getfree("0:", &fre_clust, &fs);
-    /* Get total sectors and free sectors */
-    tot_sect = (fs->n_fatent - 2) * fs->csize;
-    fre_sect = fre_clust * fs->csize;
-
-    /* Print the free space (assuming 512 bytes/sector) */
-    printf("%10u KiB total drive space.\n%10u KiB available.\n", tot_sect / 2, fre_sect / 2);
-
-    gFreeSpaceGB = float((float)fre_sect / 1048576.0 / 2.0);
-    printf("\n %2.1f GB free\n", gFreeSpaceGB);
-
-    gFreeSpaceKB = fre_sect / 2;
-    printf("\n %u KB free\n", gFreeSpaceKB);
 }
 
 esp_err_t checkSDCard() {
@@ -669,12 +649,12 @@ esp_err_t checkSDCard() {
         }
     }
     // getupdated free space
-    freeSpace();
-    if ((gFreeSpaceGB > 0.0) && (gFreeSpaceGB < 0.5)) {
+    float freeSpaceGB = theSDCardObject->freeSpaceGB();
+    if ((freeSpaceGB > 0.0) && (freeSpaceGB < 0.5)) {
         //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
         //  btwrite("SD Card full. Cannot record");
         //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
-        ESP_LOGE(TAG, "SD card is full, Free space %.3f GB", gFreeSpaceGB);
+        ESP_LOGE(TAG, "SD card is full, Free space %.3f GB", freeSpaceGB);
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
@@ -701,7 +681,7 @@ void saveStatusToSD() {
 
     // sendstring=sendstring+   "Voltage Offset:  " +String(gVoltageOffset)                  + "\n" ;
     sendstring = sendstring + "Mic Type:  "         + getMicInfo().MicType + "\n";
-    sendstring = sendstring + "SD Card Free GB:   " + String(gFreeSpaceGB) + "\n";
+    sendstring = sendstring + "SD Card Free GB:   " + String(theSDCardObject->freeSpaceGB()) + "\n";
     sendstring = sendstring + "Mic Gain:  "         + String(getMicInfo().MicBitShift) + "\n";
     sendstring = sendstring + "GPS Location:  "     + getDeviceInfo().locationCode + "\n";
     sendstring = sendstring + "GPS Accuracy:  "     + getDeviceInfo().locationAccuracy + " m\n";
@@ -823,7 +803,6 @@ void app_main(void) {
         // return;
     }
     mountSDCard();
-    freeSpace();
 
     // print some file system info
      ESP_LOGI(TAG, "File system loaded: ");

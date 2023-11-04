@@ -123,16 +123,12 @@ void btwrite(const String& theString) {
     }
 }
 
-//BUGME: place this somewhere else
-void freeSpace();
-
 //BUGME: global status
 extern bool gRecording;
 extern int64_t gTotalUPTimeSinceReboot;  //esp_timer_get_time returns 64-bit time since startup, in microseconds.
 extern int64_t gTotalRecordTimeSinceReboot;
 extern int64_t gSessionRecordTime;
 extern String gSessionIdentifier;
-extern float gFreeSpaceGB;
 extern ESP32Time timeObject;
 
 //BUGME: global constant from config.h
@@ -220,8 +216,6 @@ void wait_for_bt_command() {
         if (!sentSettings) {
             vTaskDelay(pdMS_TO_TICKS(200));
             sendSettings();
-            vTaskDelay(pdMS_TO_TICKS(200));
-            freeSpace();
             sentSettings = true;
         }
         // read data and check if command was entered

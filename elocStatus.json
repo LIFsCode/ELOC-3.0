@@ -1,19 +1,21 @@
 {
   "battery": {
-    "type": "no Battery",
+    "type": "BAT_LiFePo Battery",
     "state": "Full",
-    "SoC[%]": 0,
-    "voltage[V]": 0.186493337
+    "SoC[%]": 95,
+    "voltage[V]": 3.34
   },
   "session": {
     "identifier": "",
-    "recordingState": "0",
+    "recordingState": 0,
     "recordingTime[h]": "0.00"
   },
   "device": {
     "firmware": "ELOC_V0.1",
-    "timeStamp": "0.01",
-    "totalRecordingTime[h]": "0.00",
-    "SdCardFreeSpace[GB]": "704.55"
+    "timeStamp": 0.01,
+    "totalRecordingTime[h]": 0.00,
+	"SdCardSize[GB]": 1.83,
+    "SdCardFreeSpace[GB]": 1.74,
+    "SdCardFreeSpace[%]": 94.86
   }
 }

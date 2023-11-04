@@ -33,6 +33,7 @@
 
 #include "ESP32Time.h"
 
+#include "SDCardSDIO.h" 
 #include "CmdResponse.hpp"
 #include "ElocConfig.hpp"
 #include "Battery.hpp"
@@ -49,8 +50,8 @@ extern int64_t gTotalUPTimeSinceReboot;  //esp_timer_get_time returns 64-bit tim
 extern int64_t gTotalRecordTimeSinceReboot;
 extern int64_t gSessionRecordTime;
 extern String gSessionIdentifier;
-extern float gFreeSpaceGB;
 extern ESP32Time timeObject;
+extern SDCardSDIO *theSDCardObject;
 
 //BUGME: global constant from config.h
 extern String gFirmwareVersion;
@@ -68,14 +69,23 @@ void printStatus(String& buf) {
 
     JsonObject session = doc.createNestedObject("session");
     session["identifier"]                = gSessionIdentifier;
-    session["recordingState"]            = gRecording;
+    session["recordingState"]            = (int)gRecording;
     session["recordingTime[h]"]          = (float)gSessionRecordTime / 1000 / 1000 / 60 / 60;
     
     JsonObject device = doc.createNestedObject("device");
     device["firmware"]                   = gFirmwareVersion;
     device["timeStamp"]                  = (float)esp_timer_get_time() / 1000 / 1000 / 60 / 60;
     device["totalRecordingTime[h]"]      = ((float)gTotalRecordTimeSinceReboot + gSessionRecordTime) / 1000 / 1000 / 60 / 60;
-    device["SdCardFreeSpace[GB]"]        = round(gFreeSpaceGB,2);
+
+    float sdCardSizeGB = 0;
+    float sdCardFreeSpaceGB = 0;
+    if (theSDCardObject && theSDCardObject->isMounted()) {
+        sdCardSizeGB = theSDCardObject->getCapacityMB()/1024;
+        sdCardFreeSpaceGB = theSDCardObject->freeSpaceGB();
+    }
+    device["SdCardSize[GB]"]             = round(sdCardSizeGB,2);
+    device["SdCardFreeSpace[GB]"]        = round(sdCardFreeSpaceGB,2);
+    device["SdCardFreeSpace[%]"]         = round(sdCardFreeSpaceGB/sdCardSizeGB*100.0,2);
 
     if (serializeJsonPretty(doc, buf) == 0) {
         ESP_LOGE(TAG, "Failed serialize JSON config!");

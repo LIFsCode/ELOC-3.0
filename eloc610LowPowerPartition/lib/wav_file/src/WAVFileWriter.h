@@ -1,3 +1,6 @@
+#ifndef __WAVFILEWRITER_H__
+#define __WAVFILEWRITER_H__
+
 #pragma once
 
 #include <stdio.h>
@@ -5,18 +8,16 @@
 #include "WAVFile.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/semphr.h"
 class WAVFileWriter
 {
 private:
   u_int32_t m_file_size;              // Size of wav file in bytes
-  FILE *m_fp = NULL;                  // pointer to wav file
+  FILE *m_fp = nullptr;               // pointer to wav file
   wav_header_t m_header;              // struct of wav header
   int m_sample_rate = 16000;          // I2S sample rate, reasonable default
   bool enable_wav_file_write = true;  // Continue to write to wav file while true
+  int secondsPerFile = 60;            // Seconds per file to write
 
-  SemaphoreHandle_t xSemaphore_m_fp_access;       // Semaphore to protect file writes & closure
-  
   /* TODO: check if it is better to have this functions as member of wav_header_t *
     * however this leave wav_header_t as non POD struct.  */
   void setSample_rate (int sample_rate);
@@ -52,12 +53,25 @@ public:
 
   /**
    * @brief Construct a new WAVFileWriter object
-   * @param fp file pointer to write to (already created)
    * @param sample_rate I2S sample rate
    * @param buffer_time Buffer size required (seconds) 
    * @param ch_count number of channels
    */
-  WAVFileWriter(FILE *fp, int sample_rate, int buffer_time, int ch_count = 1);
+  WAVFileWriter(int sample_rate, int buffer_time, int ch_count = 1);
+
+  /**
+   * @brief Register a file to write to & write header
+   * @param fp file pointer to write to (already created)
+   * @return true success
+   */
+  bool set_file_handle(FILE *fp);
+
+  /**
+   * @brief Check if file handle is set
+   * @note m_fp is a FILE struct
+   * @return true if file handle is set
+   */
+  bool is_file_handle_set() { return m_fp != nullptr; }
 
   /**
    * @brief Destroy the WAVFileWriter object
@@ -132,6 +146,10 @@ public:
   /**
    * @brief Wrapper to start thread to write out to wav file
    * @note This will start a thread that runs until enable_wav_file_write == false
+   * @param secondsPerFile seconds per file to write
   */
-  int start_wav_write_task();
+  int start_wav_write_task(int secondsPerFile);
 };
+
+
+#endif // __WAVFILEWRITER_H__

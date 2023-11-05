@@ -1,5 +1,3 @@
-#ifndef __WAVFILEWRITER_H__
-#define __WAVFILEWRITER_H__
 
 #include "esp_log.h"
 #include "WAVFileWriter.h"
@@ -7,19 +5,16 @@
 
 static const char *TAG = "WAVFileWriter";
 
-WAVFileWriter::WAVFileWriter(FILE *fp, int sample_rate, int buffer_time, int ch_count /*=1*/)
+WAVFileWriter::WAVFileWriter(int sample_rate, int buffer_time, int ch_count /*=1*/)
 {
   ESP_LOGV(TAG, "Func: %s", __func__);
   
-  m_fp = fp;
+  m_fp = nullptr;
   m_sample_rate = sample_rate;
 
   setChannelCount(ch_count);
   setSample_rate(sample_rate);
   m_header.sample_rate = sample_rate;
-  // write out the header - we'll fill in some of the blanks later
-  fwrite(&m_header, sizeof(wav_header_t), 1, m_fp);
-  m_file_size = sizeof(wav_header_t);
   
   buf_ready = 0;
   buf_select = 0;
@@ -46,16 +41,30 @@ WAVFileWriter::WAVFileWriter(FILE *fp, int sample_rate, int buffer_time, int ch_
 
   buffers[0][0] = {0};
   buffers[1][0] = {0};
+}
 
-  // TODO: Replace finish() with a task implementation & use 
-  xSemaphore_m_fp_access = xSemaphoreCreateBinary();
-  xSemaphoreGive(xSemaphore_m_fp_access);
+bool WAVFileWriter::set_file_handle(FILE *fp){
+  m_fp = fp;
+
+  if(m_fp == nullptr){
+    ESP_LOGE(TAG, "File pointer is NULL");
+    return false;
+  }
+
+  // write out the header - we'll fill in some of the blanks later
+  auto ret = fwrite(&m_header, sizeof(wav_header_t), 1, m_fp);
+  m_file_size = sizeof(wav_header_t);
+
+  if (ret == 0)
+    return false;
+  else
+    return true;
 }
 
 WAVFileWriter::~WAVFileWriter(){
   ESP_LOGV(TAG, "Func: %s", __func__);
 
-  if (m_fp != NULL)
+  if (m_fp != nullptr)
   {
       fclose(m_fp);
   }
@@ -95,7 +104,7 @@ void WAVFileWriter::write()
 {
   auto buffer_inactive = buf_select ? 0 : 1;
     
-  if (m_fp == NULL){
+  if (m_fp == nullptr){
     ESP_LOGE(TAG, "File pointer is NULL");
     return;
   }
@@ -113,37 +122,32 @@ void WAVFileWriter::write()
 
 void WAVFileWriter::start_write_thread()
 {
-    while(1){
+    while(enable_wav_file_write){
+      
+      if (this->buf_ready){
+        if (m_fp == nullptr){
+          ESP_LOGE(TAG, "enable_wav_file_write enabled & file pointer == nullptr");
+        }
+        else{
+          this->write();
+        }
 
-        xSemaphoreTake(xSemaphore_m_fp_access, (portTickType)10);
-
-          if(enable_wav_file_write){
-            if (this->buf_ready){
-              if (m_fp == NULL){
-                ESP_LOGE(TAG, "enable_wav_file_write enabled & file pointer == nullptr");
-              }
-              else{
-                this->write();
-              }
-            }
-            else{
-              vTaskDelay(pdMS_TO_TICKS(100));
-            }
-          }
-          else{
-            vTaskDelete(NULL);
-          }
-
-        xSemaphoreGive(xSemaphore_m_fp_access);
+        if (m_file_size >= (m_sample_rate * secondsPerFile * sizeof(int16_t))){
+          // Won't be saving to this file anymore..
+          enable_wav_file_write = false;
+          this->finish();
+        }
+      }
+      else
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
+
+    vTaskDelete(NULL);
 
 }
 
 bool WAVFileWriter::finish()
 {
-
-  xSemaphoreTake(xSemaphore_m_fp_access, (portTickType)10);
-
   // Have to consider the case where file has reached its  
   // max size & other buffer is being filled
   ESP_LOGI(TAG, "Finishing wav file size: %d", m_file_size);
@@ -152,13 +156,12 @@ bool WAVFileWriter::finish()
   m_header.wav_size = m_file_size - 8;
   fseek(m_fp, 0, SEEK_SET);
   fwrite(&m_header, sizeof(wav_header_t), 1, m_fp);
+  fclose(m_fp);
 
   m_file_size = 0;
-  m_fp = NULL;
+  m_fp = nullptr;
 
   // Don't swap buffers?? Could be filling
-
-  xSemaphoreGive(xSemaphore_m_fp_access);
 
   return true;
 }
@@ -180,11 +183,12 @@ void WAVFileWriter::start_wav_writer_wrapper(void * _this){
 
 }
 
-int WAVFileWriter::start_wav_write_task(){
+int WAVFileWriter::start_wav_write_task(int secondsPerFile){
+
+  this->secondsPerFile = secondsPerFile;
 
   int ret = xTaskCreate(this->start_wav_writer_wrapper, "Wav file writer", 1024 * 2, this, 8, NULL);
 
   return ret;
 }
 
-#endif // __WAVFILEWRITER_H__

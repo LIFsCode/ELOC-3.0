@@ -118,8 +118,8 @@ uint32_t gFreeSpaceKB = 0;
 #endif
 
 I2SMEMSSampler *input = nullptr;
-WAVFileWriter *writer = nullptr;
-QueueHandle_t rec_req_evt_queue = NULL;
+WAVFileWriter *wav_writer = nullptr;
+QueueHandle_t rec_req_evt_queue = nullptr;
 
 void writeSettings(String settings);
 void doDeepSleep();
@@ -418,7 +418,7 @@ bool createSessionFolder()
     ESP_LOGI(TAG, "Starting session with this config:\n: %s", cfg.c_str());
     fname += "/" + gSessionIdentifier + ".config";
     FILE *f = fopen(fname.c_str(), "w+");
-    if (f == NULL)
+    if (f == nullptr)
     {
         ESP_LOGE(TAG, "Failed to open config file for storage %s!", fname.c_str());
         return false;
@@ -808,8 +808,8 @@ static bool microphone_inference_record(void)
   while (inference.buf_ready == 0)
   {
     // NOTE: Trying to write audio out here seems to leads to poor audio performance?
-    // if(writer->buf_ready == 1){
-    //   writer->write();
+    // if(wav_writer->buf_ready == 1){
+    //   wav_writer->write();
     // }
     // else
     // {
@@ -1220,8 +1220,17 @@ void app_main(void)
     // Zero DMA buffer, prevents popping sound on start
     input->zero_dma_buffer(I2S_DEFAULT_PORT);              
 
+
+    // create a new wave file wav_writer & make sure sample rate is up to date
+    wav_writer = new WAVFileWriter((int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 2, NUMBER_OF_CHANNELS);
+    // Block until properly registered otherwise will get error later
+    while (input->register_wavFileWriter(wav_writer) == false){
+        ESP_LOGI(TAG, "Waiting for WAVFileWriter to register");
+        delay(5);
+    }
+
     // wav file
-    FILE *fp=NULL;
+    FILE *fp = nullptr;
     char file_name[100];
     //Populate gSessionIdentifier for wav filename
     createSessionFolder();
@@ -1254,40 +1263,34 @@ void app_main(void)
         //     }
         // }
 
+
         // Start a new recording?
-        if (fp == NULL && gRecording == true && checkSDCard() == ESP_OK)
-        {
+        if (wav_writer->is_file_handle_set() == false && gRecording == true && checkSDCard() == ESP_OK)
+        {   
+            /**
+             * @note The file pointer is set to nullptr in the wav_writer class
+             *       but this is not reflected in the fp variable here
+             *       hence the need to use 'is_file_handle_set()' getter
+             */
+            fp = nullptr;
+
             createFilename(file_name, sizeof(file_name));
             fp = fopen(file_name, "wb");
 
-            if (fp == NULL)
+            if (fp == nullptr)
             {
                 ESP_LOGE(TAG, "Failed to open file for writing");
                 return;
             }
             else
             {
-                // create a new wave file writer & make sure sample rate is up to date
-                //writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)));
-                writer = new WAVFileWriter(fp, (int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 2, NUMBER_OF_CHANNELS);
-            }
-
-            if (writer == nullptr)
-            {
-                ESP_LOGE(TAG, "Failed to create WAVFileWriter");
-            }
-            else
-            {
-                // Block until properly registered
-                // Otherwise will get error later
-                while (input->register_wavFileWriter(writer) == false){
-                ESP_LOGI(TAG, "Waiting for WAVFileWriter to register");
-                delay(5);
+                if (wav_writer->set_file_handle(fp) == false){
+                    ESP_LOGE(TAG, "Failed to set file handle");
+                    return;
                 }
-                
-                writer->set_enable_wav_file_write(true);
-                // Start thread to continously write to wav file
-                writer->start_wav_write_task();
+                wav_writer->set_enable_wav_file_write(true);
+                // Start thread to continously write to wav file & when sufficeint data is collected finish the file
+                wav_writer->start_wav_write_task(getConfig().secondsPerFile);
             }
         }
 
@@ -1365,28 +1368,6 @@ void app_main(void)
 
 #endif // EDGE_IMPULSE_ENABLED
 
-        /* if (writer != nullptr && writer->check_if_ready_to_save() == true)
-        {
-            writer->write();
-        } */
-
-        if (writer != nullptr && writer->get_file_size_sec() >= getConfig().secondsPerFile)
-        {
-            ESP_LOGI(TAG, "Finishing SD writing\n");
-
-            // Stop thread that is writing out to wav file
-            writer->set_enable_wav_file_write(false);
-
-            //input->deregister_wavFileWriter();
-            writer->finish();
-            delete writer;
-            
-            fclose(fp);
-            fp = NULL;
-            writer = nullptr;
-
-        }
-
         // Don't forget the watchdog
         delay(1);
 
@@ -1399,10 +1380,10 @@ void app_main(void)
         input = nullptr;
     }
     
-    if (writer != nullptr){
-        writer->finish();
-        delete writer;
-        writer = nullptr;
+    if (wav_writer != nullptr){
+        wav_writer->finish();
+        delete wav_writer;
+        wav_writer = nullptr;
     }
 
     if (sd_card != nullptr){

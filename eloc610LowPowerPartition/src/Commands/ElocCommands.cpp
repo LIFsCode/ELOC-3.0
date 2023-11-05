@@ -138,8 +138,6 @@ void cmd_DelConfig(CmdParser *cmdParser) {
 }
 
 
-static String gSyncPhoneOrGoogle; //will be either G or P (google or phone).
-static long gLastSystemTimeUpdate; // local system time of last time update PLUS minutes since last phone update 
 long getTimeFromTimeObjectMS() {
     return(timeObject.getEpoch()*1000L+timeObject.getMillis());
 

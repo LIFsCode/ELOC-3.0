@@ -64,7 +64,7 @@ bool setSecondsPerFile(int secondsPerFile);
 typedef struct {
     String fileHeader;
     String locationCode;
-    double locationAccuracy;
+    int locationAccuracy;
     String nodeName;
 }elocDeviceInfo_T;
 const elocDeviceInfo_T& getDeviceInfo();

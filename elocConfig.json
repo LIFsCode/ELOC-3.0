@@ -2,7 +2,7 @@
   "device": {
     "fileHeader": "not_set",
     "locationCode": "unknown",
-    "locationAccuracy": "99",
+    "locationAccuracy": 99,
     "nodeName": "ELOC_NONAME"
   },
   "config": {

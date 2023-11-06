@@ -14,6 +14,12 @@
 #define NUMBER_OF_CHANNELS 1 
 #define TIMEZONE_OFFSET    7
 
+/**
+ * @note A value threshold of 0.8 is used to determine if target sound has been detected
+ * @todo Make this configurable via Bluetooth?
+ */
+#define AI_RESULT_THRESHOLD 0.8
+
 #ifdef USE_SPI_VERSION
         #define VERSION "eloc610SPILowPower06Apr2023a"
      
@@ -63,8 +69,7 @@
         #define I2S_DEFAULT_SAMPLE_RATE 16000
 
         /**
-         * The following are for the ELOC 3.2 board
-         * 
+         * Start ELOC 3.2 board defintions
          */
 
         // Uses TDK/ INVENSENSE ICS-43434 mic
@@ -78,6 +83,10 @@
 
         #define I2S_DEFAULT_BIT_SHIFT 11                // Default bit shift for this mic
         #define I2S_DEFAULT_PORT I2S_NUM_0              // Default port for this mic
+
+        /**
+         * End ELOC 3.2 board definitions
+         */
 
         // sdcard (unused, as SDIO is fixed to its Pins)
         #define PIN_NUM_MISO GPIO_NUM_2
@@ -100,7 +109,6 @@
 
         /* Buzzer Config */
         #define BUZZER_PIN GPIO_NUM_13
-
 
 #endif
 

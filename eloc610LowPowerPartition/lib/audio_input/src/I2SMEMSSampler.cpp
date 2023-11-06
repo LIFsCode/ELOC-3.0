@@ -120,8 +120,7 @@ int I2SMEMSSampler::read(int count)
     bool inference_buffer_overrun = false;
     
     // Allocate a buffer of BYTES sufficient for sample size
-    int32_t *raw_samples = (int32_t *)malloc(sizeof(int32_t) * count);
-    //int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * count), MALLOC_CAP_SPIRAM);
+    int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * count), MALLOC_CAP_SPIRAM);
 
     if (raw_samples == NULL)
     {

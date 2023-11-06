@@ -10,6 +10,9 @@
 #include "freertos/task.h"
 class WAVFileWriter
 {
+  public:
+  enum class Mode { disabled = 0, single = 1, continuous = 2 }; 
+
 private:
   u_int32_t m_file_size;              // Size of wav file in bytes
   FILE *m_fp = nullptr;               // pointer to wav file
@@ -17,10 +20,15 @@ private:
   int m_sample_rate = 16000;          // I2S sample rate, reasonable default
   bool enable_wav_file_write = true;  // Continue to write to wav file while true
   int secondsPerFile = 60;            // Seconds per file to write
+  Mode mode = Mode::disabled;         // Mode of operation
 
-  /* TODO: check if it is better to have this functions as member of wav_header_t *
-    * however this leave wav_header_t as non POD struct.  */
+  /**
+   * @deprecated ??
+   */
   void setSample_rate (int sample_rate);
+   /**
+   * @deprecated ??
+   */
   void setChannelCount(int channel_count);
 
   /**
@@ -31,24 +39,28 @@ private:
   void start_write_thread();
 
 public:
+
   /**
    * Use a double buffer system
    * Active buffer -> fill with data
    * Inactive buffer -> write to file
-   * These are public to alow access from I2SMEMSSampler (or make friend class?)
+   * These are public to alow access from I2SMEMSSampler 
+   * TODO: Consider changing to private & make I2MEMSSampler a friend class?
    * @param buf_select which buffer is active?
    * @param buf_count index of next element to write to
-   * @param buffers pointer array to 2 buffers, 1 active, 1 inactive
+   * @param buf_ready is the inactive buffer ready to write out to SD card?
    */
   size_t buf_select = 0;
+  size_t buf_count;
   int buf_ready = 0;
 
   /**
+   * @param buffer_size size of each buffer. Determined by sample rate & buffer_time required
+   * @param buffers pointer array to 2 buffers, 1 active, 1 inactive
    * @note In order to optimize write times the buffer size
    *       should be a multiple of 512 bytes (SD card block size)
    */
   size_t buffer_size = (int(16000/512)) * 512; 
-  size_t buf_count;
   signed short *buffers[2];
 
   /**
@@ -72,6 +84,18 @@ public:
    * @return true if file handle is set
    */
   bool is_file_handle_set() { return m_fp != nullptr; }
+
+/**
+ * @brief Get the mode object
+ * @return enum Mode 
+ */
+  enum class Mode get_mode() { return mode; }
+
+  /**
+   * @brief Set the mode object
+   * @param value enum Mode
+   */
+  void set_mode(enum class Mode value) { mode = value; }
 
   /**
    * @brief Destroy the WAVFileWriter object
@@ -112,7 +136,7 @@ public:
   /**
    * @brief Called when a buffer is full
    * @note This will swap the buffers and set buf_ready
-   * 
+   * @deprecated Not required?
    * @return true success
    * @return false 
    */
@@ -120,7 +144,7 @@ public:
 
   /**
    * @brief Swap buffers
-   * @deprecated Note required? Implemented directly in I2SMEMSSampler::read()
+   * @deprecated Not required? Implemented directly in I2SMEMSSampler::read()
    */
   void swap_buffers();
 
@@ -150,6 +174,5 @@ public:
   */
   int start_wav_write_task(int secondsPerFile);
 };
-
 
 #endif // __WAVFILEWRITER_H__

@@ -234,7 +234,7 @@ int I2SMEMSSampler::read(int count)
     }
 
     if (writer_buffer_overrun == true){
-        ESP_LOGE(TAG, "writer buffer overrun");
+        ESP_LOGE(TAG, "wav buffer overrun");
     }
     
     if (inference_buffer_overrun == true){

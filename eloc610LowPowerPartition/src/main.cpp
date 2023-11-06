@@ -1279,7 +1279,7 @@ void app_main(void)
     // e.g. SD card full or I2S error?
 
     // DEBUG
-    wav_writer->set_mode(WAVFileWriter::Mode::single);
+    wav_writer->set_mode(WAVFileWriter::Mode::continuous);
 
     while (true)
     {

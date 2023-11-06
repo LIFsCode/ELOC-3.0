@@ -69,8 +69,17 @@
 static const char *TAG = "main";
 
 bool gMountedSDCard = false;
-bool gRecording = true;         // TODO: rename to wav_recording ??
-bool ai_run_enable = true;      // Should inference be run on sound samples? 
+
+/**  
+ *  @deprecated ??
+*/ 
+bool gRecording = true;
+
+/**
+ * @brief Should inference be run on sound samples? 
+ * @todo Set from Bluetooth / config file
+ */
+bool ai_run_enable = true;      
 
 // int32_t *graw_samples;
 
@@ -80,9 +89,6 @@ bool ai_run_enable = true;      // Should inference be run on sound samples?
 // int gBufferCount = I2S_DMA_BUFFER_COUNT; // so 6*4000 = 24k buf len
 // always keep these in same order
 
-////// these are the things you can change for now.
-
-// uint32_t gRealSampleRate;
 uint64_t gStartupTime; // gets read in at startup to set system time.
 
 char gSessionFolder[65];
@@ -90,6 +96,10 @@ char gSessionFolder[65];
 // timing
 int64_t gTotalUPTimeSinceReboot = esp_timer_get_time(); // esp_timer_get_time returns 64-bit time since startup, in microseconds.
 int64_t gTotalRecordTimeSinceReboot = 0;
+
+/**  
+ *  @deprecated ??
+*/ 
 int64_t gSessionRecordTime = 0;
 
 int gMinutesWaitUntilDeepSleep = 60; // change to 1 or 2 for testing
@@ -429,7 +439,8 @@ bool createSessionFolder()
 }
 
 /**
- * @brief Create filename on SD card
+ * @brief Create empty wav file on SD card (for use by wav writer)
+ * @todo Move to WAVFileWriter class
 */
 bool createFilename(char *fname, size_t size)
 {
@@ -519,21 +530,17 @@ void freeSpace()
 {
     FATFS *fs;
     uint32_t fre_clust, fre_sect, tot_sect;
-    FRESULT res;
     /* Get volume information and free clusters of drive 0 */
-    res = f_getfree("0:", &fre_clust, &fs);
+    auto res = f_getfree("0:", &fre_clust, &fs);
     /* Get total sectors and free sectors */
     tot_sect = (fs->n_fatent - 2) * fs->csize;
     fre_sect = fre_clust * fs->csize;
-
-    /* Print the free space (assuming 512 bytes/sector) */
-    printf("%10u KiB total drive space.\n%10u KiB available.\n", tot_sect / 2, fre_sect / 2);
-
     gFreeSpaceGB = float((float)fre_sect / 1048576.0 / 2.0);
-    printf("\n %2.1f GB free\n", gFreeSpaceGB);
-
     gFreeSpaceKB = fre_sect / 2;
-    printf("\n %u KB free\n", gFreeSpaceKB);
+    
+    /* Print the free space (assuming 512 bytes/sector) */
+    ESP_LOGI(TAG, "SD card total space: %10u KiB , %10u KiB available.", tot_sect / 2, fre_sect / 2);
+    ESP_LOGI(TAG, "SD card free space: %2.1f GB, %u KB", gFreeSpaceGB, gFreeSpaceKB);
 }
 
 /**
@@ -626,6 +633,37 @@ i2s_config_t getI2sConfig()
 
     ESP_LOGI(TAG, "Sample rate = %d", i2s_mic_Config.sample_rate);
     return i2s_mic_Config;
+}
+
+void start_sound_recording(FILE *fp){
+    /**
+     * @note The file pointer is set to nullptr in the wav_writer class
+     *       but this is not reflected in the fp variable here
+     *       hence the need to use 'is_file_handle_set()' getter
+     */
+    fp = nullptr;
+
+    char file_name[100];
+
+    createFilename(file_name, sizeof(file_name));
+    fp = fopen(file_name, "wb");
+
+    if (fp == nullptr)
+    {
+        ESP_LOGE(TAG, "Failed to open file for writing");
+        return;
+    }
+    else
+    {
+        if (wav_writer->set_file_handle(fp) == false){
+            ESP_LOGE(TAG, "Failed to set file handle");
+            return;
+        }
+        wav_writer->set_enable_wav_file_write(true);
+        // Start thread to continuously write to wav file & when sufficient data is collected finish the file
+        wav_writer->start_wav_write_task(getConfig().secondsPerFile);
+    }
+
 }
 
 #ifdef EDGE_IMPULSE_ENABLED
@@ -1229,9 +1267,9 @@ void app_main(void)
         delay(5);
     }
 
-    // wav file
+    // wav file pointer
+    // TODO: Move to wav_writer class
     FILE *fp = nullptr;
-    char file_name[100];
     //Populate gSessionIdentifier for wav filename
     createSessionFolder();
 
@@ -1239,6 +1277,9 @@ void app_main(void)
 
     // TODO: Define conditions on which device shuld exit this while() loop
     // e.g. SD card full or I2S error?
+
+    // DEBUG
+    wav_writer->set_mode(WAVFileWriter::Mode::single);
 
     while (true)
     {
@@ -1265,33 +1306,11 @@ void app_main(void)
 
 
         // Start a new recording?
-        if (wav_writer->is_file_handle_set() == false && gRecording == true && checkSDCard() == ESP_OK)
+        if (wav_writer->is_file_handle_set() == false && 
+            wav_writer->get_mode() == WAVFileWriter::Mode::continuous &&
+            checkSDCard() == ESP_OK)
         {   
-            /**
-             * @note The file pointer is set to nullptr in the wav_writer class
-             *       but this is not reflected in the fp variable here
-             *       hence the need to use 'is_file_handle_set()' getter
-             */
-            fp = nullptr;
-
-            createFilename(file_name, sizeof(file_name));
-            fp = fopen(file_name, "wb");
-
-            if (fp == nullptr)
-            {
-                ESP_LOGE(TAG, "Failed to open file for writing");
-                return;
-            }
-            else
-            {
-                if (wav_writer->set_file_handle(fp) == false){
-                    ESP_LOGE(TAG, "Failed to set file handle");
-                    return;
-                }
-                wav_writer->set_enable_wav_file_write(true);
-                // Start thread to continously write to wav file & when sufficeint data is collected finish the file
-                wav_writer->start_wav_write_task(getConfig().secondsPerFile);
-            }
+            start_sound_recording(fp);
         }
 
 #ifdef EDGE_IMPULSE_ENABLED
@@ -1349,6 +1368,19 @@ void app_main(void)
                     // Build string to save to inference results file
                     file_str += ", ";
                     file_str += result.classification[ix].value;
+
+                    if ((strcmp(result.classification[ix].label, "background") != 0) && 
+                        result.classification[ix].value > AI_RESULT_THRESHOLD)
+                    {
+                        // Start recording??
+                        if (wav_writer->is_file_handle_set() == false && 
+                            wav_writer->get_mode() == WAVFileWriter::Mode::single &&
+                            checkSDCard() == ESP_OK)
+                        {   
+                            start_sound_recording(fp);
+                        }
+
+                    }
                 }
 
                 file_str += "\n";
@@ -1357,7 +1389,7 @@ void app_main(void)
                 if (checkSDCard() == ESP_OK)
                 {
                     save_inference_result_SD(ei_results_filename, file_str);
-                }
+                }              
 
             #if EI_CLASSIFIER_HAS_ANOMALY == 1
                 ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);

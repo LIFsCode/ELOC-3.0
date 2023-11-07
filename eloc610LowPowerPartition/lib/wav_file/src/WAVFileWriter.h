@@ -89,13 +89,13 @@ public:
  * @brief Get the mode object
  * @return enum Mode 
  */
-  enum class Mode get_mode() { return mode; }
+  enum Mode get_mode() { return mode; }
 
   /**
    * @brief Set the mode object
    * @param value enum Mode
    */
-  void set_mode(enum class Mode value) { mode = value; }
+  void set_mode(enum Mode value) { mode = value; }
 
   /**
    * @brief Destroy the WAVFileWriter object

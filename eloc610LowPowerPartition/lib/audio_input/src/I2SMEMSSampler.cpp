@@ -142,8 +142,13 @@ int I2SMEMSSampler::read(int count)
     */
     auto skip_current = 1;
     
-    i2s_read(m_i2sPort, raw_samples, sizeof(int32_t) * count, &bytes_read, portMAX_DELAY);
-    
+    auto result = i2s_read(m_i2sPort, raw_samples, sizeof(int32_t) * count, &bytes_read, portMAX_DELAY);
+
+    if (result != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Error in I2S read : %d", result);
+    }
+
     // samples_read = dma_buf_len??
     // samples_read = number of 32 bit samples read = 1024
     // bytes_read = dma_buf_len * (bits_per_sample/8) = 4096
@@ -161,6 +166,11 @@ int I2SMEMSSampler::read(int count)
             ESP_LOGW(TAG, "Partial I2S read");
         }
 
+        float avg_raw_sample = 0;
+        float avg_shifted_sample = 0;
+        float avg_scaled_sample = 0;
+        float avg_processed_sample = 0;
+
         for (auto i = 0; i < samples_read; i++)
         {   
             // The ELOC 3.2 board uses Uses TDK/ INVENSENSE ICS-43434 mic
@@ -171,7 +181,12 @@ int I2SMEMSSampler::read(int count)
             // shift 8 - distortion
             // shift 14 - good but low volume, needs scaling of at least 5
             // shift 16 - very low volume, needs scaling of at least 10
-            int16_t processed_sample = ((raw_samples[i] >> mBitShift) * I2S_VOLUME_SCALING_FACTOR);
+
+            int32_t shifted_sample = ((raw_samples[i] >> 8));
+            int32_t scaled_sample = shifted_sample * I2S_VOLUME_SCALING_FACTOR;
+            int16_t processed_sample = scaled_sample;
+
+            // int16_t processed_sample = ((raw_samples[i] >> mBitShift) * I2S_VOLUME_SCALING_FACTOR);
 
             // Store into wav file buffer
             writer->buffers[writer->buf_select][writer->buf_count++] = processed_sample;
@@ -219,7 +234,27 @@ int I2SMEMSSampler::read(int count)
                 ESP_LOGV(TAG, "Not saving sample, skip_current = %d", skip_current);
                 skip_current++;
             }
+        
+            avg_raw_sample += raw_samples[i];
+            avg_processed_sample += processed_sample;
+            avg_shifted_sample += shifted_sample;
+            avg_scaled_sample += scaled_sample;
+
+        
         }
+
+        avg_raw_sample /= samples_read;
+        avg_shifted_sample /= samples_read;
+        avg_scaled_sample /= samples_read;
+        avg_processed_sample /= samples_read;
+        
+        if(0){
+            printf(">avg_raw_sample:%f\n", avg_raw_sample);
+            printf(">avg_shifted_sample:%f\n", avg_shifted_sample);
+            printf(">avg_scaled_sample:%f\n", avg_scaled_sample);
+            printf(">avg_processed_sample:%f\n", avg_processed_sample);
+        }
+
     }
 
     if(0){
@@ -233,11 +268,11 @@ int I2SMEMSSampler::read(int count)
     }
 
     if (writer_buffer_overrun == true){
-        ESP_LOGE(TAG, "wav buffer overrun");
+        ESP_LOGW(TAG, "wav buffer overrun");
     }
     
     if (inference_buffer_overrun == true){
-        ESP_LOGE(TAG, "inference buffer overrun");
+        ESP_LOGW(TAG, "inference buffer overrun");
     }
 
 

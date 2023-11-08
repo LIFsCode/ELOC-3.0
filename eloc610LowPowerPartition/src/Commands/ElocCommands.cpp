@@ -236,7 +236,7 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
     status += String(rec_req == REC_REQ_START);
     status += "}";
     ESP_LOGI(TAG, "%s Recording...", newMode);
-    xQueueSend(rec_req_evt_queue, &rec_req, NULL);
+    xQueueSend(rec_req_evt_queue, &rec_req, (TickType_t)0);
     resp.setResultSuccess(status);
 }
 

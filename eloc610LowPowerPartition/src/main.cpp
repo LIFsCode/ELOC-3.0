@@ -244,7 +244,7 @@ static  void IRAM_ATTR buttonISR(void *args) {
   //delay(5000);
   rec_req_t rec_req = (gRecording != RecState::IDLE) ? REC_REQ_STOP : REC_REQ_START;
   //ets_printf("button pressed");
-  xQueueSendFromISR(rec_req_evt_queue, &rec_req, NULL);
+  xQueueSendFromISR(rec_req_evt_queue, &rec_req, (TickType_t)0);
      
      //detachInterrupt(GPIO_BUTTON);
 

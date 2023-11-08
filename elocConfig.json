@@ -20,7 +20,6 @@
     "MicBitShift": 11,
     "MicSampleRate": 20000,
     "MicUseAPLL": true,
-    "MicUseTimingFix": true,
-    "MicPointingDirectionDegrees": "ns",
+    "MicUseTimingFix": true
   }
 }

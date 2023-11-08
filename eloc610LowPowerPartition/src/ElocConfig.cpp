@@ -45,8 +45,7 @@ static const micInfo_t C_MicInfo_Default {
     .MicBitShift=11,
     .MicSampleRate = I2S_DEFAULT_SAMPLE_RATE,
     .MicUseAPLL = true,
-    .MicUseTimingFix = true,
-    .MicPointingDirectionDegrees="ns"
+    .MicUseTimingFix = true
 };
 micInfo_t gMicInfo = C_MicInfo_Default;
 
@@ -76,27 +75,6 @@ static const elocConfig_T C_ElocConfig_Default {
 elocConfig_T gElocConfig = C_ElocConfig_Default;
 const elocConfig_T& getConfig() {
     return gElocConfig;
-}
-
-bool setSampleRate(int MicSampleRate) {
-    if (MicSampleRate <= 0) {
-        ESP_LOGE(TAG, "Invalid Sample rate %d! Ignoring setting\n", MicSampleRate);
-        return false;
-    }
-    //TODO: should we check for a max. sample rate?
-    gMicInfo.MicSampleRate = MicSampleRate;
-    return true;
-}
-bool setSecondsPerFile(int secondsPerFile) {
-    if (secondsPerFile <= 0) {
-        ESP_LOGE(TAG, "Invalid Seconds per File %d! Ignoring setting\n", secondsPerFile);
-        return false;
-    }
-    gElocConfig.secondsPerFile = secondsPerFile;
-    return true;
-}
-void setBluetoothOnOrOffDuringRecord(bool MicBluetoothOnOrOff) {
-    gElocConfig.bluetoothEnableDuringRecord = MicBluetoothOnOrOff;
 }
 
 static const elocDeviceInfo_T C_ElocDeviceInfo_Default {
@@ -141,7 +119,6 @@ void loadMicInfo(const JsonObject& micInfo) {
     gMicInfo.MicSampleRate               = micInfo["MicSampleRate"]               | C_MicInfo_Default.MicSampleRate;   
     gMicInfo.MicUseAPLL                  = micInfo["MicUseAPLL"]                  | C_MicInfo_Default.MicUseAPLL;             
     gMicInfo.MicUseTimingFix             = micInfo["MicUseTimingFix"]             | C_MicInfo_Default.MicUseTimingFix;
-    gMicInfo.MicPointingDirectionDegrees = micInfo["MicPointingDirectionDegrees"] | C_MicInfo_Default.MicPointingDirectionDegrees;
 }     
 
 bool readConfigFile(const char* filename) {
@@ -244,7 +221,6 @@ void buildConfigFile(JsonDocument& doc) {
     micInfo["MicSampleRate"]               = gMicInfo.MicSampleRate;
     micInfo["MicUseAPLL"]                  = gMicInfo.MicUseAPLL;
     micInfo["MicUseTimingFix"]             = gMicInfo.MicUseTimingFix;
-    micInfo["MicPointingDirectionDegrees"] = gMicInfo.MicPointingDirectionDegrees.c_str();
 }
 
 bool printConfig(String& buf) {

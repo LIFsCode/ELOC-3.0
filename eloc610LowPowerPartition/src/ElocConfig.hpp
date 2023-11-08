@@ -36,7 +36,6 @@ typedef struct {
     uint32_t MicSampleRate; // TODO: this should finally be moved to Mic Info for consistency
     bool     MicUseAPLL;
     bool     MicUseTimingFix;
-    String   MicPointingDirectionDegrees;
 }micInfo_t;
 
 const micInfo_t& getMicInfo();
@@ -56,9 +55,6 @@ typedef struct {
 }elocConfig_T;
 
 const elocConfig_T& getConfig();
-
-bool setSampleRate(int MicSampleRate);
-bool setSecondsPerFile(int secondsPerFile);
 
 /// @brief Holds all Device Meta data, such as Name, location, etc.
 typedef struct {

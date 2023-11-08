@@ -45,6 +45,7 @@
 #include "FirmwareUpdate.hpp"
 #include "ElocConfig.hpp"
 #include "ElocSystem.hpp"
+#include "ElocStatus.hpp"
 
 #include "Battery.hpp"
 
@@ -123,16 +124,10 @@ void btwrite(const String& theString) {
     }
 }
 
-//BUGME: global status
-extern bool gRecording;
-extern int64_t gTotalUPTimeSinceReboot;  //esp_timer_get_time returns 64-bit time since startup, in microseconds.
-extern int64_t gTotalRecordTimeSinceReboot;
-extern int64_t gSessionRecordTime;
-extern String gSessionIdentifier;
 extern ESP32Time timeObject;
 
 //BUGME: global constant from config.h
-extern String gFirmwareVersion;
+
 
 void sendSettings() {
 
@@ -199,7 +194,7 @@ void wait_for_bt_command() {
 
     String serialIN;
 
-    if (gRecording && !getConfig().bluetoothEnableDuringRecord) {
+    if ((gRecording != RecState::IDLE) && !getConfig().bluetoothEnableDuringRecord) {
         btwrite("recording");
         btwrite("");btwrite("");
         btwrite("ELOC will disconnect. USE button to stop recording.");

@@ -48,6 +48,7 @@
 #include "Battery.hpp"
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
+#include "ElocStatus.hpp"
 #include "Commands/BluetoothServer.hpp"
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
@@ -56,8 +57,6 @@ static const char *TAG = "main";
 
 
 bool gMountedSDCard=false;
-bool gRecording=false;
-
 
 int32_t *graw_samples;
 
@@ -75,19 +74,7 @@ uint64_t gStartupTime; //gets read in at startup to set tystem time.
 
 char gSessionFolder[65];
 
-//timing
-int64_t gTotalUPTimeSinceReboot=esp_timer_get_time();  //esp_timer_get_time returns 64-bit time since startup, in microseconds.
-int64_t gTotalRecordTimeSinceReboot=0;
-int64_t gSessionRecordTime=0;
-
 int gMinutesWaitUntilDeepSleep=60; //change to 1 or 2 for testing
-
-
-//session stuff
-String gSessionIdentifier="";
-
-//String gBluetoothMAC="";
-String gFirmwareVersion=VERSION;
 
 ESP32Time timeObject;
 //WebServer server(80);
@@ -255,7 +242,7 @@ static  void IRAM_ATTR buttonISR(void *args) {
   //return;
   //ESP_LOGI(TAG, "button pressed");
   //delay(5000);
-  rec_req_t rec_req = gRecording ? REC_REQ_STOP : REC_REQ_START;
+  rec_req_t rec_req = (gRecording != RecState::IDLE) ? REC_REQ_STOP : REC_REQ_START;
   //ets_printf("button pressed");
   xQueueSendFromISR(rec_req_evt_queue, &rec_req, NULL);
      
@@ -448,7 +435,7 @@ void doDeepSleep(){
 
 void record(I2SSampler *input) {
   
-  gRecording=true;
+  gRecording=RecState::RECORDING;
   char fname[100];
   
     input->start();
@@ -602,7 +589,7 @@ void record(I2SSampler *input) {
 
   ESP_LOGI(TAG, "Finished recording");
   //btwrite("Finished recording");
-   gRecording=false;
+   gRecording=RecState::IDLE;
    gSessionRecordTime=0;
  
    if (deepSleep) doDeepSleep();

@@ -36,6 +36,7 @@
 #include "SDCardSDIO.h" 
 #include "CmdResponse.hpp"
 #include "ElocConfig.hpp"
+#include "ElocStatus.hpp"
 #include "Battery.hpp"
 #include "config.h"
 #include "utils/macros.hpp"
@@ -45,18 +46,18 @@
 
 /********** BUGME: encapsulate ELOC status and make it threadsafe!!!*/ 
 //BUGME: global status
-extern bool gRecording;
-extern int64_t gTotalUPTimeSinceReboot;  //esp_timer_get_time returns 64-bit time since startup, in microseconds.
-extern int64_t gTotalRecordTimeSinceReboot;
-extern int64_t gSessionRecordTime;
-extern String gSessionIdentifier;
 extern ESP32Time timeObject;
 extern SDCardSDIO *theSDCardObject;
 
-//BUGME: global constant from config.h
-extern String gFirmwareVersion;
 namespace BtCommands {
 static const char* TAG = "BtCmds";
+
+//TODO: this can be moved to a shared header if it is to be used in other places for enum to JSON conversion
+template <typename T>
+void addEnum(JsonObject& object, T val) {
+    object["val"] = static_cast<int>(val);
+    object["state"] = toString(val);
+}
 
 void printStatus(String& buf) {
 
@@ -69,12 +70,13 @@ void printStatus(String& buf) {
 
     JsonObject session = doc.createNestedObject("session");
     session["identifier"]                = gSessionIdentifier;
-    session["recordingState"]            = (int)gRecording;
+    JsonObject recordingState = session.createNestedObject("recordingState");
+    addEnum(recordingState, gRecording);
     session["recordingTime[h]"]          = (float)gSessionRecordTime / 1000 / 1000 / 60 / 60;
     
     JsonObject device = doc.createNestedObject("device");
     device["firmware"]                   = gFirmwareVersion;
-    device["timeStamp"]                  = (float)esp_timer_get_time() / 1000 / 1000 / 60 / 60;
+    device["Uptime[h]"]                  = (float)esp_timer_get_time() / 1000 / 1000 / 60 / 60;
     device["totalRecordingTime[h]"]      = ((float)gTotalRecordTimeSinceReboot + gSessionRecordTime) / 1000 / 1000 / 60 / 60;
 
     float sdCardSizeGB = 0;
@@ -171,7 +173,7 @@ void cmd_SetTime(CmdParser *cmdParser) {
     long timeZone_offset = timeCfg["timezone"] | TIMEZONE_OFFSET;
     ESP_LOGI(TAG, "timestamp in from type %s Time Zone: %ld sec: %ld millisec: %ld", type, timeZone_offset, seconds, milliseconds);
     // TODO: why is this needed and what should it be used for?
-    const char* minutesSinceSync = "";//serialIN.substring(11, serialIN.indexOf("___"));
+    // const char* minutesSinceSync = "";//serialIN.substring(11, serialIN.indexOf("___"));
     
     timeObject.setTime(seconds + (timeZone_offset * 60L * 60L), milliseconds * 1000);
     // timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
@@ -206,7 +208,7 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
     rec_req_t rec_req;
     if (!mode) {
         // if no explicit mode is set, recording mode is toggled
-        rec_req = gRecording ? REC_REQ_STOP : REC_REQ_START;
+        rec_req = (gRecording != RecState::IDLE) ? REC_REQ_STOP : REC_REQ_START;
     }
     else {
         if (!strcasecmp(mode, "on")) {

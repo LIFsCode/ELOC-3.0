@@ -3,7 +3,8 @@
 #include <driver/adc.h>
 #include "lis3dh_types.h"
 
-
+#ifndef CONFIG_H_
+#define CONFIG_H_
 
 //#define USE_SPI_VERSION
 #define USE_SDIO_VERSION
@@ -93,3 +94,7 @@
 extern i2s_config_t i2s_mic_Config;
 // i2s microphone pins
 extern i2s_pin_config_t i2s_mic_pins;
+
+static const char* const gFirmwareVersion = VERSION;
+
+#endif // CONFIG_H_

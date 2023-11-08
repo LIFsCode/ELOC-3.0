@@ -112,6 +112,9 @@ int I2SMEMSSampler::read(int count)
     /**
      * @brief Use Teleplot extension to visualize waveform
      * https://marketplace.visualstudio.com/items?itemName=alexnesnes.teleplot
+     * 
+     * @note: This is a debug feature and will cause significant serial output!
+     * 
      */
     #define VISUALIZE_WAVEFORM                   
 
@@ -206,6 +209,7 @@ int I2SMEMSSampler::read(int count)
              * Raw sample:  M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   X   X   X   X   X   X   X   X   X 
              * Shifted:     0    0    0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   D   D   X   X   X   X   X   X   X   X   X 
              *                                                                                                                                                                        ^^^^^^^^ DISCARDED ^^^^^^^
+             * Note: for esp-idf/ gcc, the sign bit seems to be preserved.
              * But this samples volume is too low, so shift left to increase volume
              * 
              * Bit pos:    32 | 31 | 30 | 29 | 28 | 27 | 26 | 25 | 24 | 23 | 22 | 21 | 20 | 19 | 18 | 17 | 16 | 15 | 14 | 13 | 12 | 11 | 10 | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0

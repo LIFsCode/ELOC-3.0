@@ -196,9 +196,9 @@ int I2SMEMSSampler::read(int count)
         for (auto i = 0; i < samples_read; i++)
         {   
             /**
-             * I2S mic seem to be generally 32 bit, 2's complement, MSB first.
+             * I2S mics seem to be generally 16 or 24 bit, 2's complement, MSB first.
              * This data needs to be shifted right to correct position.
-             * i.e. 
+             * e.g. using a raw sample from a 24 bit mic as an example:
              * 
              * M = Most significant data (MSB), D = data, X = discarded
              *              

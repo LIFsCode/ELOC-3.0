@@ -129,8 +129,8 @@ int I2SMEMSSampler::read(int count)
     bool writer_buffer_overrun = false;
     bool inference_buffer_overrun = false;
 
-    bool clip_high = false;
-    bool clip_low = false;
+    bool clip_positive = false;
+    bool clip_negative = false;
     
     // Allocate a buffer of BYTES sufficient for sample size
     int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * count), MALLOC_CAP_SPIRAM);
@@ -231,11 +231,11 @@ int I2SMEMSSampler::read(int count)
             static_assert(INT16_MIN == -32768, "INT16_MIN != -32768");
             if (processed_sample_32bit > INT16_MAX){
                 processed_sample = INT16_MAX;
-                clip_high = true;
+                clip_positive = true;
             }
             else if (processed_sample_32bit < INT16_MIN){
                 processed_sample = INT16_MIN;
-                clip_low = true;
+                clip_negative = true;
             }
 
             // Store into wav file buffer
@@ -323,11 +323,11 @@ int I2SMEMSSampler::read(int count)
         ESP_LOGW(TAG, "inference buffer overrun");
     }
 
-    if (clip_high == true){
+    if (clip_positive == true){
         ESP_LOGW(TAG, "Audio high clip");
     }
 
-    if (clip_low == true){
+    if (clip_negative == true){
         ESP_LOGW(TAG, "Audio low clip");
     }
 

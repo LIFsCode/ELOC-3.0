@@ -116,7 +116,7 @@ int I2SMEMSSampler::read(int count)
      * @note: This is a debug feature and will cause significant serial output!
      * 
      */
-    #define VISUALIZE_WAVEFORM                   
+    // #define VISUALIZE_WAVEFORM                   
 
     /** 
      * Flag if there's buffer overruns - for debug purposes
@@ -129,10 +129,8 @@ int I2SMEMSSampler::read(int count)
     bool writer_buffer_overrun = false;
     bool inference_buffer_overrun = false;
 
-    #ifdef VISUALIZE_WAVEFORM
-        bool clip_high = false;
-        bool clip_low = false;
-    #endif
+    bool clip_high = false;
+    bool clip_low = false;
     
     // Allocate a buffer of BYTES sufficient for sample size
     int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * count), MALLOC_CAP_SPIRAM);
@@ -201,7 +199,7 @@ int I2SMEMSSampler::read(int count)
             /**
              * I2S mics seem to be generally 16 or 24 bit, 2's complement, MSB first.
              * This data needs to be shifted right to correct position.
-             * e.g. using a raw sample from a 24 bit mic as an example:
+             * e.g. using a raw sample from a 24 bit mic fed into a 32 bit data type as an example:
              * 
              * M = Most significant data (MSB), D = data, X = discarded
              *              

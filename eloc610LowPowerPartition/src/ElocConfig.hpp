@@ -75,7 +75,9 @@ bool writeConfig();
 
 void clearConfig();
 
-bool printConfig(String& buf);
+enum class CfgType {RUNTIME, DEFAULT_CFG};
+
+bool printConfig(String& buf, CfgType cfgType = CfgType::RUNTIME);
 
 esp_err_t updateConfig(const char* buf) ;
 

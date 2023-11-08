@@ -197,36 +197,42 @@ void readConfig() {
     }
 }
 
-void buildConfigFile(JsonDocument& doc) {
+void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
+    const elocDeviceInfo_T& ElocDeviceInfo = \
+            cfgType == CfgType::DEFAULT_CFG ? C_ElocDeviceInfo_Default : gElocDeviceInfo;
+    const elocConfig_T& ElocConfig = \
+            cfgType == CfgType::DEFAULT_CFG ? C_ElocConfig_Default : gElocConfig;
+    const micInfo_t& MicInfo = \
+            cfgType == CfgType::DEFAULT_CFG ? C_MicInfo_Default : gMicInfo;
     doc.clear();
     JsonObject device = doc.createNestedObject("device");
-    device["fileHeader"]                  = gElocDeviceInfo.fileHeader.c_str();
-    device["locationCode"]                = gElocDeviceInfo.locationCode.c_str();
-    device["locationAccuracy"]            = gElocDeviceInfo.locationAccuracy;
-    device["nodeName"]                    = gElocDeviceInfo.nodeName.c_str();
+    device["fileHeader"]                  = ElocDeviceInfo.fileHeader.c_str();
+    device["locationCode"]                = ElocDeviceInfo.locationCode.c_str();
+    device["locationAccuracy"]            = ElocDeviceInfo.locationAccuracy;
+    device["nodeName"]                    = ElocDeviceInfo.nodeName.c_str();
 
     JsonObject config = doc.createNestedObject("config");
-    config["secondsPerFile"]              = gElocConfig.secondsPerFile;
-    config["cpuMaxFrequencyMHZ"]          = gElocConfig.cpuMaxFrequencyMHZ;
-    config["cpuMinFrequencyMHZ"]          = gElocConfig.cpuMinFrequencyMHZ;
-    config["cpuEnableLightSleep"]         = gElocConfig.cpuEnableLightSleep;
-    config["bluetoothEnableAtStart"]      = gElocConfig.bluetoothEnableAtStart;
-    config["bluetoothEnableOnTapping"]    = gElocConfig.bluetoothEnableOnTapping;
-    config["bluetoothEnableDuringRecord"] = gElocConfig.bluetoothEnableDuringRecord;
-    config["bluetoothOffTimeoutSeconds"]  = gElocConfig.bluetoothOffTimeoutSeconds;
+    config["secondsPerFile"]              = ElocConfig.secondsPerFile;
+    config["cpuMaxFrequencyMHZ"]          = ElocConfig.cpuMaxFrequencyMHZ;
+    config["cpuMinFrequencyMHZ"]          = ElocConfig.cpuMinFrequencyMHZ;
+    config["cpuEnableLightSleep"]         = ElocConfig.cpuEnableLightSleep;
+    config["bluetoothEnableAtStart"]      = ElocConfig.bluetoothEnableAtStart;
+    config["bluetoothEnableOnTapping"]    = ElocConfig.bluetoothEnableOnTapping;
+    config["bluetoothEnableDuringRecord"] = ElocConfig.bluetoothEnableDuringRecord;
+    config["bluetoothOffTimeoutSeconds"]  = ElocConfig.bluetoothOffTimeoutSeconds;
     
     JsonObject micInfo = doc.createNestedObject("mic");
-    micInfo["MicType"]                     = gMicInfo.MicType.c_str();
-    micInfo["MicBitShift"]                 = gMicInfo.MicBitShift;
-    micInfo["MicSampleRate"]               = gMicInfo.MicSampleRate;
-    micInfo["MicUseAPLL"]                  = gMicInfo.MicUseAPLL;
-    micInfo["MicUseTimingFix"]             = gMicInfo.MicUseTimingFix;
+    micInfo["MicType"]                     = MicInfo.MicType.c_str();
+    micInfo["MicBitShift"]                 = MicInfo.MicBitShift;
+    micInfo["MicSampleRate"]               = MicInfo.MicSampleRate;
+    micInfo["MicUseAPLL"]                  = MicInfo.MicUseAPLL;
+    micInfo["MicUseTimingFix"]             = MicInfo.MicUseTimingFix;
 }
 
-bool printConfig(String& buf) {
+bool printConfig(String& buf, CfgType cfgType/* = CfgType::RUNTIME*/) {
 
     StaticJsonDocument<JSON_DOC_SIZE> doc;
-    buildConfigFile(doc);
+    buildConfigFile(doc, cfgType);
     if (serializeJsonPretty(doc, buf) == 0) {
         ESP_LOGE(TAG, "Failed serialize JSON config!");
         return false;

@@ -124,8 +124,14 @@ void cmd_SetConfig(CmdParser *cmdParser) {
 
 void cmd_GetConfig(CmdParser *cmdParser) {
     CmdResponse& resp = CmdResponse::getInstance();
+    const char* typ = cmdParser->getValueFromKey("cfgType");
+    CfgType cfgType = CfgType::RUNTIME;
+    if ((typ != NULL) && !strcasecmp(typ, "DEFAULT")) {
+        ESP_LOGI(TAG, "reading default config");
+        cfgType = CfgType::DEFAULT_CFG;
+    }
     String& cfg = resp.getPayload(); // write directly to output buffer to avoid reallocation
-    if (!printConfig(cfg)) {
+    if (!printConfig(cfg, cfgType)) {
         resp.setError(ESP_ERR_NO_MEM, "Failed to serialize JSON config!");
     }
     resp.setResultSuccess(cfg);
@@ -243,7 +249,7 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
 bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     bool success = true;
     success &= cmdCallback.addCmd("setConfig", &cmd_SetConfig, "Write config key as json, e.g. setConfig#cfg={\"device\":{\"location\":\"not_set\"}}");
-    success &= cmdCallback.addCmd("getConfig", &cmd_GetConfig, "Read config as json, e.g. getConfig --> return{\"device\":{\"location\":\"not_set\"}}");
+    success &= cmdCallback.addCmd("getConfig", &cmd_GetConfig, "Read config as jso. Optional argument 'cfgType' can be set to ('DEFAULT' or 'RUNTIME') to read default config or currently set config. Without 'cfgType' current set config is returned, e.g. getConfig --> return{\"device\":{\"location\":\"not_set\"}}");
     success &= cmdCallback.addCmd("delConfig", &cmd_DelConfig, "Delete the current config file. Current config is not reset to default until next reboot");
     success &= cmdCallback.addCmd("getStatus", &cmd_GetStatus, "Returns the current status in JSON format");
     success &= cmdCallback.addCmd("setTime", &cmd_SetTime, "Set the current Time. Time format is given as JSON, e.g. setTime#time={\"seconds\":1351824120,\"ms\":42,\"timezone\":6,\"type\":\"G\"}");

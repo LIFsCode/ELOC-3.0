@@ -106,7 +106,14 @@ int I2SMEMSSampler::read(int count)
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
-    #define I2S_VOLUME_SCALING_FACTOR 8             // Increase volume by this factor
+    #define I2S_VOLUME_SCALING_FACTOR 4         // Increase volume by this factor
+    #define I2S_BITS_PER_SAMPLE 24              // Shift right by this factor to correct volume
+    
+    /**
+     * @brief Use Teleplot extension to visualize waveform
+     * https://marketplace.visualstudio.com/items?itemName=alexnesnes.teleplot
+     */
+    #define VISUALIZE_WAVEFORM                   
 
     /** 
      * Flag if there's buffer overruns - for debug purposes
@@ -118,6 +125,11 @@ int I2SMEMSSampler::read(int count)
     */
     bool writer_buffer_overrun = false;
     bool inference_buffer_overrun = false;
+
+    #ifdef VISUALIZE_WAVEFORM
+        bool clip_high = false;
+        bool clip_low = false;
+    #endif
     
     // Allocate a buffer of BYTES sufficient for sample size
     int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * count), MALLOC_CAP_SPIRAM);
@@ -166,27 +178,63 @@ int I2SMEMSSampler::read(int count)
             ESP_LOGW(TAG, "Partial I2S read");
         }
 
-        float avg_raw_sample = 0;
-        float avg_shifted_sample = 0;
-        float avg_scaled_sample = 0;
-        float avg_processed_sample = 0;
+        #ifdef VISUALIZE_WAVEFORM
+            int64_t total_raw_sample = 0;
+            int64_t total_shifted_sample = 0;
+            int64_t total_processed_sample_32bit = 0;
+            int64_t total_processed_sample = 0;
+        #endif
+
+        /**
+         * This bit shift is the sum of:
+         *  correct bit position of sample from (loaded with MSB starting at bit 32) -
+         *  increase volume by shifting left (each shift left doubles volume)         * 
+         */
+        auto overall_bit_shift = (32 - I2S_BITS_PER_SAMPLE) - ((I2S_VOLUME_SCALING_FACTOR / 2) - 1);
+        ESP_LOGI(TAG, "overall_bit_shift = %d", overall_bit_shift);
 
         for (auto i = 0; i < samples_read; i++)
         {   
-            // The ELOC 3.2 board uses Uses TDK/ INVENSENSE ICS-43434 mic
-            // The Data Format is I2S, 24-bit, 2’s compliment, MSB first.
-            // The data precision is 24 bits
-            // Note! Scale data, then shift, otherwise lose lower end volume?
-            // shift 11 - tiny sound
-            // shift 8 - distortion
-            // shift 14 - good but low volume, needs scaling of at least 5
-            // shift 16 - very low volume, needs scaling of at least 10
+            /**
+             * I2S mic seem to be generally 32 bit, 2's complement, MSB first.
+             * This data needs to be shifted right to correct position.
+             * i.e. 
+             * 
+             * M = Most significant data (MSB), D = data, X = discarded
+             *              
+             * Bit pos:    32 | 31 | 30 | 29 | 28 | 27 | 26 | 25 | 24 | 23 | 22 | 21 | 20 | 19 | 18 | 17 | 16 | 15 | 14 | 13 | 12 | 11 | 10 | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0
+             * Raw sample:  M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   X   X   X   X   X   X   X   X   X 
+             * Shifted:     0    0    0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   D   D   X   X   X   X   X   X   X   X   X 
+             *                                                                                                                                                                        ^^^^^^^^ DISCARDED ^^^^^^^
+             * But this samples volume is too low, so shift left to increase volume
+             * 
+             * Bit pos:    32 | 31 | 30 | 29 | 28 | 27 | 26 | 25 | 24 | 23 | 22 | 21 | 20 | 19 | 18 | 17 | 16 | 15 | 14 | 13 | 12 | 11 | 10 | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0
+             * Times 2:     0    0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   D   0
+             * Times 4:     0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   0   0 
+             * Times 8:     0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   0   0   0
+             * Times 16:    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   0   0   0   0 
+             */
 
-            int32_t shifted_sample = ((raw_samples[i] >> 8));
-            int32_t scaled_sample = shifted_sample * I2S_VOLUME_SCALING_FACTOR;
-            int16_t processed_sample = scaled_sample;
+            #ifdef VISUALIZE_WAVEFORM
+                int32_t shifted_sample = ((raw_samples[i] >> 8));
+                int32_t processed_sample_32bit = shifted_sample << ((I2S_VOLUME_SCALING_FACTOR / 2) - 1);
+                int16_t processed_sample = processed_sample_32bit;
+            #else
+                int32_t processed_sample_32bit = raw_samples[i] >> overall_bit_shift;
+                int16_t processed_sample = processed_sample_32bit;
+            #endif
 
-            // int16_t processed_sample = ((raw_samples[i] >> mBitShift) * I2S_VOLUME_SCALING_FACTOR);
+            // Have we exceeded the 16 bit range?
+            static_assert(INT16_MAX == 32767, "INT16_MAX != 32767");
+            static_assert(INT16_MIN == -32768, "INT16_MIN != -32768");
+            if (processed_sample_32bit > INT16_MAX){
+                processed_sample = INT16_MAX;
+                clip_high = true;
+            }
+            else if (processed_sample_32bit < INT16_MIN){
+                processed_sample = INT16_MIN;
+                clip_low = true;
+            }
 
             // Store into wav file buffer
             writer->buffers[writer->buf_select][writer->buf_count++] = processed_sample;
@@ -235,24 +283,22 @@ int I2SMEMSSampler::read(int count)
                 skip_current++;
             }
         
-            avg_raw_sample += raw_samples[i];
-            avg_processed_sample += processed_sample;
-            avg_shifted_sample += shifted_sample;
-            avg_scaled_sample += scaled_sample;
+            #ifdef VISUALIZE_WAVEFORM
+                total_raw_sample += raw_samples[i];
+                total_processed_sample += processed_sample;
+                total_shifted_sample += shifted_sample;
+                total_processed_sample_32bit += processed_sample_32bit;
+
+                // Print out every 125ms/ 8 times a second
+                if (i % (i2s_sampling_rate / 8) == 0){
+                    // printf(">avg_raw_sample:%f\n", float(total_raw_sample/ samples_read));
+                    // printf(">avg_shifted_sample:%f\n", float(total_shifted_sample/ samples_read));
+                    // printf(">avg_processed_sample_32bit:%f\n", float(total_processed_sample_32bit/ samples_read));
+                    printf(">avg_processed_sample:%f\n", float(total_processed_sample/ samples_read));
+                }
+            #endif
 
         
-        }
-
-        avg_raw_sample /= samples_read;
-        avg_shifted_sample /= samples_read;
-        avg_scaled_sample /= samples_read;
-        avg_processed_sample /= samples_read;
-        
-        if(0){
-            printf(">avg_raw_sample:%f\n", avg_raw_sample);
-            printf(">avg_shifted_sample:%f\n", avg_shifted_sample);
-            printf(">avg_scaled_sample:%f\n", avg_scaled_sample);
-            printf(">avg_processed_sample:%f\n", avg_processed_sample);
         }
 
     }
@@ -275,6 +321,13 @@ int I2SMEMSSampler::read(int count)
         ESP_LOGW(TAG, "inference buffer overrun");
     }
 
+    if (clip_high == true){
+        ESP_LOGW(TAG, "Audio high clip");
+    }
+
+    if (clip_low == true){
+        ESP_LOGW(TAG, "Audio low clip");
+    }
 
     free(raw_samples);
     return samples_read;

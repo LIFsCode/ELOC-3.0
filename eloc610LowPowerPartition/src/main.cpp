@@ -1164,8 +1164,10 @@ void app_main(void)
         // Run stored audio samples through the model to test it
         ESP_LOGI(TAG, "Testing model against pre-recorded sample data...");
 
-        if (EI_CLASSIFIER_RAW_SAMPLE_COUNT != TEST_SAMPLE_LENGTH){
-            ESP_LOGW(TAG, "TEST_SAMPLE does not appear to be compatible with this Edge Impulse model, expect poor test results");
+        static_assert((EI_CLASSIFIER_RAW_SAMPLE_COUNT <= TEST_SAMPLE_LENGTH), "TEST_SAMPLE_LENGTH must be at least equal to EI_CLASSIFIER_RAW_SAMPLE_COUNT");
+
+        if (EI_CLASSIFIER_RAW_SAMPLE_COUNT < TEST_SAMPLE_LENGTH){
+            ESP_LOGI(TAG, "TEST_SAMPLE length is greater than the Edge Impulse model length, applying downsampling");
         }
 
         signal_t signal;
@@ -1184,9 +1186,19 @@ void app_main(void)
 
         // Artifically fill buffer with test data
         // WARNING: Limit to buffer size
-        for (auto i = 0; (i < EI_CLASSIFIER_RAW_SAMPLE_COUNT) && (i < TEST_SAMPLE_LENGTH); i++)
+        auto ei_skip_rate = TEST_SAMPLE_LENGTH / EI_CLASSIFIER_RAW_SAMPLE_COUNT;
+        auto skip_current = ei_skip_rate;   // Make sure to fill first sample, then start skipping if needed
+
+        for (auto test_sample_count = 0, inference_buffer_count = 0; (test_sample_count < TEST_SAMPLE_LENGTH) && 
+                (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT); test_sample_count++)
         {
-            inference.buffers[0][i] = trumpet_test[i];
+            if(skip_current >= ei_skip_rate){
+                inference.buffers[0][inference_buffer_count++] = trumpet_test[test_sample_count];
+                skip_current = 1;
+            }
+            else{
+                skip_current++;
+            }
         }
 
         // Mark buffer as ready
@@ -1258,12 +1270,11 @@ void app_main(void)
     // Zero DMA buffer, prevents popping sound on start
     input->zero_dma_buffer(I2S_DEFAULT_PORT);              
 
-
     // create a new wave file wav_writer & make sure sample rate is up to date
     wav_writer = new WAVFileWriter((int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 2, NUMBER_OF_CHANNELS);
     // Block until properly registered otherwise will get error later
     while (input->register_wavFileWriter(wav_writer) == false){
-        ESP_LOGI(TAG, "Waiting for WAVFileWriter to register");
+        ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
         delay(5);
     }
 
@@ -1283,28 +1294,6 @@ void app_main(void)
 
     while (true)
     {
-        // Recording request?
-        // if (xQueueReceive(rec_req_evt_queue, &rec_req, pdMS_TO_TICKS(500)))
-        // {
-        //     ESP_LOGI(TAG, "REC_REQ = %d", rec_req);
-        //     rec_req_t rec_req = REC_REQ_NONE;
-
-        //     if (rec_req == REC_REQ_START)
-        //     {
-        //         if (esp_err_t err = checkSDCard() != ESP_OK)
-        //         {
-        //             ESP_LOGE(TAG, "Cannot start recording due to SD error %s", esp_err_to_name(err));
-        //             LEDflashError();
-        //             gRecording = false;
-        //         }
-        //         else
-        //         {
-        //             gRecording = true;      // TODO: set time out for this??
-        //         }
-        //     }
-        // }
-
-
         // Start a new recording?
         if (wav_writer->is_file_handle_set() == false && 
             wav_writer->get_mode() == WAVFileWriter::Mode::continuous &&
@@ -1314,8 +1303,6 @@ void app_main(void)
         }
 
 #ifdef EDGE_IMPULSE_ENABLED
-        // TODO: Don't run if Bluetooth is active?
-
         // Try to restart if not running
         if (ei_running_status == false){
             if (microphone_inference_start(EI_CLASSIFIER_RAW_SAMPLE_COUNT) == false)

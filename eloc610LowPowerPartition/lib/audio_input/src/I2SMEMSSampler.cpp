@@ -129,7 +129,7 @@ int I2SMEMSSampler::read(int count)
     bool writer_buffer_overrun = false;
     bool inference_buffer_overrun = false;
 
-    bool sound_clip_occurred = false;
+    auto sound_clip_count = 0;
     
     // Allocate a buffer of BYTES sufficient for sample size
     int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * count), MALLOC_CAP_SPIRAM);
@@ -188,7 +188,7 @@ int I2SMEMSSampler::read(int count)
         /**
          * This bit shift is the sum of:
          *  correct bit position of sample from (loaded with MSB starting at bit 32) -
-         *  increase volume by shifting left (each shift left doubles volume)         * 
+         *  increase volume by shifting left (each shift left doubles volume)          
          */
         auto overall_bit_shift = (32 - I2S_BITS_PER_SAMPLE) - ((I2S_VOLUME_SCALING_FACTOR / 2) - 1);
         ESP_LOGV(TAG, "overall_bit_shift = %d", overall_bit_shift);
@@ -232,11 +232,11 @@ int I2SMEMSSampler::read(int count)
             
             if (processed_sample_32bit < INT16_MIN){
                 processed_sample = INT16_MIN;
-                sound_clip_occurred = true;
+                sound_clip_count++;
             }
             else if (processed_sample_32bit > INT16_MAX){
                 processed_sample = INT16_MAX;
-                sound_clip_occurred = true;
+                sound_clip_count++;
             }
 
             // Store into wav file buffer
@@ -300,8 +300,6 @@ int I2SMEMSSampler::read(int count)
                     printf(">avg_processed_sample:%f\n", float(total_processed_sample/ samples_read));
                 }
             #endif
-
-        
         }
 
     }
@@ -324,8 +322,8 @@ int I2SMEMSSampler::read(int count)
         ESP_LOGW(TAG, "inference buffer overrun");
     }
 
-    if (sound_clip_occurred == true){
-        ESP_LOGW(TAG, "Audio sample clip occurred");
+    if (sound_clip_count > 0){
+        ESP_LOGW(TAG, "Audio sample clips occurred %d times", sound_clip_count);
     }
 
     free(raw_samples);

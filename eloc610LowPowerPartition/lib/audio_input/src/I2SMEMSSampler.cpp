@@ -152,7 +152,7 @@ int I2SMEMSSampler::read(int count)
 
     TODO: Test what happens when not an even multiple!
     */
-    auto skip_current = 1;
+    auto skip_current = ei_skip_rate;   // Make sure first sample is saved, then skip if needed
     
     auto result = i2s_read(m_i2sPort, raw_samples, sizeof(int32_t) * count, &bytes_read, portMAX_DELAY);
 

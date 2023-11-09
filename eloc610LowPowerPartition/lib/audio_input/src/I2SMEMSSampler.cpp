@@ -129,8 +129,7 @@ int I2SMEMSSampler::read(int count)
     bool writer_buffer_overrun = false;
     bool inference_buffer_overrun = false;
 
-    bool clip_positive = false;
-    bool clip_negative = false;
+    bool sound_clip_occurred = false;
     
     // Allocate a buffer of BYTES sufficient for sample size
     int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * count), MALLOC_CAP_SPIRAM);
@@ -192,7 +191,7 @@ int I2SMEMSSampler::read(int count)
          *  increase volume by shifting left (each shift left doubles volume)         * 
          */
         auto overall_bit_shift = (32 - I2S_BITS_PER_SAMPLE) - ((I2S_VOLUME_SCALING_FACTOR / 2) - 1);
-        ESP_LOGI(TAG, "overall_bit_shift = %d", overall_bit_shift);
+        ESP_LOGV(TAG, "overall_bit_shift = %d", overall_bit_shift);
 
         for (auto i = 0; i < samples_read; i++)
         {   
@@ -227,15 +226,17 @@ int I2SMEMSSampler::read(int count)
             #endif
 
             // Have we exceeded the 16 bit range?
+            static_assert(sizeof(processed_sample) == 2, "check datatype of processed_sample is int16_t");
             static_assert(INT16_MAX == 32767, "INT16_MAX != 32767");
             static_assert(INT16_MIN == -32768, "INT16_MIN != -32768");
-            if (processed_sample_32bit > INT16_MAX){
-                processed_sample = INT16_MAX;
-                clip_positive = true;
-            }
-            else if (processed_sample_32bit < INT16_MIN){
+            
+            if (processed_sample_32bit < INT16_MIN){
                 processed_sample = INT16_MIN;
-                clip_negative = true;
+                sound_clip_occurred = true;
+            }
+            else if (processed_sample_32bit > INT16_MAX){
+                processed_sample = INT16_MAX;
+                sound_clip_occurred = true;
             }
 
             // Store into wav file buffer
@@ -323,12 +324,8 @@ int I2SMEMSSampler::read(int count)
         ESP_LOGW(TAG, "inference buffer overrun");
     }
 
-    if (clip_positive == true){
-        ESP_LOGW(TAG, "Audio high clip");
-    }
-
-    if (clip_negative == true){
-        ESP_LOGW(TAG, "Audio low clip");
+    if (sound_clip_occurred == true){
+        ESP_LOGW(TAG, "Audio sample clip occurred");
     }
 
     free(raw_samples);

@@ -13,7 +13,13 @@
     "bluetoothEnableAtStart": true,
     "bluetoothEnableOnTapping": true,
     "bluetoothEnableDuringRecord": true,
-    "bluetoothOffTimeoutSeconds": 60
+    "bluetoothOffTimeoutSeconds": 60,
+	"logConfig": {
+      "logToSdCard": true,
+      "filename": "/sdcard/log/eloc.log",
+      "maxFiles": 10,
+      "maxFileSize": 5120
+    }
   },
   "mic": {
     "MicType": "ns",

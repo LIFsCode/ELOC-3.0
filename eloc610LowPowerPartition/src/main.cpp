@@ -550,6 +550,7 @@ void record(I2SSampler *input) {
                 if ((loopCounter % 50)==0 ) {
                    ESP_LOGI(TAG, "Checking battery state" );
                    Battery::GetInstance().getVoltage();
+                   ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC", Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC());
                    if ((Battery::GetInstance().isEmpty())) {
                      stopit=true; loopCounter=10000001L;
                      ESP_LOGI(TAG, "Voltage LOW-OFF. Stopping record. " );
@@ -845,7 +846,7 @@ void app_main(void) {
         testInput();
 
     ESP_LOGI(TAG, "waiting for button or bluetooth");
-    ESP_LOGI(TAG, "voltage is %.3f", Battery::GetInstance().getVoltage());
+    ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC", Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC());
     while (true) {
 
         rec_req_t rec_req = REC_REQ_NONE;

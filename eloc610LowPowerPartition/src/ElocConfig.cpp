@@ -70,7 +70,13 @@ static const elocConfig_T C_ElocConfig_Default {
     .bluetoothEnableOnTapping = true,
     .bluetoothEnableDuringRecord = true,
     .bluetoothOffTimeoutSeconds = 60,
-    .testI2SClockInput = false
+    .testI2SClockInput = false,
+    .logConfig = {
+        .logToSdCard = true,
+        .filename = "/sdcard/log/eloc.log",
+        .maxFiles = 10,
+        .maxFileSize = 5*1024,
+    }
 };
 elocConfig_T gElocConfig = C_ElocConfig_Default;
 const elocConfig_T& getConfig() {
@@ -111,6 +117,10 @@ void loadConfig(const JsonObject& config) {
     gElocConfig.bluetoothEnableOnTapping    = config["bluetoothEnableOnTapping"]    | C_ElocConfig_Default.bluetoothEnableOnTapping; 
     gElocConfig.bluetoothEnableDuringRecord = config["bluetoothEnableDuringRecord"] | C_ElocConfig_Default.bluetoothEnableDuringRecord;
     gElocConfig.bluetoothOffTimeoutSeconds  = config["bluetoothOffTimeoutSeconds"]  | C_ElocConfig_Default.bluetoothOffTimeoutSeconds;
+    gElocConfig.logConfig.logToSdCard       = config["logConfig"]["logToSdCard"]    | C_ElocConfig_Default.logConfig.logToSdCard;
+    gElocConfig.logConfig.filename          = config["logConfig"]["filename"]       | C_ElocConfig_Default.logConfig.filename;
+    gElocConfig.logConfig.maxFiles          = config["logConfig"]["maxFiles"]       | C_ElocConfig_Default.logConfig.maxFiles;
+    gElocConfig.logConfig.maxFileSize       = config["logConfig"]["maxFileSize"]    | C_ElocConfig_Default.logConfig.maxFileSize;
 }
 
 void loadMicInfo(const JsonObject& micInfo) {
@@ -220,6 +230,11 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     config["bluetoothEnableOnTapping"]    = ElocConfig.bluetoothEnableOnTapping;
     config["bluetoothEnableDuringRecord"] = ElocConfig.bluetoothEnableDuringRecord;
     config["bluetoothOffTimeoutSeconds"]  = ElocConfig.bluetoothOffTimeoutSeconds;
+    config["logConfig"]["logToSdCard"]    = gElocConfig.logConfig.logToSdCard;
+    config["logConfig"]["filename"]       = gElocConfig.logConfig.filename;
+    config["logConfig"]["maxFiles"]       = gElocConfig.logConfig.maxFiles;
+    config["logConfig"]["maxFileSize"]    = gElocConfig.logConfig.maxFileSize;
+
     
     JsonObject micInfo = doc.createNestedObject("mic");
     micInfo["MicType"]                     = MicInfo.MicType.c_str();

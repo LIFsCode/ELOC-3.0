@@ -40,6 +40,7 @@
 #include "Battery.hpp"
 #include "config.h"
 #include "utils/macros.hpp"
+#include "utils/logging.hpp"
 
 
 
@@ -142,6 +143,27 @@ void cmd_DelConfig(CmdParser *cmdParser) {
     ESP_LOGW(TAG, "Clearing config only deletes the cfg file");
     clearConfig();
     resp.setResultSuccess("cfg deleted");
+    return;
+
+}
+void cmd_SetLogPersistent(CmdParser *cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    const char* cfg = cmdParser->getValueFromKey("cfg");
+    if (!cfg) {
+        const char* errMsg = "Missing key 'cfg'";
+        ESP_LOGE(TAG, "%s", errMsg);
+        resp.setError(ESP_ERR_INVALID_ARG, errMsg);
+        return;
+    }
+    ESP_LOGI(TAG, "updating log cfg with %s", cfg);
+    esp_err_t err = Logging::updateConfig(cfg);
+    if (err != ESP_OK) {
+        resp.setError(ESP_ERR_INVALID_ARG, "Failed to update logging config!");
+        return;
+    }
+    String& newCfg = resp.getPayload(); // write directly to output buffer to avoid reallocation
+    Logging::printLogConfig(newCfg);
+    resp.setResultSuccess(newCfg);
     return;
 }
 
@@ -254,6 +276,7 @@ bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     success &= cmdCallback.addCmd("getStatus", &cmd_GetStatus, "Returns the current status in JSON format");
     success &= cmdCallback.addCmd("setTime", &cmd_SetTime, "Set the current Time. Time format is given as JSON, e.g. setTime#time={\"seconds\":1351824120,\"ms\":42,\"timezone\":6,\"type\":\"G\"}");
     success &= cmdCallback.addCmd("setRecordMode", &cmd_SetRecordMode, "Enable/disable recording. If used without arguments, current mode is toggled(on/off). Otherwise set recording to specified mode, e.g. setRecordMode#mode=on");
+    success &= cmdCallback.addCmd("setLogPersistent", &cmd_SetLogPersistent, "Configure the logging messages to be stored on a rotating log file on SD carde.g. setLogPersitent#cfg={\"logToSdCard\":\"true\",\"filename\":\"/sdcard/log/eloc.log\",\"maxFiles\":6,\"maxFileSize\":1024}");
     if (!success) {
         ESP_LOGE(TAG, "Failed to add all BT commands!");
     }

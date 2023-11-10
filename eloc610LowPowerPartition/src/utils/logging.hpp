@@ -1,5 +1,5 @@
 /*
- * Created on Fri May 05 2023
+ * Created on Fri Aug 11 2023
  *
  * Project: International Elephant Project (Wildlife Conservation International)
  *
@@ -21,24 +21,18 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef UTILS_FFSUTILS_H_
-#define UTILS_FFSUTILS_H_
+#ifndef UTILS_LOGGING_HPP_
+#define UTILS_LOGGING_HPP_
+#include "esp_err.h"
 
-namespace ffsutil {
+namespace Logging {
 
-/// @brief Prints a list of files & subdirectories with sizes of a given path
-/// @param path filesystem directory which needs to be printed
-void printListDir(const char *path);
+esp_err_t esp_log_to_scard(bool enable);
 
-void printSPIFFS_size();
+esp_err_t printLogConfig(String& buf);
+esp_err_t updateConfig(const String& buf);
 
-bool fileExist(const char* filename);
-
-long getFileSize(const char* filename);
-
-bool folderExists(const char* folder);
 
 }
 
-
-#endif // UTILS_FFSUTILS_H_
+#endif // UTILS_LOGGING_HPP_

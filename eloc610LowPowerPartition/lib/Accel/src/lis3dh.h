@@ -393,6 +393,13 @@ int8_t lis3dh_enable_adc (bool enable, bool temp);
  */
 bool lis3dh_get_adc (uint16_t* adc1, uint16_t* adc2, uint16_t* adc3);
 
+/**
+ * @brief   Get temperature
+ *
+ * @return           Current temperature in degree
+ */
+uint16_t lis3dh_get_temperature();
+
 
 // ---- Low level interface functions -----------------------------
 

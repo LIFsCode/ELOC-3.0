@@ -86,6 +86,7 @@ public:
     inline bool hasLIS3DH() const {
         return mLis3DH != NULL;
     }
+    uint16_t getTemperaure();
 };
 
 

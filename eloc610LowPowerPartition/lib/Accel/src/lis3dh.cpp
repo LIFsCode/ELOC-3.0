@@ -1071,6 +1071,12 @@ bool LIS3DH::lis3dh_get_adc (uint16_t* adc1, uint16_t* adc2, uint16_t* adc3)
     return true;
 }
 
+uint16_t LIS3DH::lis3dh_get_temperature() {
+    uint16_t temperature = 0;
+    this->lis3dh_get_adc(NULL, NULL, &temperature);
+    return temperature;
+}
+
 
 /** Functions for internal use only */
 

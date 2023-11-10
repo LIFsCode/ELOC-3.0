@@ -111,6 +111,12 @@ ElocSystem::ElocSystem():
         }
         else {
             mLis3DH = &lis3dh;
+            if (!lis3dh.lis3dh_enable_adc(false, true)) {
+                ESP_LOGE(TAG, "Failed to enable Lis3DH Temperature sensor!");
+            }
+            else {
+                ESP_LOGI(TAG, "Temperature: %d °C", lis3dh.lis3dh_get_temperature());
+            }
         }
     }
 
@@ -119,4 +125,11 @@ ElocSystem::ElocSystem():
 
 ElocSystem::~ElocSystem()
 {
+}
+
+uint16_t ElocSystem::getTemperaure() {
+    if (mLis3DH) {
+        return mLis3DH->lis3dh_get_temperature();
+    }
+    return 0;
 }

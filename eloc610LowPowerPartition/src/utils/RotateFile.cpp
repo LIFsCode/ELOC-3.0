@@ -38,7 +38,7 @@ static const uint32_t LOCK_TIMEOUT_MS = 10;
 /// @brief Number of Writes to the file after which a fsync() is triggered to flush data to physical storage
 static const uint32_t WRITE_CACHE_CYCLE = 5;
 
-// wrapper for xSemaphoreGive: required for ScopeGuards MakeGuard, which requires a function pointer
+// wrapper for xSemaphoreGive: required for ScopeGuards ON_SCOPE_EXIT, which requires a function pointer
 // xSemaphoreGive is only a macro
 static inline BaseType_t SemaphoreGive(SemaphoreHandle_t xSemaphore) {
     return xSemaphoreGive(xSemaphore);
@@ -181,7 +181,7 @@ bool RotateFile::makeDirectory() {
 
 bool RotateFile::open() {
     if( xSemaphoreTake( mSemaphore, ( TickType_t ) 10 ) == pdTRUE ) {
-        MakeGuard(SemaphoreGive, mSemaphore);
+        ON_SCOPE_EXIT(SemaphoreGive, mSemaphore);
         makeDirectory();
         _fp = fopen(mFilename.c_str(), "a+");
         if (!_fp) {
@@ -200,7 +200,7 @@ bool RotateFile::open() {
 
 void  RotateFile::close() {
     if( xSemaphoreTake( mSemaphore, portMAX_DELAY ) == pdTRUE ) {
-        MakeGuard(SemaphoreGive, mSemaphore);
+        ON_SCOPE_EXIT(SemaphoreGive, mSemaphore);
         if (!_fp) {
             printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
             return;
@@ -213,7 +213,7 @@ void  RotateFile::close() {
 }
 bool RotateFile::write(const char *data) { 
     if( xSemaphoreTake( mSemaphore, pdMS_TO_TICKS(LOCK_TIMEOUT_MS) ) == pdTRUE ) {
-        MakeGuard(SemaphoreGive, mSemaphore);
+        ON_SCOPE_EXIT(SemaphoreGive, mSemaphore);
         if (_fp == NULL) {
             printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
             return false;
@@ -228,7 +228,7 @@ bool RotateFile::write(const char *data) {
 }
 bool RotateFile::vprintf(const char *fmt, va_list args) { 
     if( xSemaphoreTake( mSemaphore, pdMS_TO_TICKS(LOCK_TIMEOUT_MS) ) == pdTRUE ) {
-        MakeGuard(SemaphoreGive, mSemaphore);
+        ON_SCOPE_EXIT(SemaphoreGive, mSemaphore);
         if (_fp == NULL) {
             printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
             return false;

@@ -1339,7 +1339,9 @@ void app_main(void)
                 continue;
             }
 
-            if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))
+            //if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))
+            // Output every result instead of every EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW
+            if (++print_results >= 1)
             {
                 // print the predictions
                 ESP_LOGI(TAG, "Predictions ");

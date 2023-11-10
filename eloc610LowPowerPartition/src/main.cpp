@@ -856,8 +856,13 @@ void app_main(void) {
         testInput();
 
     ESP_LOGI(TAG, "waiting for button or bluetooth");
-    ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC", Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC());
+    int loopCnt = 0;
     while (true) {
+        if ((loopCnt % 10) == 0) {
+            ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC, Temp %d °C", 
+                Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC(), ElocSystem::GetInstance().getTemperaure());
+        }
+        loopCnt++;
 
         rec_req_t rec_req = REC_REQ_NONE;
         if (xQueueReceive(rec_req_evt_queue, &rec_req, pdMS_TO_TICKS(500))) {

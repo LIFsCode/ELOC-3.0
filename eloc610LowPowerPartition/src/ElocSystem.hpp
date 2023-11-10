@@ -53,6 +53,12 @@ private:
     CPPI2C::I2c* mI2CInstance;
     ELOC_IOEXP* mIOExpInstance;
     LIS3DH* mLis3DH;
+
+    struct factoryInfo_t {
+        uint16_t hw_gen;
+        uint16_t hw_rev;
+        uint32_t serialNumber;
+    }mFactoryInfo; 
 public:
     inline static ElocSystem& GetInstance() {
         static ElocSystem System;

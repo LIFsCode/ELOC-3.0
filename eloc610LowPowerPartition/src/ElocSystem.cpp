@@ -23,6 +23,8 @@
 
 #include <vector>
 #include "esp_log.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 #include "config.h"
 
 #include "ElocSystem.hpp"
@@ -31,8 +33,43 @@
 static const char *TAG = "ElocSystem";
 
 ElocSystem::ElocSystem():
-    mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL)
+    mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mFactoryInfo()
 {
+    ESP_LOGI(TAG, "Reading Factory Info from NVS");
+
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGE(TAG, "NVS partition was truncated and needs to be erased Retry nvs_flash_init");
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(err);
+
+    nvs_handle_t my_handle;
+    ESP_LOGI(TAG, "Opening Non-Volatile factory (NVS) handle");
+    err = nvs_open_from_partition("nvs", "factory", NVS_READONLY, &my_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error (%s) opening NVS handle 'factory' namespace!\n", esp_err_to_name(err));
+    }
+    else {
+        ESP_LOGI(TAG, "The NVS handle successfully opened");
+        err = nvs_get_u16(my_handle, "hw_gen", &mFactoryInfo.hw_gen);
+        if (err) ESP_LOGE(TAG, "%s: Missing parameter 'hw_gen'", esp_err_to_name(err));
+
+        err = nvs_get_u16(my_handle, "hw_rev", &mFactoryInfo.hw_rev);
+        if (err) ESP_LOGE(TAG, "%s: Missing parameter 'hw_rev'", esp_err_to_name(err));
+
+        err = nvs_get_u32(my_handle, "serial", &mFactoryInfo.serialNumber);
+        if (err) ESP_LOGE(TAG, "%s: Missing parameter 'serial'", esp_err_to_name(err));
+
+        // Close
+        nvs_close(my_handle);
+        ESP_LOGI(TAG, "Reading values from NVS done - all OK");
+    }
+    ESP_LOGI(TAG, "Factory Data: Serial=%d, HW_Gen = %d, HW_Rev = %d", 
+        mFactoryInfo.serialNumber, mFactoryInfo.hw_gen, mFactoryInfo.hw_rev);
+
+
     ESP_LOGI(TAG, "Setting up I2C");
 
     static CPPI2C::I2c I2Cinstance (I2C_PORT);

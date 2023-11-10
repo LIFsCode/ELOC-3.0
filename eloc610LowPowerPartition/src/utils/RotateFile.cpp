@@ -61,7 +61,7 @@ RotateFile::RotateFile(const char* filename, uint32_t maxFiles /*=0*/, uint32_t 
     SemaphoreGive(mSemaphore);
 }
 
-bool RotateFile::setFilename(std::string filename) { 
+bool RotateFile::setFilename(const char* filename) { 
     if (!_fp) {    
         this->mFilename = filename; 
         this->mFolder = getDirectory();

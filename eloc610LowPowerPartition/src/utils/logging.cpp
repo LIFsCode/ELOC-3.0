@@ -90,6 +90,21 @@ esp_err_t esp_log_to_scard(bool enable) {
 
 }
 
+esp_err_t init(bool logToSdCard, const String& filename, uint32_t maxFiles, uint32_t maxFileSize) {
+    if (!logFile.setFilename(filename.c_str())) {
+        return ESP_FAIL;
+    }
+    if (!logFile.setMaxFiles(maxFiles)) {
+        return ESP_FAIL;
+    }
+    if (!logFile.setMaxFileSize(maxFileSize)) {
+        return ESP_FAIL;
+    }
+    if (!logFile.setMaxFileSize(maxFileSize)) {
+        return ESP_FAIL;
+    }
+    return esp_log_to_scard(logToSdCard);
+}
 
 static const uint32_t JSON_DOC_SIZE = 128;
 

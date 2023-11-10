@@ -55,7 +55,7 @@ public:
     /// @brief Set the filename of the basic logfile. Only allowed when not opened.
     /// @param filename File name of the log file. Rotational files get appended by numbers [1...maxFiles-1]
     /// @return True if successfuly, false if not
-    bool setFilename(std::string filename);
+    bool setFilename(const char* filename);
     const std::string getFilename() const { 
         return mFilename; 
     }

@@ -27,6 +27,8 @@
 
 namespace Logging {
 
+esp_err_t init(bool logToSdCard, const String& filename, uint32_t maxFiles, uint32_t maxFileSize);
+
 esp_err_t esp_log_to_scard(bool enable);
 
 esp_err_t printLogConfig(String& buf);

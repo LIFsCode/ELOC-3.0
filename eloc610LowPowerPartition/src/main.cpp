@@ -49,6 +49,7 @@
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
 #include "ElocStatus.hpp"
+#include "utils/logging.hpp"
 #include "Commands/BluetoothServer.hpp"
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
@@ -799,9 +800,18 @@ void app_main(void) {
     ffsutil::printListDir("/sdcard/eloc");
     
     readConfig();
+    //setup persistent logging only if SD card is mounted
+    if (theSDCardObject && theSDCardObject->isMounted()) {
+        const logConfig_t& cfg= getConfig().logConfig;
+        esp_err_t err = Logging::init(cfg.logToSdCard, cfg.filename, cfg.maxFiles, cfg.maxFileSize);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initilize logging subsystem with %s", esp_err_to_name(err));
+        }
+    }
 
     // check if a firmware update is triggered via SD card
     checkForFirmwareUpdateFile();
+
 
     rec_req_evt_queue = xQueueCreate(10, sizeof(rec_req_t));
     xQueueReset(rec_req_evt_queue);

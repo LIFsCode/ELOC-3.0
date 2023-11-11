@@ -107,7 +107,7 @@ int I2SMEMSSampler::read(int count)
     ESP_LOGV(TAG, "Func: %s", __func__);
 
     #define I2S_BITS_PER_SAMPLE 24      // Mic is 24 bit TODO: pickup from some sort of hardware config
-    //#define ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
+    // #define ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
     
     #ifdef ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
         // Automatic gain defintions
@@ -142,14 +142,14 @@ int I2SMEMSSampler::read(int count)
     auto sound_clip_count = 0;
 
     #ifdef ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
-    // How many samples exceed high threshold?
-    auto sample_high_count = 0;
+        // How many samples exceed high threshold?
+        auto sample_high_count = 0;
 
-    // How many samples exceed low threshold?
-    auto sample_low_count = 0;
+        // How many samples exceed low threshold?
+        auto sample_low_count = 0;
 
-    // When was the volume last increased?
-    static auto last_gain_increase = 0;
+        // When was the volume last increased?
+        static auto last_gain_increase = 0;
     #endif
     
     // Allocate a buffer of BYTES sufficient for sample size
@@ -204,8 +204,7 @@ int I2SMEMSSampler::read(int count)
 
         /**
          * @note This bit shift = (corrected bit position of sample (loaded with MSB starting at bit 32) -
-         *                         increase volume by shifting left (each shift left doubles volume))
-         * @warning This shift is recalculated later if volume_shift changes         
+         *                         increase volume by shifting left (each shift left doubles volume))       
          */
         auto overall_bit_shift = (32 - I2S_BITS_PER_SAMPLE) - ((volume_shift / 2) - 1);
         ESP_LOGV(TAG, "volume_shift = %d, overall_bit_shift = %d", volume_shift, overall_bit_shift);
@@ -352,8 +351,6 @@ int I2SMEMSSampler::read(int count)
         ESP_LOGW(TAG, "Audio sample clips occurred %d times", sound_clip_count);
     }
 
-    free(raw_samples);
-
     // Automatic gain adjustment
     #ifdef ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
     if (sample_high_count > SAMPLE_HIGH_COUNT * samples_read){
@@ -384,6 +381,8 @@ int I2SMEMSSampler::read(int count)
     }
 
     #endif
+
+    free(raw_samples);
 
     return samples_read;
 }

@@ -1134,6 +1134,8 @@ void app_main(void)
 
 #ifdef EDGE_IMPULSE_ENABLED
 
+    auto save_ai_results_to_sd = true;
+
     String ei_results_filename = "/sdcard/eloc/";
     ei_results_filename += "EI-results-ID-";
     ei_results_filename += EI_CLASSIFIER_PROJECT_ID;
@@ -1375,7 +1377,7 @@ void app_main(void)
                 file_str += "\n";
                 // Save results to file
                 // TODO: Only save results & wav file if classification value exceeds a threshold?
-                if (checkSDCard() == ESP_OK)
+                if (save_ai_results_to_sd == true && checkSDCard() == ESP_OK)
                 {
                     save_inference_result_SD(ei_results_filename, file_str);
                 }              

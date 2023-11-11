@@ -39,7 +39,7 @@ public:
     */
     bool start();
 
-    virtual int read(int count) = 0;
+    virtual int read() = 0;
     
     /**
      * @brief Uninstall the I2S port

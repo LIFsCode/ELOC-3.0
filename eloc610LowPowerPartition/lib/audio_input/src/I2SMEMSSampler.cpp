@@ -102,7 +102,7 @@ bool I2SMEMSSampler::register_ei_inference(inference_t *ext_inference, int ext_e
     return true;
 }
 
-int I2SMEMSSampler::read(int count)
+int I2SMEMSSampler::read()
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
@@ -153,7 +153,7 @@ int I2SMEMSSampler::read(int count)
     #endif
     
     // Allocate a buffer of BYTES sufficient for sample size
-    int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * count), MALLOC_CAP_SPIRAM);
+    int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * i2s_samples_to_read), MALLOC_CAP_SPIRAM);
 
     if (raw_samples == NULL)
     {
@@ -175,7 +175,7 @@ int I2SMEMSSampler::read(int count)
     */
     auto skip_current = ei_skip_rate;   // Make sure first sample is saved, then skip if needed
     
-    auto result = i2s_read(m_i2sPort, raw_samples, sizeof(int32_t) * count, &bytes_read, portMAX_DELAY);
+    auto result = i2s_read(m_i2sPort, raw_samples, sizeof(int32_t) * i2s_samples_to_read, &bytes_read, portMAX_DELAY);
 
     if (result != ESP_OK)
     {
@@ -191,7 +191,7 @@ int I2SMEMSSampler::read(int count)
     }
     else 
     {
-        if (bytes_read < sizeof(int32_t) * count) {
+        if (bytes_read < sizeof(int32_t) * i2s_samples_to_read) {
             ESP_LOGW(TAG, "Partial I2S read");
         }
 
@@ -387,7 +387,38 @@ int I2SMEMSSampler::read(int count)
     return samples_read;
 }
 
-I2SMEMSSampler::~I2SMEMSSampler(){
+void I2SMEMSSampler::start_read_thread()
+{
+    while(enable_read){
+        auto samples_read = this->read();
 
+        if (samples_read != i2s_samples_to_read){
+        ESP_LOGW(TAG, "samples_read = %d, i2s_samples_to_read = %d", samples_read, i2s_samples_to_read);
+        }
+    }
+
+    vTaskDelete(NULL);
+}
+
+void I2SMEMSSampler::start_read_thread_wrapper(void * _this){
+
+  ((I2SMEMSSampler*)_this)->start_read_thread();
+
+}
+
+int I2SMEMSSampler::start_read_task(int i2s_samples_to_read){
+
+  // logical right shift divides a number by 2, throwing out any remainders
+  // Need to divide by 2 because reading bytes into a int16_t buffer
+  this->i2s_samples_to_read = i2s_samples_to_read;
+
+  // Stack 1024 * X - experimentally determined
+  int ret = xTaskCreate(this->start_read_thread_wrapper, "I2S read", 1024 * 2, this, 10, NULL);
+
+  return ret;
+}
+
+
+I2SMEMSSampler::~I2SMEMSSampler(){
 
 }

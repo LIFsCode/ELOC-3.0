@@ -684,78 +684,6 @@ bool inference_result_file_SD_available = false;
 // https://docs.edgeimpulse.com/docs/tutorials/advanced-inferencing/continuous-audio-sampling
 
 /**
- * @brief This function is repeatedly called by capture_samples()
- * When sufficient samples are collected:
- *  1. inference.buf_ready = 1
- *  2. microphone_inference_record() is unblocked
- *  3. classifier is run in main loop()
- *  @deprecated Accomplished in I2SMEMSSampler::read()
- */
-static void audio_inference_callback(uint32_t n_bytes)
-{
-  for (int i = 0; i < n_bytes >> 1; i++)
-  {
-    inference.buffers[inference.buf_select][inference.buf_count++] = sampleBuffer[i];
-
-    if (inference.buf_count >= inference.n_samples)
-    {
-      inference.buf_select ^= 1;
-      inference.buf_count = 0;
-      inference.buf_ready = 1;
-    }
-  }
-}
-
-/**
- * This is initiated by a task created in microphone_inference_record_start()
- * When periodically called it:
- *  1. reads data from I2S DMA buffer,
- *  2. scales it
- *  3. Calls audio_inference_callback()
- */
-static void capture_samples(void *arg)
-{
-
-  ESP_LOGV(TAG, "%s", __func__);
-
-  const int32_t i2s_bytes_to_read = (uint32_t)arg;
-
-  // logical right shift divides a number by 2, throwing out any remainders
-  // Need to divide by 2 because reading bytes into a int16_t buffer
-  size_t i2s_samples_to_read = i2s_bytes_to_read >> 1;
-
-  // Enter a continual loop to collect new data from I2S
-  while (ei_running_status)
-  {
-    int samples_read = input->read(i2s_samples_to_read);
-
-    if (samples_read != i2s_samples_to_read){
-      ESP_LOGW(TAG, "samples_read = %d, i2s_samples_to_read = %d", samples_read, i2s_samples_to_read);
-    }
-
-    // Buffers loaded in I2MEMSampler
-
-    // Scale the data
-    // for (int x = 0; x < i2s_samples_to_read; x++)
-    // {
-    //   sampleBuffer[x] = ((int16_t)sampleBuffer[x]) * I2S_DATA_SCALING_FACTOR;
-    // }
-
-    // if (ei_running_status)
-    // {
-    //   audio_inference_callback(i2s_bytes_to_read);
-    // }
-    // else
-    // {
-    //   break;
-    // }
-  }
-
-  //input->stop();
-  vTaskDelete(NULL);
-}
-
-/**
  * @brief      Init inferencing struct and setup/start PDM
  *
  * @param[in]  n_samples  The n samples
@@ -784,24 +712,7 @@ static bool microphone_inference_start(uint32_t n_samples)
     inference.buf_count = 0;
     inference.n_samples = n_samples;
     inference.buf_ready = 0;
-
-    // if (i2s_init(I2S_SAMPLING_FREQUENCY))
-    // {
-    //     ESP_LOGI(TAG, "Failed to start I2S!");
-    // }
-
-    // getI2sConfig();
-
-    // if (input != nullptr)
-    // {
-    //     // From restart an instance may already exist
-    //     ESP_LOGE(TAG, "I2SMEMSSampler input != nullptr");
-    //     return false;
-    // }
-    // input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-
-    // ei_sleep(100);
-   
+  
     // Microphone should have already been setup
     if (input == nullptr)
     {
@@ -814,10 +725,7 @@ static bool microphone_inference_start(uint32_t n_samples)
         ei_running_status = true;
     }
 
-    // Stack size of 16K - experimentally determined
-    // (void*)sample_buffer_size - pass in the number of samples to read
-    // Should match
-    xTaskCreate(capture_samples, "CaptureSamples", 1024 * 16, (void *)sample_buffer_size, 10, NULL);
+    input->start_read_task(sample_buffer_size/ sizeof(signed short));
 
     return true;
 }
@@ -872,33 +780,6 @@ static int microphone_audio_signal_get_data(size_t offset, size_t length, float 
     return 0;
 }
 
-/**
- * @brief      Stop PDM and release buffers
- * @deprecated Use I2SMEMSSampler::stop() instead
- */
-static void microphone_inference_end(void)
-{
-    ESP_LOGI(TAG, "microphone_inference_end()");
-
-    ei_running_status = false;
-    // Wait for 'capture_samples' thread to terminate
-    delay(1000);
-
-    if (input == nullptr)
-    {
-        ESP_LOGE(TAG, "I2SMEMSSampler input == nullptr");
-        return;
-    }
-
-    input->stop();
-
-    ei_free(inference.buffers[0]);
-    ei_free(inference.buffers[1]);
-
-    delete input;
-
-    input = nullptr;
-}
 
 /**
  * @brief Check if file exists to record inference result from Edge Impulse

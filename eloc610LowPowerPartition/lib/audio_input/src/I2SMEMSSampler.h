@@ -32,6 +32,32 @@ private:
     int ei_skip_rate = 1;
     inference_t *inference;
 
+    /**
+     * The number of SAMPLES (i.e. not bytes) to read in the read() thread
+    */
+    size_t i2s_samples_to_read;
+
+    /** 
+     * Stop read thread by setting to false
+    */
+    bool enable_read = true;
+
+    /**
+     * @brief Read I2S samples from DMA buffer
+     * @return The number of SAMPLES (i.e. not bytes) read
+    */
+    virtual int read();
+
+    /**
+     * 
+    */
+    virtual void start_read_thread();
+
+    /**
+     * 
+    */
+    static void start_read_thread_wrapper(void * _this);
+
 protected:
     bool configureI2S();
 
@@ -86,10 +112,9 @@ public:
      * @return true success
     */
     virtual bool register_ei_inference(inference_t *ext_inference, int ext_ei_sampling_freq);
-    
+
     /**
-     * @brief Read I2S samples from DMA buffer
-     * @return The number of SAMPLES (i.e. not bytes) read
+     * 
     */
-    virtual int read(int count);
+    virtual int start_read_task(int i2s_bytes_to_read);
 };

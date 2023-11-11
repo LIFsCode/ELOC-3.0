@@ -655,13 +655,13 @@ void start_sound_recording(FILE *fp){
     }
     else
     {
-        if (wav_writer->set_file_handle(fp) == false){
+        if (wav_writer->set_file_handle(fp, getConfig().secondsPerFile) == false){
             ESP_LOGE(TAG, "Failed to set file handle");
             return;
         }
         wav_writer->set_enable_wav_file_write(true);
         // Start thread to continuously write to wav file & when sufficient data is collected finish the file
-        wav_writer->start_wav_write_task(getConfig().secondsPerFile);
+        wav_writer->start_wav_write_task();
     }
 
 }
@@ -779,6 +779,7 @@ static int microphone_audio_signal_get_data(size_t offset, size_t length, float 
 
     return 0;
 }
+
 
 
 /**

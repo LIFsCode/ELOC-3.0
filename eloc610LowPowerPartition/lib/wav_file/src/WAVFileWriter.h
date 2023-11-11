@@ -74,9 +74,10 @@ public:
   /**
    * @brief Register a file to write to & write header
    * @param fp file pointer to write to (already created)
+   * @param secondsPerFile seconds per file to write
    * @return true success
    */
-  bool set_file_handle(FILE *fp);
+  bool set_file_handle(FILE *fp, int secondsPerFile);
 
   /**
    * @brief Check if file handle is set
@@ -170,9 +171,8 @@ public:
   /**
    * @brief Wrapper to start thread to write out to wav file
    * @note This will start a thread that runs until enable_wav_file_write == false
-   * @param secondsPerFile seconds per file to write
   */
-  int start_wav_write_task(int secondsPerFile);
+  int start_wav_write_task();
 };
 
 #endif // __WAVFILEWRITER_H__

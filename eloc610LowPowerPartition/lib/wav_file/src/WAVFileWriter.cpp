@@ -43,15 +43,20 @@ WAVFileWriter::WAVFileWriter(int sample_rate, int buffer_time, int ch_count /*=1
   buffers[1][0] = {0};
 }
 
-bool WAVFileWriter::set_file_handle(FILE *fp){
+bool WAVFileWriter::set_file_handle(FILE *fp, int secondsPerFile){
+  
   m_fp = fp;
+  this->secondsPerFile = secondsPerFile;
 
   if(m_fp == nullptr){
     ESP_LOGE(TAG, "File pointer is NULL");
     return false;
   }
 
-  // write out the header - we'll fill in some of the blanks later
+  // Know exactly how much space to allocate for the file
+  // auto required_pdm_data_size = m_sample_rate * secondsPerFile * sizeof(int16_t);
+  // m_header.data_bytes = m_sample_rate * secondsPerFile * sizeof(int16_t);
+  // m_header.wav_size = m_file_size - 8;
   auto ret = fwrite(&m_header, sizeof(wav_header_t), 1, m_fp);
   m_file_size = sizeof(wav_header_t);
 
@@ -139,6 +144,7 @@ void WAVFileWriter::start_write_thread()
         }
       }
       else
+        // TODO: Change this to wait for a msg from I2SMEMSSampler thread
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 
@@ -152,10 +158,10 @@ bool WAVFileWriter::finish()
   // max size & other buffer is being filled
   ESP_LOGI(TAG, "Finishing wav file size: %d", m_file_size);
   // now fill in the header with the correct information and write it again
-  m_header.data_bytes = m_file_size - sizeof(wav_header_t);
-  m_header.wav_size = m_file_size - 8;
-  fseek(m_fp, 0, SEEK_SET);
-  fwrite(&m_header, sizeof(wav_header_t), 1, m_fp);
+  // m_header.data_bytes = m_file_size - sizeof(wav_header_t);
+  // m_header.wav_size = m_file_size - 8;
+  // fseek(m_fp, 0, SEEK_SET);
+  // fwrite(&m_header, sizeof(wav_header_t), 1, m_fp);
   fclose(m_fp);
 
   m_file_size = 0;
@@ -183,9 +189,7 @@ void WAVFileWriter::start_wav_writer_wrapper(void * _this){
 
 }
 
-int WAVFileWriter::start_wav_write_task(int secondsPerFile){
-
-  this->secondsPerFile = secondsPerFile;
+int WAVFileWriter::start_wav_write_task(){
 
   int ret = xTaskCreate(this->start_wav_writer_wrapper, "Wav file writer", 1024 * 2, this, 8, NULL);
 

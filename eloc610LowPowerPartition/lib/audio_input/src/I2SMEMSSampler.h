@@ -13,6 +13,13 @@ private:
     int  mBitShift = 14;        // TODO: Use default from config.h
     bool mListenOnly = false;
     WAVFileWriter *writer = nullptr;
+    
+    /**
+     * @brief The volume shift is used to scale the 
+     *        I2S samples to adjust the volume
+     *        Possible values are 2, 4, 8, 16
+     */
+    int volume_shift = 4;
 
     // Set some reasonable values as default
     uint32_t i2s_sampling_rate = 16000; // TODO: Use value from config.h but problem linking file

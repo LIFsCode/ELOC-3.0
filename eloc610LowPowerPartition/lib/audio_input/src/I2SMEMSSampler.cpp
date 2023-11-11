@@ -106,8 +106,17 @@ int I2SMEMSSampler::read(int count)
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
-    #define I2S_VOLUME_SCALING_FACTOR 4         // Increase volume by this factor
-    #define I2S_BITS_PER_SAMPLE 24              // Shift right by this factor to correct volume
+    #define I2S_BITS_PER_SAMPLE 24      // Mic is 24 bit TODO: pickup from some sort of hardware config
+    //#define ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
+    
+    #ifdef ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
+        // Automatic gain defintions
+        #define LAST_GAIN_INCREASE_THD 30   // How often can gain be increased? 
+        #define SAMPLE_HIGH_COUNT 0.1       // % of samples before gain is decreased
+        #define SAMPLE_LOW_COUNT 0.5        // % of samples before gain is increased
+        #define SAMPLE_HIGH_LEVEL_THD 0.95  // SAMPLE_HIGH_COUNT reach/ exceed this volume -> decrease gain
+        #define SAMPLE_LOW_LEVEL_THD 0.5    // SAMPLE_LOW_COUNT fail to reach/ exceed this volume -> increase gain
+    #endif
     
     /**
      * @brief Use Teleplot extension to visualize waveform
@@ -116,7 +125,7 @@ int I2SMEMSSampler::read(int count)
      * @note: This is a debug feature and will cause significant serial output!
      * 
      */
-    // #define VISUALIZE_WAVEFORM                   
+    //#define VISUALIZE_WAVEFORM                   
 
     /** 
      * Flag if there's buffer overruns - for debug purposes
@@ -129,7 +138,19 @@ int I2SMEMSSampler::read(int count)
     bool writer_buffer_overrun = false;
     bool inference_buffer_overrun = false;
 
+    // Count how many times the sample exceeds the 16 bit range
     auto sound_clip_count = 0;
+
+    #ifdef ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
+    // How many samples exceed high threshold?
+    auto sample_high_count = 0;
+
+    // How many samples exceed low threshold?
+    auto sample_low_count = 0;
+
+    // When was the volume last increased?
+    static auto last_gain_increase = 0;
+    #endif
     
     // Allocate a buffer of BYTES sufficient for sample size
     int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * count), MALLOC_CAP_SPIRAM);
@@ -161,13 +182,9 @@ int I2SMEMSSampler::read(int count)
         ESP_LOGE(TAG, "Error in I2S read : %d", result);
     }
 
-    // samples_read = dma_buf_len??
-    // samples_read = number of 32 bit samples read = 1024
-    // bytes_read = dma_buf_len * (bits_per_sample/8) = 4096
-    
+    // Convert the number of bytes into the number of samples
     int samples_read = bytes_read / sizeof(int32_t);
-
-    // ESP_LOGI(TAG, "samples_read = %d", samples_read); 
+    ESP_LOGV(TAG, "samples_read = %d", samples_read); 
 
     if (bytes_read <= 0) {
       ESP_LOGE(TAG, "Error in I2S read : %d", bytes_read);
@@ -180,18 +197,18 @@ int I2SMEMSSampler::read(int count)
 
         #ifdef VISUALIZE_WAVEFORM
             int64_t total_raw_sample = 0;
-            int64_t total_shifted_sample = 0;
+            int64_t total_shifted_sample_32bit = 0;
             int64_t total_processed_sample_32bit = 0;
-            int64_t total_processed_sample = 0;
+            int64_t total_processed_sample_16bit = 0;
         #endif
 
         /**
-         * This bit shift is the sum of:
-         *  correct bit position of sample from (loaded with MSB starting at bit 32) -
-         *  increase volume by shifting left (each shift left doubles volume)          
+         * @note This bit shift = (corrected bit position of sample (loaded with MSB starting at bit 32) -
+         *                         increase volume by shifting left (each shift left doubles volume))
+         * @warning This shift is recalculated later if volume_shift changes         
          */
-        auto overall_bit_shift = (32 - I2S_BITS_PER_SAMPLE) - ((I2S_VOLUME_SCALING_FACTOR / 2) - 1);
-        ESP_LOGV(TAG, "overall_bit_shift = %d", overall_bit_shift);
+        auto overall_bit_shift = (32 - I2S_BITS_PER_SAMPLE) - ((volume_shift / 2) - 1);
+        ESP_LOGV(TAG, "volume_shift = %d, overall_bit_shift = %d", volume_shift, overall_bit_shift);
 
         for (auto i = 0; i < samples_read; i++)
         {   
@@ -218,29 +235,38 @@ int I2SMEMSSampler::read(int count)
 
             #ifdef VISUALIZE_WAVEFORM
                 int32_t shifted_sample = ((raw_samples[i] >> 8));
-                int32_t processed_sample_32bit = shifted_sample << ((I2S_VOLUME_SCALING_FACTOR / 2) - 1);
-                int16_t processed_sample = processed_sample_32bit;
+                int32_t processed_sample_32bit = shifted_sample << ((volume_shift / 2) - 1);
+                int16_t processed_sample_16bit = processed_sample_32bit;
             #else
                 int32_t processed_sample_32bit = raw_samples[i] >> overall_bit_shift;
-                int16_t processed_sample = processed_sample_32bit;
+                int16_t processed_sample_16bit = processed_sample_32bit;
             #endif
 
             // Have we exceeded the 16 bit range?
-            static_assert(sizeof(processed_sample) == 2, "check datatype of processed_sample is int16_t");
+            static_assert(sizeof(processed_sample_16bit) == 2, "check datatype of processed_sample_16bit is int16_t");
             static_assert(INT16_MAX == 32767, "INT16_MAX != 32767");
             static_assert(INT16_MIN == -32768, "INT16_MIN != -32768");
             
             if (processed_sample_32bit < INT16_MIN){
-                processed_sample = INT16_MIN;
+                processed_sample_16bit = INT16_MIN;
                 sound_clip_count++;
             }
             else if (processed_sample_32bit > INT16_MAX){
-                processed_sample = INT16_MAX;
+                processed_sample_16bit = INT16_MAX;
                 sound_clip_count++;
             }
 
+            #ifdef ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
+            if (abs(processed_sample_16bit) > (INT16_MAX * SAMPLE_HIGH_LEVEL_THD)){
+                sample_high_count++;
+            }
+            else if (abs(processed_sample_16bit) > (INT16_MAX * SAMPLE_LOW_LEVEL_THD)){
+                sample_low_count++;
+            }
+            #endif
+
             // Store into wav file buffer
-            writer->buffers[writer->buf_select][writer->buf_count++] = processed_sample;
+            writer->buffers[writer->buf_select][writer->buf_count++] = processed_sample_16bit;
             
             if(writer != nullptr){
                 /*
@@ -265,7 +291,7 @@ int I2SMEMSSampler::read(int count)
             if (skip_current >= ei_skip_rate){
                 ESP_LOGV(TAG, "Saving sample, skip_current = %d", skip_current);
 
-                inference->buffers[inference->buf_select][inference->buf_count++] = processed_sample;
+                inference->buffers[inference->buf_select][inference->buf_count++] = processed_sample_16bit;
                 skip_current = 1;
 
                 if (inference->buf_count >= inference->n_samples)
@@ -288,16 +314,16 @@ int I2SMEMSSampler::read(int count)
         
             #ifdef VISUALIZE_WAVEFORM
                 total_raw_sample += raw_samples[i];
-                total_processed_sample += processed_sample;
-                total_shifted_sample += shifted_sample;
+                total_processed_sample_16bit += processed_sample_16bit;
+                total_shifted_sample_32bit += shifted_sample;
                 total_processed_sample_32bit += processed_sample_32bit;
 
                 // Print out every 125ms/ 8 times a second
                 if (i % (i2s_sampling_rate / 8) == 0){
                     // printf(">avg_raw_sample:%f\n", float(total_raw_sample/ samples_read));
-                    // printf(">avg_shifted_sample:%f\n", float(total_shifted_sample/ samples_read));
+                    // printf(">avg_shifted_sample:%f\n", float(total_shifted_sample_32bit/ samples_read));
                     // printf(">avg_processed_sample_32bit:%f\n", float(total_processed_sample_32bit/ samples_read));
-                    printf(">avg_processed_sample:%f\n", float(total_processed_sample/ samples_read));
+                    printf(">avg_processed_sample:%f\n", float(total_processed_sample_16bit/ samples_read));
                 }
             #endif
         }
@@ -327,6 +353,38 @@ int I2SMEMSSampler::read(int count)
     }
 
     free(raw_samples);
+
+    // Automatic gain adjustment
+    #ifdef ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
+    if (sample_high_count > SAMPLE_HIGH_COUNT * samples_read){
+        // Immediately decrease gain if above 2
+        if (volume_shift > 2){
+            volume_shift = volume_shift >> 1;
+        }
+        last_gain_increase = 0;
+        ESP_LOGV(TAG, "sample_high_count = %d, decreasing gain to %d", sample_high_count, volume_shift);
+    } else if (sample_low_count < SAMPLE_LOW_COUNT * samples_read){
+        // Increase gain if not recently increased
+        if (last_gain_increase > LAST_GAIN_INCREASE_THD){
+            // Increase in steps of ^2
+            volume_shift = volume_shift << 1;
+            last_gain_increase = 0;
+            ESP_LOGV(TAG, "sample_low_count = %d, increasing gain to %d", sample_low_count, volume_shift);
+        } else {
+            last_gain_increase++;
+            ESP_LOGV(TAG, "sample_low_count = %d, last_gain_increase %d", sample_low_count, last_gain_increase);
+        }
+    }
+
+    // Boundary check
+    if (volume_shift < 2){
+        volume_shift = 2;
+    } else if (volume_shift > 16){
+        volume_shift = 16;
+    }
+
+    #endif
+
     return samples_read;
 }
 

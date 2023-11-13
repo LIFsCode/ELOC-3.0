@@ -655,13 +655,13 @@ void start_sound_recording(FILE *fp){
     }
     else
     {
-        if (wav_writer->set_file_handle(fp, getConfig().secondsPerFile) == false){
+        if (wav_writer->set_file_handle(fp) == false){
             ESP_LOGE(TAG, "Failed to set file handle");
             return;
         }
         wav_writer->set_enable_wav_file_write(true);
         // Start thread to continuously write to wav file & when sufficient data is collected finish the file
-        wav_writer->start_wav_write_task();
+        wav_writer->start_wav_write_task(getConfig().secondsPerFile);
     }
 
 }
@@ -780,7 +780,29 @@ static int microphone_audio_signal_get_data(size_t offset, size_t length, float 
     return 0;
 }
 
+/**
+ * @brief Stop inference & release buffers
+ */
+static void stop_inference(void)
+{
+    ESP_LOGI(TAG, "stop_inference()");
+    
+    ei_running_status = false;
 
+    // Delay in case I2SMEMSSampler::read() is currently loading samples into buffers
+    delay(100);
+
+    if (inference.buffers[0] != NULL)
+    {
+        ei_free(inference.buffers[0]);
+    }
+    
+    if (inference.buffers[1] != NULL)
+    {
+        ei_free(inference.buffers[1]);
+    }
+
+}
 
 /**
  * @brief Check if file exists to record inference result from Edge Impulse
@@ -1194,7 +1216,7 @@ void app_main(void)
                 // ESP_LOGE(TAG, "ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
                 ESP_LOGE(TAG, "ERR: microphone_inference_start failed, restarting...");
                 delay(500);
-                microphone_inference_end();
+                stop_inference();
             }
         }
 

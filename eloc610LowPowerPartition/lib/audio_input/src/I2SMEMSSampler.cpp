@@ -271,7 +271,7 @@ int I2SMEMSSampler::read()
                 /*
                  * @warning If writer == nullptr (file not created) these buffers won't exist!
                  */ 
-                if (writer->buf_count >= writer->buffer_size){
+                if (writer->buf_count >= writer->buffer_size_in_samples){
                     // Swap buffers and set buf_ready
                     writer->buf_select ^= 1;
                     writer->buf_count = 0;
@@ -286,29 +286,33 @@ int I2SMEMSSampler::read()
                 }
             }
 
-            // Store into edge-impulse buffer taking into requirement to skip if necessary
-            if (skip_current >= ei_skip_rate){
-                ESP_LOGV(TAG, "Saving sample, skip_current = %d", skip_current);
+            // Check buffer exists
+            if (inference->buffers[inference->buf_select] != nullptr){
 
-                inference->buffers[inference->buf_select][inference->buf_count++] = processed_sample_16bit;
-                skip_current = 1;
+                // Store into edge-impulse buffer taking into requirement to skip if necessary
+                if (skip_current >= ei_skip_rate){
+                    ESP_LOGV(TAG, "Saving sample, skip_current = %d", skip_current);
 
-                if (inference->buf_count >= inference->n_samples)
-                {
-                inference->buf_select ^= 1;
-                inference->buf_count = 0;
+                    inference->buffers[inference->buf_select][inference->buf_count++] = processed_sample_16bit;
+                    skip_current = 1;
 
-                // Flag overrun for later
-                if(inference->buf_ready == 1){
-                    inference_buffer_overrun = true;
+                    if (inference->buf_count >= inference->n_samples)
+                    {
+                    inference->buf_select ^= 1;
+                    inference->buf_count = 0;
+
+                    // Flag overrun for later
+                    if(inference->buf_ready == 1){
+                        inference_buffer_overrun = true;
+                    }
+                    
+                    inference->buf_ready = 1;
+                    }
                 }
-                
-                inference->buf_ready = 1;
+                else{
+                    ESP_LOGV(TAG, "Not saving sample, skip_current = %d", skip_current);
+                    skip_current++;
                 }
-            }
-            else{
-                ESP_LOGV(TAG, "Not saving sample, skip_current = %d", skip_current);
-                skip_current++;
             }
         
             #ifdef VISUALIZE_WAVEFORM

@@ -55,12 +55,15 @@ public:
   int buf_ready = 0;
 
   /**
-   * @param buffer_size size of each buffer. Determined by sample rate & buffer_time required
+   * @param buffer_size_in_samples is the number of SAMPLES that will fit in the buffer
    * @param buffers pointer array to 2 buffers, 1 active, 1 inactive
-   * @note In order to optimize write times the buffer size
+   * @note In order to optimize write times the buffer_size_in_samples
    *       should be a multiple of 512 bytes (SD card block size)
+   * 
+   *     The buffer_size_in_samples is calculated as follows (this is a sensible default):
+   *     =  int((sample_rate * buffer_time) / 512) * 512;
    */
-  size_t buffer_size = (int(16000/512)) * 512; 
+  size_t buffer_size_in_samples = (int(16000 * 2/512)) * 512; 
   signed short *buffers[2];
 
   /**
@@ -74,10 +77,9 @@ public:
   /**
    * @brief Register a file to write to & write header
    * @param fp file pointer to write to (already created)
-   * @param secondsPerFile seconds per file to write
    * @return true success
    */
-  bool set_file_handle(FILE *fp, int secondsPerFile);
+  bool set_file_handle(FILE *fp);
 
   /**
    * @brief Check if file handle is set
@@ -110,8 +112,9 @@ public:
   u_int32_t get_file_size_bytes() { return m_file_size; }
 
   /**
-   * @brief Get the current file size
+   * @brief Get the APPROX current file size in seconds
    * @note Uses sample rate to convert to seconds
+   * @note This is not accurate as it does not take into account the header size
    * @return u_int32_t file size in seconds
    */
   u_int32_t get_file_size_sec() { return m_file_size / (sizeof(int16_t) * m_sample_rate); }
@@ -171,8 +174,9 @@ public:
   /**
    * @brief Wrapper to start thread to write out to wav file
    * @note This will start a thread that runs until enable_wav_file_write == false
+   * @param secondsPerFile seconds per file to write
   */
-  int start_wav_write_task();
+  int start_wav_write_task(int secondsPerFile);
 };
 
 #endif // __WAVFILEWRITER_H__

@@ -21,21 +21,22 @@ WAVFileWriter::WAVFileWriter(int sample_rate, int buffer_time, int ch_count /*=1
   buf_count = 0;
 
   // Make buffer size a multiple of 512
-  buffer_size = int((sample_rate * buffer_time) / 512) * 512;
-  ESP_LOGI(TAG, "buffer_size = %d", buffer_size);
+  buffer_size_in_samples = int((sample_rate * buffer_time) / 512) * 512;
 
-  buffers[0] = (int16_t *)heap_caps_malloc(buffer_size * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+  ESP_LOGI(TAG, "buffer_size = %d", buffer_size_in_samples);
+
+  buffers[0] = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
 
   if (buffers[0] == NULL)
   {
-      ESP_LOGE(TAG, "Failed to allocate %d bytes for wav file buffer[0]", buffer_size * sizeof(int16_t));
+      ESP_LOGE(TAG, "Failed to allocate %d bytes for wav file buffer[0]", buffer_size_in_samples * sizeof(int16_t));
   }
 
-  buffers[1] = (int16_t *)heap_caps_malloc(buffer_size * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+  buffers[1] = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
 
   if (buffers[1] == NULL)
   {
-      ESP_LOGE(TAG, "Failed to allocate %d bytes for wav file buffer[1]", buffer_size * sizeof(int16_t));
+      ESP_LOGE(TAG, "Failed to allocate %d bytes for wav file buffer[1]", buffer_size_in_samples * sizeof(int16_t));
       heap_caps_free(buffers[0]);
   }
 
@@ -43,20 +44,22 @@ WAVFileWriter::WAVFileWriter(int sample_rate, int buffer_time, int ch_count /*=1
   buffers[1][0] = {0};
 }
 
-bool WAVFileWriter::set_file_handle(FILE *fp, int secondsPerFile){
+bool WAVFileWriter::set_file_handle(FILE *fp){
+    m_fp = fp;
   
-  m_fp = fp;
-  this->secondsPerFile = secondsPerFile;
-
   if(m_fp == nullptr){
     ESP_LOGE(TAG, "File pointer is NULL");
     return false;
   }
 
-  // Know exactly how much space to allocate for the file
-  // auto required_pdm_data_size = m_sample_rate * secondsPerFile * sizeof(int16_t);
-  // m_header.data_bytes = m_sample_rate * secondsPerFile * sizeof(int16_t);
-  // m_header.wav_size = m_file_size - 8;
+  /**
+   * @note Here a header is written to the file, with some fields left blank
+   *       Could possibly modify this to write fully correct header here, knowing 
+   *       required seconds per file, sample rate, etc. However, this would 
+   *       probably writing only a partial buffer at the last write, and losing 
+   *       the rest of the buffer sound. Probably not ideal.
+   */
+
   auto ret = fwrite(&m_header, sizeof(wav_header_t), 1, m_fp);
   m_file_size = sizeof(wav_header_t);
 
@@ -114,9 +117,9 @@ void WAVFileWriter::write()
     return;
   }
 
-  fwrite(buffers[buffer_inactive], sizeof(int16_t), buffer_size, m_fp);
+  fwrite(buffers[buffer_inactive], sizeof(int16_t), buffer_size_in_samples, m_fp);
 
-  m_file_size += sizeof(int16_t) * buffer_size;
+  m_file_size += sizeof(int16_t) * buffer_size_in_samples;
 
   // Don't swap buffers here, I2MEMSSampler::read() to do it
   buf_ready = 0;
@@ -158,10 +161,10 @@ bool WAVFileWriter::finish()
   // max size & other buffer is being filled
   ESP_LOGI(TAG, "Finishing wav file size: %d", m_file_size);
   // now fill in the header with the correct information and write it again
-  // m_header.data_bytes = m_file_size - sizeof(wav_header_t);
-  // m_header.wav_size = m_file_size - 8;
-  // fseek(m_fp, 0, SEEK_SET);
-  // fwrite(&m_header, sizeof(wav_header_t), 1, m_fp);
+  m_header.data_bytes = m_file_size - sizeof(wav_header_t);
+  m_header.wav_size = m_file_size - 8;
+  fseek(m_fp, 0, SEEK_SET);
+  fwrite(&m_header, sizeof(wav_header_t), 1, m_fp);
   fclose(m_fp);
 
   m_file_size = 0;
@@ -189,7 +192,9 @@ void WAVFileWriter::start_wav_writer_wrapper(void * _this){
 
 }
 
-int WAVFileWriter::start_wav_write_task(){
+int WAVFileWriter::start_wav_write_task(int secondsPerFile){
+
+  this->secondsPerFile = secondsPerFile;
 
   int ret = xTaskCreate(this->start_wav_writer_wrapper, "Wav file writer", 1024 * 2, this, 8, NULL);
 

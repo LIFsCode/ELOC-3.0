@@ -105,9 +105,6 @@ bool I2SMEMSSampler::register_ei_inference(inference_t *ext_inference, int ext_e
 int I2SMEMSSampler::read()
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
-
-    #define I2S_BITS_PER_SAMPLE 24      // Mic is 24 bit TODO: pickup from some sort of hardware config
-    // #define ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
     
     #ifdef ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
         // Automatic gain defintions
@@ -118,14 +115,6 @@ int I2SMEMSSampler::read()
         #define SAMPLE_LOW_LEVEL_THD 0.5    // SAMPLE_LOW_COUNT fail to reach/ exceed this volume -> increase gain
     #endif
     
-    /**
-     * @brief Use Teleplot extension to visualize waveform
-     * https://marketplace.visualstudio.com/items?itemName=alexnesnes.teleplot
-     * 
-     * @note: This is a debug feature and will cause significant serial output!
-     * 
-     */
-    //#define VISUALIZE_WAVEFORM                   
 
     /** 
      * Flag if there's buffer overruns - for debug purposes
@@ -263,14 +252,15 @@ int I2SMEMSSampler::read()
                 sample_low_count++;
             }
             #endif
-
-            // Store into wav file buffer
-            writer->buffers[writer->buf_select][writer->buf_count++] = processed_sample_16bit;
             
             if(writer != nullptr){
                 /*
                  * @warning If writer == nullptr (file not created) these buffers won't exist!
                  */ 
+
+                // Store into wav file buffer
+                writer->buffers[writer->buf_select][writer->buf_count++] = processed_sample_16bit;
+
                 if (writer->buf_count >= writer->buffer_size_in_samples){
                     // Swap buffers and set buf_ready
                     writer->buf_select ^= 1;

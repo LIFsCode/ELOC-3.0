@@ -3,7 +3,7 @@
 #include "I2SSampler.h"
 #include "WAVFileWriter.h"
 #include "../../../include/ei_inference.h"
-// #include "../../../src/config.h" error #include "lis3dh_types.h"
+#include "../../../src/project_config.h"
 
 class I2SMEMSSampler : public I2SSampler
 {

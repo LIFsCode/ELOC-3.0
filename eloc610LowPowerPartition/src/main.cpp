@@ -1176,32 +1176,43 @@ void app_main(void)
     // Zero DMA buffer, prevents popping sound on start
     input->zero_dma_buffer(I2S_DEFAULT_PORT);              
 
-    // create a new wave file wav_writer & make sure sample rate is up to date
-    wav_writer = new WAVFileWriter((int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 2, NUMBER_OF_CHANNELS);
-    // Block until properly registered otherwise will get error later
-    while (input->register_wavFileWriter(wav_writer) == false){
-        ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
-        delay(5);
+    if (checkSDCard() == ESP_OK){
+        // create a new wave file wav_writer & make sure sample rate is up to date
+        wav_writer = new WAVFileWriter((int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 2, NUMBER_OF_CHANNELS);
+        // Block until properly registered otherwise will get error later
+        while (input->register_wavFileWriter(wav_writer) == false){
+            ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
+            delay(5);
+        }
+
+        //Populate gSessionIdentifier for wav filename
+        createSessionFolder();
+
+        // TODO: DEBUG
+        wav_writer->set_mode(WAVFileWriter::Mode::continuous);
+    }
+    else
+    {
+        ESP_LOGE(TAG, "SD card not mounted, cannot create WAVFileWriter");
+        wav_writer = nullptr;
+        #ifdef EDGE_IMPULSE_ENABLED
+            save_ai_results_to_sd = false;
+        #endif
     }
 
     // wav file pointer
     // TODO: Move to wav_writer class
     FILE *fp = nullptr;
-    //Populate gSessionIdentifier for wav filename
-    createSessionFolder();
-
     rec_req_t rec_req = REC_REQ_NONE;
 
     // TODO: Define conditions on which device shuld exit this while() loop
     // e.g. SD card full or I2S error?
 
-    // DEBUG
-    wav_writer->set_mode(WAVFileWriter::Mode::continuous);
-
     while (true)
     {
         // Start a new recording?
-        if (wav_writer->is_file_handle_set() == false && 
+        if (wav_writer != nullptr &&
+            wav_writer->is_file_handle_set() == false && 
             wav_writer->get_mode() == WAVFileWriter::Mode::continuous &&
             checkSDCard() == ESP_OK)
         {   
@@ -1235,9 +1246,12 @@ void app_main(void)
             signal.get_data = &microphone_audio_signal_get_data;
             ei_impulse_result_t result = {0};
 
-            // If changing to non-continuous ensure to use:
-            // EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
-            EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
+            #ifdef AI_CONTINUOUS_INFERENCE
+                EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
+            #else
+                EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
+            #endif // AI_CONTINUOUS_INFERENCE
+
             if (r != EI_IMPULSE_OK)
             {
                 ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
@@ -1245,9 +1259,12 @@ void app_main(void)
                 continue;
             }
 
-            //if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))
-            // Output every result instead of every EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW
-            if (++print_results >= 1)
+            #ifdef AI_CONTINUOUS_INFERENCE
+                if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))
+            #else
+                // Non-continous, always print
+                if (1)
+            #endif // AI_CONTINUOUS_INFERENCE
             {
                 // print the predictions
                 ESP_LOGI(TAG, "Predictions ");
@@ -1326,5 +1343,11 @@ void app_main(void)
 #ifdef EDGE_IMPULSE_ENABLED
     #if !defined(EI_CLASSIFIER_SENSOR) || EI_CLASSIFIER_SENSOR != EI_CLASSIFIER_SENSOR_MICROPHONE
     #error "Invalid model for current sensor."
+    #endif
+#endif
+
+#ifdef AI_CONTINUOUS_INFERENCE
+    #if (EI_CLASSIFIER_CALIBRATION_ENABLED == 0)
+    #error "It appears this EI model is not suited for continous inference. Go to 'Performance calibration' in your Edge Impulse project to configure post-processing parameters"
     #endif
 #endif

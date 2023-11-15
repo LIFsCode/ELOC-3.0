@@ -200,7 +200,7 @@ int I2SMEMSSampler::read()
          *       15th Nov, allow -ve volume shift, i.e. decrease volume     
          */
         auto overall_bit_shift = (32 - I2S_BITS_PER_SAMPLE) - volume_shift;
-        ESP_LOGI(TAG, "volume_shift = %d, overall_bit_shift = %d", volume_shift, overall_bit_shift);
+        ESP_LOGV(TAG, "volume_shift = %d, overall_bit_shift = %d", volume_shift, overall_bit_shift);
 
         for (auto i = 0; i < samples_read; i++)
         {   

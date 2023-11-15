@@ -1291,7 +1291,8 @@ void app_main(void)
                         result.classification[ix].value > AI_RESULT_THRESHOLD)
                     {
                         // Start recording??
-                        if (wav_writer->is_file_handle_set() == false && 
+                        if (wav_writer != nullptr &&
+                            wav_writer->is_file_handle_set() == false && 
                             wav_writer->get_mode() == WAVFileWriter::Mode::single &&
                             checkSDCard() == ESP_OK)
                         {   

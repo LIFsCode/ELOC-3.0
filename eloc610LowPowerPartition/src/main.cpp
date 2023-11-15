@@ -1190,7 +1190,11 @@ void app_main(void)
      */
     getI2sConfig();
 
+    /**
+     * @note Using MicUseTimingFix == true or false doesn't seem to effect ICS-43434 mic
+     */
     input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+    
     input->start();
     // Zero DMA buffer, prevents popping sound on start
     input->zero_dma_buffer(I2S_DEFAULT_PORT);              

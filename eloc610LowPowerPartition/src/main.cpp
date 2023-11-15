@@ -918,6 +918,12 @@ void app_main(void)
 
 #ifdef EDGE_IMPULSE_ENABLED
     ESP_LOGI(TAG, "Edge Impulse framework enabled");
+
+    #ifdef AI_CONTINUOUS_INFERENCE
+        ESP_LOGI(TAG, "Continuous inference enabled");
+    #else
+        ESP_LOGI(TAG, "Continuous inference disabled");
+    #endif
 #endif
 
     initTime();
@@ -1343,11 +1349,5 @@ void app_main(void)
 #ifdef EDGE_IMPULSE_ENABLED
     #if !defined(EI_CLASSIFIER_SENSOR) || EI_CLASSIFIER_SENSOR != EI_CLASSIFIER_SENSOR_MICROPHONE
     #error "Invalid model for current sensor."
-    #endif
-#endif
-
-#ifdef AI_CONTINUOUS_INFERENCE
-    #if (EI_CLASSIFIER_CALIBRATION_ENABLED == 0)
-    #error "It appears this EI model is not suited for continous inference. Go to 'Performance calibration' in your Edge Impulse project to configure post-processing parameters"
     #endif
 #endif

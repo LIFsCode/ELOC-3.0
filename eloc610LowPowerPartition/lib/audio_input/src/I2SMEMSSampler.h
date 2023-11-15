@@ -10,7 +10,7 @@ class I2SMEMSSampler : public I2SSampler
 private:
     i2s_pin_config_t m_i2sPins;
     bool m_fixSPH0645;
-    int  mBitShift = 14;        // TODO: Use default from config.h
+    int  mBitShift = I2S_DEFAULT_BIT_SHIFT;        // TODO: depreciated?? Using I2S_DEFAULT_BIT_SHIFT + I2S_DEFAULT_VOLUME instead from config.h
     bool mListenOnly = false;
     WAVFileWriter *writer = nullptr;
     
@@ -19,11 +19,11 @@ private:
      *        I2S samples to adjust the volume
      *        Possible values are 2, 4, 8, 16
      */
-    int volume_shift = 4;
+    int volume_shift = I2S_DEFAULT_VOLUME;
 
     // Set some reasonable values as default
-    uint32_t i2s_sampling_rate = 16000; // TODO: Use value from config.h but problem linking file
-    uint32_t ei_sampling_freq = 16000;  // TODO: Use value from config.h but problem linking file
+    uint32_t i2s_sampling_rate = I2S_DEFAULT_SAMPLE_RATE;
+    uint32_t ei_sampling_freq = I2S_DEFAULT_SAMPLE_RATE;
     
     // Handle scenario where EI_CLASSIFIER_FREQUENCY != I2S sample rate
     // Will skip packing EI buffer at this rate
@@ -66,7 +66,7 @@ public:
         i2s_port_t i2s_port,
         i2s_pin_config_t &i2s_pins,
         i2s_config_t i2s_config,
-        int  bitShift = 14,     // TODO: Use value I2S_DEFAULT_BIT_SHIFT from config.h but problem linking file
+        int  bitShift = I2S_DEFAULT_BIT_SHIFT,     // TODO: depreciated?? Using I2S_DEFAULT_BIT_SHIFT + I2S_DEFAULT_VOLUME instead from config.h
         bool listenOnly = false,
         bool fixSPH0645 = false);
 

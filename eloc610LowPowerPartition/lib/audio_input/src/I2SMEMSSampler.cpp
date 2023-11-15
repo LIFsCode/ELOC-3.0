@@ -139,6 +139,9 @@ int I2SMEMSSampler::read()
 
         // When was the volume last increased?
         static auto last_gain_increase = 0;
+
+        // Used to notification to serial monitor when volume is changed
+        bool volume_change = false;
     #endif
     
     // Allocate a buffer of BYTES sufficient for sample size
@@ -353,6 +356,7 @@ int I2SMEMSSampler::read()
             volume_shift = volume_shift >> 1;
         }
         last_gain_increase = 0;
+        volume_change = true;
         ESP_LOGV(TAG, "sample_high_count = %d, decreasing gain to %d", sample_high_count, volume_shift);
     } else if (sample_low_count < SAMPLE_LOW_COUNT * samples_read){
         // Increase gain if not recently increased
@@ -360,6 +364,7 @@ int I2SMEMSSampler::read()
             // Increase in steps of ^2
             volume_shift = volume_shift << 1;
             last_gain_increase = 0;
+            volume_change = true;
             ESP_LOGV(TAG, "sample_low_count = %d, increasing gain to %d", sample_low_count, volume_shift);
         } else {
             last_gain_increase++;
@@ -372,6 +377,10 @@ int I2SMEMSSampler::read()
         volume_shift = 2;
     } else if (volume_shift > 16){
         volume_shift = 16;
+    }
+
+    if (volume_change == true){
+        ESP_LOGI(TAG, "volume_shift = %d", volume_shift);
     }
 
     #endif

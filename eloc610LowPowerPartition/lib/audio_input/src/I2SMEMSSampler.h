@@ -15,9 +15,7 @@ private:
     WAVFileWriter *writer = nullptr;
     
     /**
-     * @brief The volume shift is used to scale the 
-     *        I2S samples to adjust the volume
-     *        Possible values are 2, 4, 8, 16
+     * @brief The volume shift is used to scale the adjust the volume
      */
     int volume_shift = I2S_DEFAULT_VOLUME;
 

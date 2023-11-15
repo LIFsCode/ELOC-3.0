@@ -127,12 +127,21 @@
          * I2S_DEFAULT_BIT_SHIFT replaced combination of I2S_BITS_PER_SAMPLE & I2S_DEFAULT_VOLUME
          */
         #define I2S_DEFAULT_BIT_SHIFT 14                // Default bit shift for this mic
+        
+        
         #define I2S_DEFAULT_PORT I2S_NUM_0              // Default port for this mic
-        #define I2S_DEFAULT_VOLUME 4                    // Default volume shift for this mic. Possible values are 2 (lowest), 4, 8, 16 (highest)
+        /**
+         * @note Default volume shift for this mic. -ve value decrease volume, +ve increase. 0 neutral
+         *       e.g. value of +1 doubles volume, value of -1 halves volume
+         *       change in steps of 1
+        */
+        #define I2S_DEFAULT_VOLUME 0                    
         
         /** 
          * @brief Enable/ disable automatic gain feature in @file I2SMEMSSampler.cpp
          *        This feature adjust volume for optimum performance
+         * @note: Currently causes distortion on SD card recording! 
+         * @todo: fix 
          */ 
         // #define ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
 

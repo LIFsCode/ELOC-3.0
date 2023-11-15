@@ -196,10 +196,11 @@ int I2SMEMSSampler::read()
 
         /**
          * @note This bit shift = (corrected bit position of sample (loaded with MSB starting at bit 32) -
-         *                         increase volume by shifting left (each shift left doubles volume))       
+         *                         increase volume by shifting left (each shift left doubles volume))
+         *       15th Nov, allow -ve volume shift, i.e. decrease volume     
          */
-        auto overall_bit_shift = (32 - I2S_BITS_PER_SAMPLE) - ((volume_shift / 2) - 1);
-        ESP_LOGV(TAG, "volume_shift = %d, overall_bit_shift = %d", volume_shift, overall_bit_shift);
+        auto overall_bit_shift = (32 - I2S_BITS_PER_SAMPLE) - volume_shift;
+        ESP_LOGI(TAG, "volume_shift = %d, overall_bit_shift = %d", volume_shift, overall_bit_shift);
 
         for (auto i = 0; i < samples_read; i++)
         {   
@@ -216,17 +217,19 @@ int I2SMEMSSampler::read()
              *                                                                                                                                                                        ^^^^^^^^ DISCARDED ^^^^^^^
              * Note: for esp-idf/ gcc, the sign bit seems to be preserved.
              * But this samples volume is too low, so shift left to increase volume
-             * 
-             * Bit pos:     31 | 30 | 29 | 28 | 27 | 26 | 25 | 24 | 23 | 22 | 21 | 20 | 19 | 18 | 17 | 16 | 15 | 14 | 13 | 12 | 11 | 10 | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0
-             * Times 2:      0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   D   0
-             * Times 4:      0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   0   0 
-             * Times 8:      0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   0   0   0
-             * Times 16:     0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   0   0   0   0 
+             *                  
+             * volume_shift: 31 | 30 | 29 | 28 | 27 | 26 | 25 | 24 | 23 | 22 | 21 | 20 | 19 | 18 | 17 | 16 | 15 | 14 | 13 | 12 | 11 | 10 | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0
+             * Value -1:     0    0    0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   D   D 
+             * Value 0:      0    0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   D  ^^^^^^^^ DISCARDED ^^^^^^^
+             * Value 1:      0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   0
+             * Value 2:      0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   0   0 
+             * Value 3:      0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   0   0   0
+             * Value 4:      0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   0   0   0   0 
              */
 
             #ifdef VISUALIZE_WAVEFORM
                 int32_t shifted_sample = ((raw_samples[i] >> 8));
-                int32_t processed_sample_32bit = shifted_sample << ((volume_shift / 2) - 1);
+                int32_t processed_sample_32bit = shifted_sample << volume_shift;
                 int16_t processed_sample_16bit = processed_sample_32bit;
             #else
                 int32_t processed_sample_32bit = raw_samples[i] >> overall_bit_shift;
@@ -351,8 +354,8 @@ int I2SMEMSSampler::read()
     // Automatic gain adjustment
     #ifdef ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
     if (sample_high_count > SAMPLE_HIGH_COUNT * samples_read){
-        // Immediately decrease gain if above 2
-        if (volume_shift > 2){
+        // TODO: check when volume_shift is -ve
+        if (volume_shift > 0){
             volume_shift = volume_shift >> 1;
         }
         last_gain_increase = 0;
@@ -361,7 +364,6 @@ int I2SMEMSSampler::read()
     } else if (sample_low_count < SAMPLE_LOW_COUNT * samples_read){
         // Increase gain if not recently increased
         if (last_gain_increase > LAST_GAIN_INCREASE_THD){
-            // Increase in steps of ^2
             volume_shift = volume_shift << 1;
             last_gain_increase = 0;
             volume_change = true;
@@ -373,10 +375,10 @@ int I2SMEMSSampler::read()
     }
 
     // Boundary check
-    if (volume_shift < 2){
-        volume_shift = 2;
-    } else if (volume_shift > 16){
-        volume_shift = 16;
+    if (volume_shift < -2){
+        volume_shift = -2;
+    } else if (volume_shift > 4){
+        volume_shift = 4;
     }
 
     if (volume_change == true){

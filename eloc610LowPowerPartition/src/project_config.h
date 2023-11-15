@@ -78,9 +78,13 @@
         #define I2S_SAMPLE_RATE_MIN 4000                // Not certain from datasheet 
         #define I2S_SAMPLE_RATE_MAX 51600               // Not certain from datasheet
 
-        #define I2S_DEFAULT_BIT_SHIFT 11                // Default bit shift for this mic
+        /**
+         * @deprecated?  
+         * I2S_DEFAULT_BIT_SHIFT replaced combination of I2S_BITS_PER_SAMPLE & I2S_DEFAULT_VOLUME
+         */
+        #define I2S_DEFAULT_BIT_SHIFT 14                // Default bit shift for this mic
         #define I2S_DEFAULT_PORT I2S_NUM_0              // Default port for this mic
-        
+        #define I2S_DEFAULT_VOLUME 4                    // Default volume shift for this mic. Possible values are 2 (lowest), 4, 8, 16 (highest)
         
         /** 
          * @brief Enable/ disable automatic gain feature in @file I2SMEMSSampler.cpp

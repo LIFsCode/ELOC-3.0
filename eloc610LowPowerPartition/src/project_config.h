@@ -10,6 +10,52 @@
 #ifndef _PROJECT_CONFIG_H_
 #define _PROJECT_CONFIG_H_
 
+/**
+ * @brief A suggested method of implementing a board dependent build configuration
+ *        The basic idea is that a board is defined in platformio.ini file as a build flag e.g.
+ *        build_flags =
+                -DBOARD=WROVER_KIT
+
+          & the resulting peripherals are defined, with any associated settings, in this file. e.g:
+ * 
+ *
+ * Default board would be the latest, this gets build if no BOARD is defined in platform.ini
+ * #ifndef BOARD
+ *  #define BOARD ELOC_3_2
+ * #endif
+ * 
+ * #ifdef ELOC_3_2
+ *  define all pins here...
+ * 
+ *  define all peripherals here..eg
+ *  #define I2S_MIC_ICS-43434
+ * 
+ * #endif // ELOC_3_2
+ * 
+ * 
+ * #ifdef ELOC_3_1
+ *  #define I2S_MIC_SPH0645
+ *  etc..
+ * #endif // ELOC_3_1
+ * 
+ * #ifdef WROVER_KIT
+ *  etc..
+ * #endif // WROVER_KIT
+ * 
+ * 
+ * Here define all peripheral settings, e.g.
+ * #ifdef I2S_MIC_ICS-43434
+ *  #define I2S_BITS_PER_SAMPLE 24        
+ *  #define I2S_SAMPLE_RATE_MIN 4000
+ *  #define I2S_SAMPLE_RATE_MAX 51600
+ *  #define I2S_DEFAULT_VOLUME 4
+ * #endif // I2S_MIC_ICS-43434
+ * 
+ * 
+ * 
+ */
+
+
 
 //#define USE_SPI_VERSION
 #define USE_SDIO_VERSION
@@ -34,8 +80,6 @@
         #define I2S_MIC_LEFT_RIGHT_CLOCK GPIO_NUM_12    
         #define I2S_MIC_SERIAL_DATA GPIO_NUM_27         
         #define I2S_MIC_SERIAL_CLOCK GPIO_NUM_14     
-
-
 #endif
 
 

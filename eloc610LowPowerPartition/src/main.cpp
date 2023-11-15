@@ -1097,48 +1097,61 @@ void app_main(void)
         }
 
         // Artifically fill buffer with test data
-        // WARNING: Limit to buffer size
         auto ei_skip_rate = TEST_SAMPLE_LENGTH / EI_CLASSIFIER_RAW_SAMPLE_COUNT;
         auto skip_current = ei_skip_rate;   // Make sure to fill first sample, then start skipping if needed
 
-        for (auto test_sample_count = 0, inference_buffer_count = 0; (test_sample_count < TEST_SAMPLE_LENGTH) && 
-                (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT); test_sample_count++)
-        {
-            if(skip_current >= ei_skip_rate){
-                inference.buffers[0][inference_buffer_count++] = trumpet_test[test_sample_count];
-                skip_current = 1;
+        for (auto i = 0; i < test_array_size; i++){
+
+            ESP_LOGI(TAG, "Running test category: %s", test_array_categories[i]);
+
+            for (auto test_sample_count = 0, inference_buffer_count = 0; (test_sample_count < TEST_SAMPLE_LENGTH) && 
+                    (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT); test_sample_count++)
+            {
+                if(skip_current >= ei_skip_rate){
+                    inference.buffers[0][inference_buffer_count++] = test_array[i][test_sample_count];
+                    skip_current = 1;
+                }
+                else{
+                    skip_current++;
+                }
             }
-            else{
-                skip_current++;
+
+            // Mark buffer as ready
+            inference.buf_select = 1;   // Mark active buffer as inference.buffers[1], inference run on inactive buffer
+            inference.buf_count = 0;
+            inference.buf_ready = 1;
+
+            EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
+            if (r != EI_IMPULSE_OK)
+            {
+                ESP_LOGW(TAG, "ERR: Failed to run classifier (%d)\n", r);
+                return;
+            }
+
+            // print the predictions
+            ESP_LOGI(TAG, "Test model predictions:");
+            ESP_LOGI(TAG, "    (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
+                    result.timing.dsp, result.timing.classification, result.timing.anomaly);
+            for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
+            {
+                ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
+
+                if (strcmp(result.classification[ix].label, "trumpet") == 0 && strcmp(test_array_categories[i], "trumpet") == 0)
+                {
+                    if (result.classification[ix].value < AI_RESULT_THRESHOLD)
+                    {
+                        ESP_LOGW(TAG, "Test of trumpet sample appears to be poor, check model!");
+                    }
+                }
             }
         }
-
-        // Mark buffer as ready
-        inference.buf_select = 1;   // Mark active buffer as inference.buffers[1], inference run on inactive buffer
-        inference.buf_count = 0;
-        inference.buf_ready = 1;
-
-        EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
-        if (r != EI_IMPULSE_OK)
-        {
-            ESP_LOGW(TAG, "ERR: Failed to run classifier (%d)\n", r);
-            return;
-        }
-
-        // print the predictions
-        ESP_LOGI(TAG, "Test model predictions:");
-        ESP_LOGI(TAG, "    (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
-                 result.timing.dsp, result.timing.classification, result.timing.anomaly);
-        for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
-        {
-            ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
-        }
-
+        
         // Reset & free buffers
         inference.buf_select = 0;
         inference.buf_ready = 0;
         if (inference.buffers[0])
             heap_caps_free(inference.buffers[0]);
+
     }
 
 #endif

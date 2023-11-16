@@ -9,7 +9,7 @@ i2s_config_t i2s_mic_Config = {
     .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT, //bug! should be left? for 5.2.0 eave this for both spi and sdio
     #endif
     #ifdef USE_SDIO_VERSION
-       .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT, //bug! should be left? for 5.2.0 eave this for both spi and sdio
+       .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT, //bug! should be left? for 5.2.0 eave this for both spi and sdio
     #endif
 
     .communication_format = I2S_COMM_FORMAT_I2S,

@@ -69,12 +69,12 @@ SDCardSDIO::~SDCardSDIO()
   ESP_LOGI(TAG, "SDIO card unmounted");
 }
 
-  float SDCardSDIO::getCapacityMB() const {
-    if (!m_mounted) {
-      return 0;
-    }
-    return static_cast<float>(m_card->csd.capacity * m_card->csd.sector_size) / (1024.0 * 1024.0);
+float SDCardSDIO::getCapacityMB() const {
+  if (!m_mounted) {
+    return 0;
   }
+  return static_cast<float>((uint64_t) m_card->csd.capacity * m_card->csd.sector_size) / (1024.0 * 1024.0);
+}
 
 float SDCardSDIO::freeSpaceGB() const {
 

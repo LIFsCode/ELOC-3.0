@@ -11,8 +11,8 @@
 #include "esp_task_wdt.h"
 #include "I2SSampler.h"
 #include "I2SMEMSSampler.h"
-// #include  "periph_ctrl.h"
-// #include "I2SOutput.h"
+//#include  "periph_ctrl.h"
+//#include "I2SOutput.h"
 #include "SDCardSDIO.h"
 
 #include "SDCard.h"
@@ -20,7 +20,7 @@
 #include <FFat.h>
 #include <ff.h>
 #include "WAVFileWriter.h"
-// #include "WAVFileReader.h"
+//#include "WAVFileReader.h"
 #include "config.h"
 #include <string.h>
 
@@ -34,12 +34,13 @@
 #include "esp_sleep.h"
 #include "rtc_wdt.h"
 #include <driver/rtc_io.h>
-// #include "soc/efuse_reg.h"
+//#include "soc/efuse_reg.h"
 
 /** Arduino libraries*/
 #include "ESP32Time.h"
 #include "BluetoothSerial.h"
 /** Arduino libraries END*/
+
 
 #include "version.h"
 
@@ -56,14 +57,22 @@
 // #define EDGE_IMPULSE_ENABLED
 
 #ifdef EDGE_IMPULSE_ENABLED
-// If your target is limited in memory remove this macro to save 10K RAM
-// But if you do results in errors: '.... insn does not satisfy its constraints'
-#define EIDSP_QUANTIZE_FILTERBANK 0
 
-#include "trumpet_trimmed_inferencing.h"
-#include "test_samples.h"
-#include "ei_inference.h"
+    #include "EdgeImpulse.hpp"              // This file includes trumpet_inferencing.h
+    #include "edge-impulse-sdk/dsp/numpy_types.h"
+    #include "test_samples.h"
 
+    EdgeImpulse *edgeImpulse = nullptr;
+
+    //BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers
+    //       but all EdgeImpulse stuff got encapsulated within a class, which does not match
+    int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
+       return edgeImpulse->microphone_audio_signal_get_data(offset, length, out_ptr);
+    }
+
+    // bugme: this should somehow be encapsulated
+    int print_results = 0;
+     
 #endif
 
 static const char *TAG = "main";
@@ -81,13 +90,13 @@ bool gRecording = true;
  */
 bool ai_run_enable = true;      
 
-// int32_t *graw_samples;
-
-// int gRawSampleBlockSize = 1000;
-// int gSampleBlockSize = 16000;            // must be factor of 1000   in samples
-// int gBufferLen = I2S_DMA_BUFFER_LEN;     // in samples
-// int gBufferCount = I2S_DMA_BUFFER_COUNT; // so 6*4000 = 24k buf len
-// always keep these in same order
+/**
+ * @brief The size of the buffer for I2SMEMSampler to store the sound samples
+ *        Appears to be a magic number!
+ *        This value is used in both continuous & non-continuous inferencing examples from Edge Impulse
+ *        Happens to be twice the dma_buf_len of 512
+ */
+const uint32_t sample_buffer_size = sizeof (signed short) * 1024;
 
 uint64_t gStartupTime; // gets read in at startup to set system time.
 
@@ -668,141 +677,9 @@ void start_sound_recording(FILE *fp){
 
 #ifdef EDGE_IMPULSE_ENABLED
 
-/** Audio buffers, pointers and selectors */
-
-static inference_t inference;
-// @deprecated sampleBuffer
-static const uint32_t sample_buffer_size = 2048;
-static signed short sampleBuffer[sample_buffer_size];
-static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
-static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
-static bool ei_running_status = false;
 
 bool inference_result_file_SD_available = false;
 
-// The following functions enable continuous audio sampling and inferencing
-// https://docs.edgeimpulse.com/docs/tutorials/advanced-inferencing/continuous-audio-sampling
-
-/**
- * @brief      Init inferencing struct and setup/start PDM
- *
- * @param[in]  n_samples  The n samples
- *
- * @return     { description_of_the_return_value }
- */
-static bool microphone_inference_start(uint32_t n_samples)
-{
-    inference.buffers[0] = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
-
-    if (inference.buffers[0] == NULL)
-    {
-        ESP_LOGE(TAG, "Failed to allocate %d bytes for inference buffer", n_samples * sizeof(int16_t));
-        return false;
-    }
-
-    inference.buffers[1] = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
-
-    if (inference.buffers[1] == NULL)
-    {
-        ei_free(inference.buffers[0]);
-        return false;
-    }
-
-    inference.buf_select = 0;
-    inference.buf_count = 0;
-    inference.n_samples = n_samples;
-    inference.buf_ready = 0;
-  
-    // Microphone should have already been setup
-    if (input == nullptr)
-    {
-        ESP_LOGE(TAG, "%s - I2SMEMSSampler == nullptr", __func__);
-        ei_running_status = false;
-    }
-    else
-    {
-        input->register_ei_inference(&inference, EI_CLASSIFIER_FREQUENCY);
-        ei_running_status = true;
-    }
-
-    input->start_read_task(sample_buffer_size/ sizeof(signed short));
-
-    return true;
-}
-
-/**
- * @brief  Wait on new data.
- *         Blocking function.
- *         Unblocked by audio_inference_callback() setting inference.buf_ready
- *
- * @return     True when finished
- */
-static bool microphone_inference_record(void)
-{
-  ESP_LOGV(TAG, "Func: %s", __func__);
-
-  bool ret = true;
-
-  // TODO: Expect this to be set as loading from another point?
-  // if (inference.buf_ready == 1)
-  // {
-  //   ESP_LOGE(TAG, "Error sample buffer overrun. Decrease the number of slices per model window "
-  //       "(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW)");
-  //   ret = false;
-  // }
-
-  while (inference.buf_ready == 0)
-  {
-    // NOTE: Trying to write audio out here seems to leads to poor audio performance?
-    // if(wav_writer->buf_ready == 1){
-    //   wav_writer->write();
-    // }
-    // else
-    // {
-      // Service watchdog
-      delay(1);
-    //}
-  }
-
-  inference.buf_ready = 0;
-  
-  return true;
-}
-
-/**
- * Get raw audio signal data
- */
-static int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
-{
-    // ESP_LOGI(TAG,"microphone_audio_signal_get_data()");
-   numpy::int16_to_float(&inference.buffers[inference.buf_select ^ 1][offset], out_ptr, length);
-
-    return 0;
-}
-
-/**
- * @brief Stop inference & release buffers
- */
-static void stop_inference(void)
-{
-    ESP_LOGI(TAG, "stop_inference()");
-    
-    ei_running_status = false;
-
-    // Delay in case I2SMEMSSampler::read() is currently loading samples into buffers
-    delay(100);
-
-    if (inference.buffers[0] != NULL)
-    {
-        ei_free(inference.buffers[0]);
-    }
-    
-    if (inference.buffers[1] != NULL)
-    {
-        ei_free(inference.buffers[1]);
-    }
-
-}
 
 /**
  * @brief Check if file exists to record inference result from Edge Impulse
@@ -858,9 +735,10 @@ int create_inference_result_file_SD(String f_name)
     file_string += "\n\nYear-Month-Day Hour:Min:Sec";
 
     for (auto i = 0; i < EI_CLASSIFIER_NN_OUTPUT_COUNT; i++)
-    {
+    {   
+        ei_impulse_result_t results ={ 0 };
         file_string += " ,";
-        file_string += ei_classifier_inferencing_categories[i];
+        file_string += results.classification[i].label;
     }
 
     file_string += "\n";
@@ -1058,21 +936,18 @@ void app_main(void)
         ESP_LOGI(TAG, "EI results filename: %s", ei_results_filename.c_str());
     }
 
-    // summary of inferencing settings (from model_metadata.h)
-    ESP_LOGI(TAG, "Edge Impulse Inferencing settings:");
-    ESP_LOGI(TAG, "Interval: %f ms.", (float)EI_CLASSIFIER_INTERVAL_MS);
-    ESP_LOGI(TAG, "Frame size: %d", EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE);
-    ESP_LOGI(TAG, "Sample length: %d ms.", EI_CLASSIFIER_RAW_SAMPLE_COUNT / 16);
-    ESP_LOGI(TAG, "No. of classes: %d", sizeof(ei_classifier_inferencing_categories) / sizeof(ei_classifier_inferencing_categories[0]));
-
     // Check if file exists to record results
     if (gMountedSDCard == true)
     {
         create_inference_result_file_SD(ei_results_filename);
     }
 
-    if (1)
-    {
+    edgeImpulse = new EdgeImpulse(I2S_DEFAULT_SAMPLE_RATE);   
+    edgeImpulse->output_inferencing_settings();
+    // TODO: Set some flag if this fails??
+    edgeImpulse->buffers_setup();
+
+    if (1){
         // Run stored audio samples through the model to test it
         ESP_LOGI(TAG, "Testing model against pre-recorded sample data...");
 
@@ -1082,19 +957,10 @@ void app_main(void)
             ESP_LOGI(TAG, "TEST_SAMPLE length is greater than the Edge Impulse model length, applying downsampling");
         }
 
-        signal_t signal;
+        ei::signal_t signal;
         signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
         signal.get_data = &microphone_audio_signal_get_data;
         ei_impulse_result_t result = {0};
-
-        inference.buffers[0] = (int16_t *)heap_caps_malloc(EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t), MALLOC_CAP_SPIRAM);
-
-        if (!inference.buffers[0])
-        {
-            ESP_LOGW(TAG, "ERR: Failed to allocate buffer for signal");
-            // Skip the rest of the test
-            return;
-        }
 
         // Artifically fill buffer with test data
         auto ei_skip_rate = TEST_SAMPLE_LENGTH / EI_CLASSIFIER_RAW_SAMPLE_COUNT;
@@ -1108,7 +974,7 @@ void app_main(void)
                     (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT); test_sample_count++)
             {
                 if(skip_current >= ei_skip_rate){
-                    inference.buffers[0][inference_buffer_count++] = test_array[i][test_sample_count];
+                    edgeImpulse->inference.buffers[0][inference_buffer_count++] = test_array[i][test_sample_count];
                     skip_current = 1;
                 }
                 else{
@@ -1117,14 +983,14 @@ void app_main(void)
             }
 
             // Mark buffer as ready
-            inference.buf_select = 1;   // Mark active buffer as inference.buffers[1], inference run on inactive buffer
-            inference.buf_count = 0;
-            inference.buf_ready = 1;
+            edgeImpulse->inference.buf_select = 1;   // Mark active buffer as inference.buffers[1], inference run on inactive buffer
+            edgeImpulse->inference.buf_count = 0;
+            edgeImpulse->inference.buf_ready = 1;
 
-            EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
-            if (r != EI_IMPULSE_OK)
+            EI_IMPULSE_ERROR r = edgeImpulse->run_classifier(&signal, &result);
+            if (r != EI_IMPULSE_OK) 
             {
-                ESP_LOGW(TAG, "ERR: Failed to run classifier (%d)\n", r);
+                ESP_LOGW(TAG,"ERR: Failed to run classifier (%d)", r);
                 return;
             }
 
@@ -1145,16 +1011,14 @@ void app_main(void)
                 }
             }
         }
-        
-        // Reset & free buffers
-        inference.buf_select = 0;
-        inference.buf_ready = 0;
-        if (inference.buffers[0])
-            heap_caps_free(inference.buffers[0]);
 
+        // Reset buffers to default
+        edgeImpulse->inference.buf_select = 0;
+        edgeImpulse->inference.buf_count = 0;
+        edgeImpulse->inference.buf_ready = 0;
     }
-
-#endif
+       
+    #endif
 
     // setup button as interrupt
     ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)GPIO_BUTTON));
@@ -1194,39 +1058,55 @@ void app_main(void)
      * @note Using MicUseTimingFix == true or false doesn't seem to effect ICS-43434 mic
      */
     input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-    
-    input->start();
-    // Zero DMA buffer, prevents popping sound on start
-    input->zero_dma_buffer(I2S_DEFAULT_PORT);              
 
-    if (checkSDCard() == ESP_OK){
-        // create a new wave file wav_writer & make sure sample rate is up to date
-        wav_writer = new WAVFileWriter((int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 2, NUMBER_OF_CHANNELS);
-        // Block until properly registered otherwise will get error later
-        while (input->register_wavFileWriter(wav_writer) == false){
-            ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
-            delay(5);
+    if (input == nullptr)
+    {
+        ESP_LOGE(TAG, "Failed to create I2SMEMSSampler");
+        return;
+    }
+    else{
+        input->start();
+
+        // Zero DMA buffer, prevents popping sound on start
+        input->zero_dma_buffer(I2S_DEFAULT_PORT);              
+
+        if (checkSDCard() == ESP_OK){
+            // create a new wave file wav_writer & make sure sample rate is up to date
+            wav_writer = new WAVFileWriter((int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 2, NUMBER_OF_CHANNELS);
+            // Block until properly registered otherwise will get error later
+            while (input->register_wavFileWriter(wav_writer) == false){
+                ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
+                delay(5);
+            }
+
+            //Populate gSessionIdentifier for wav filename
+            createSessionFolder();
+
+            // TODO: DEBUG - should be set from Bletooth config
+            wav_writer->set_mode(WAVFileWriter::Mode::continuous);
+        }
+        else
+        {
+            ESP_LOGE(TAG, "SD card not mounted, cannot create WAVFileWriter");
+            wav_writer = nullptr;
+            #ifdef EDGE_IMPULSE_ENABLED
+                save_ai_results_to_sd = false;
+            #endif
         }
 
-        //Populate gSessionIdentifier for wav filename
-        createSessionFolder();
-
-        // TODO: DEBUG
-        wav_writer->set_mode(WAVFileWriter::Mode::continuous);
-    }
-    else
-    {
-        ESP_LOGE(TAG, "SD card not mounted, cannot create WAVFileWriter");
-        wav_writer = nullptr;
         #ifdef EDGE_IMPULSE_ENABLED
-            save_ai_results_to_sd = false;
+            input->register_ei_inference(&edgeImpulse->getInference(), EI_CLASSIFIER_FREQUENCY);
+            edgeImpulse->set_ei_running_status(true);
         #endif
+        
+        input->start_read_task(sample_buffer_size/ sizeof(signed short));
     }
 
     // wav file pointer
     // TODO: Move to wav_writer class
     FILE *fp = nullptr;
     rec_req_t rec_req = REC_REQ_NONE;
+    
 
     // TODO: Define conditions on which device shuld exit this while() loop
     // e.g. SD card full or I2S error?
@@ -1244,19 +1124,20 @@ void app_main(void)
 
 #ifdef EDGE_IMPULSE_ENABLED
         // Try to restart if not running
-        if (ei_running_status == false){
-            if (microphone_inference_start(EI_CLASSIFIER_RAW_SAMPLE_COUNT) == false)
+        if (edgeImpulse->get_ei_running_status() == false)
+        {
+            if (edgeImpulse->buffers_setup() == false)
             {
                 // ESP_LOGE(TAG, "ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
-                ESP_LOGE(TAG, "ERR: microphone_inference_start failed, restarting...");
+                ESP_LOGE(TAG, "ERR: inference_stetup failed, restarting...");
                 delay(500);
-                stop_inference();
+                edgeImpulse->set_ei_running_status(false);
             }
         }
 
-        if (ai_run_enable == true && ei_running_status == true)
+        if (ai_run_enable == true && edgeImpulse->get_ei_running_status() == true)
         {
-            bool m = microphone_inference_record();
+            bool m = edgeImpulse->microphone_inference_record();
             // Blocking function - unblocks when buffer is full
             if (!m)
             {
@@ -1264,21 +1145,22 @@ void app_main(void)
                 continue;
             }
 
-            signal_t signal;
+            ei::signal_t signal;
             signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
             signal.get_data = &microphone_audio_signal_get_data;
             ei_impulse_result_t result = {0};
 
+
             #ifdef AI_CONTINUOUS_INFERENCE
-                EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
+                EI_IMPULSE_ERROR r = edgeImpulse->run_classifier_continuous(&signal, &result);
             #else
-                EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
+                EI_IMPULSE_ERROR r = edgeImpulse->run_classifier(&signal, &result);
             #endif // AI_CONTINUOUS_INFERENCE
 
             if (r != EI_IMPULSE_OK)
             {
                 ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
-                ei_running_status = false;
+                edgeImpulse->set_ei_running_status(false);
                 continue;
             }
 
@@ -1288,50 +1170,49 @@ void app_main(void)
                 // Non-continous, always print
                 if (1)
             #endif // AI_CONTINUOUS_INFERENCE
-            {
-                // print the predictions
-                ESP_LOGI(TAG, "Predictions ");
-                ESP_LOGI(TAG, "(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
-                         result.timing.dsp, result.timing.classification, result.timing.anomaly);
-
-                String file_str;
-
-                for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
                 {
-                    ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
+                    // print the predictions
+                    ESP_LOGI(TAG, "Predictions ");
+                    ESP_LOGI(TAG, "(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
+                            result.timing.dsp, result.timing.classification, result.timing.anomaly);
 
-                    // Build string to save to inference results file
-                    file_str += ", ";
-                    file_str += result.classification[ix].value;
+                    String file_str;
 
-                    if ((strcmp(result.classification[ix].label, "background") != 0) && 
-                        result.classification[ix].value > AI_RESULT_THRESHOLD)
+                    for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
                     {
-                        // Start recording??
-                        if (wav_writer != nullptr &&
-                            wav_writer->is_file_handle_set() == false && 
-                            wav_writer->get_mode() == WAVFileWriter::Mode::single &&
-                            checkSDCard() == ESP_OK)
-                        {   
-                            start_sound_recording(fp);
+                        ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
+
+                        // Build string to save to inference results file
+                        file_str += ", ";
+                        file_str += result.classification[ix].value;
+
+                        if ((strcmp(result.classification[ix].label, "background") != 0) && 
+                            result.classification[ix].value > AI_RESULT_THRESHOLD)
+                        {
+                            // Start recording??
+                            if (wav_writer != nullptr &&
+                                wav_writer->is_file_handle_set() == false && 
+                                wav_writer->get_mode() == WAVFileWriter::Mode::single &&
+                                checkSDCard() == ESP_OK)
+                            {   
+                                start_sound_recording(fp);
+                            }
                         }
-
                     }
+
+                    file_str += "\n";
+                    // Save results to file
+                    // TODO: Only save results & wav file if classification value exceeds a threshold?
+                    if (save_ai_results_to_sd == true && checkSDCard() == ESP_OK)
+                    {
+                        save_inference_result_SD(ei_results_filename, file_str);
+                    }              
+
+                #if EI_CLASSIFIER_HAS_ANOMALY == 1
+                    ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
+                #endif
+                    print_results = 0;
                 }
-
-                file_str += "\n";
-                // Save results to file
-                // TODO: Only save results & wav file if classification value exceeds a threshold?
-                if (save_ai_results_to_sd == true && checkSDCard() == ESP_OK)
-                {
-                    save_inference_result_SD(ei_results_filename, file_str);
-                }              
-
-            #if EI_CLASSIFIER_HAS_ANOMALY == 1
-                ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
-            #endif
-                print_results = 0;
-            }
         }// end while(ei_running_status == true)
 
 #endif // EDGE_IMPULSE_ENABLED

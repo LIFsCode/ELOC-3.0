@@ -834,23 +834,7 @@ void app_main(void) {
     //ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_BUTTON));
 
     /** Setup Power Management */
-    esp_pm_config_esp32_t cfg = {
-        .max_freq_mhz = getConfig().cpuMaxFrequencyMHZ, 
-        .min_freq_mhz = getConfig().cpuMinFrequencyMHZ, 
-        .light_sleep_enable = getConfig().cpuEnableLightSleep
-    };
-    esp_pm_configure(&cfg);
-    // calling gpio_sleep_sel_dis must be done after esp_pm_configure() otherwise they will get overwritten
-    // interrupt must be enabled during sleep otherwise they might continously trigger (missing pullup)
-    // or won't work at all
-    gpio_sleep_sel_dis(GPIO_BUTTON);
-    gpio_sleep_sel_dis(LIS3DH_INT_PIN);
-    // now setup GPIOs as wakeup source. This is required to wake up the recorder in tickless idle
-    //BUGME: this seems to be a bug in ESP IDF: https://github.com/espressif/arduino-esp32/issues/7158
-    //       gpio_wakeup_enable does not correctly switch to rtc_gpio_wakeup_enable() for RTC GPIOs.
-    ESP_ERROR_CHECK(rtc_gpio_wakeup_enable(LIS3DH_INT_PIN, GPIO_INTR_HIGH_LEVEL));
-    ESP_ERROR_CHECK(rtc_gpio_wakeup_enable(GPIO_BUTTON, GPIO_INTR_LOW_LEVEL));
-    ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
+    ElocSystem::GetInstance().pm_configure();
 
     if (getConfig().testI2SClockInput)
         testInput();
@@ -874,8 +858,10 @@ void app_main(void) {
                     LEDflashError();
                 } else {
                     getI2sConfig(); 
+                    ElocSystem::GetInstance().pm_check_ForRecording(i2s_mic_Config.sample_rate);
                     I2SMEMSSampler input (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,getConfig().listenOnly, getMicInfo().MicUseTimingFix);
                     record(&input);
+                    ElocSystem::GetInstance().pm_configure();
                 }
             }
         }

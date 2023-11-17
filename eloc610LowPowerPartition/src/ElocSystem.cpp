@@ -22,12 +22,15 @@
  */
 
 #include <vector>
-#include "esp_log.h"
-#include "nvs_flash.h"
-#include "nvs.h"
-#include "config.h"
+#include <esp_log.h>
+#include <nvs_flash.h>
+#include <nvs.h>
+#include <esp_pm.h>
+#include <driver/rtc_io.h>
 
+#include "config.h"
 #include "ElocSystem.hpp"
+#include "ElocConfig.hpp"
 
 
 static const char *TAG = "ElocSystem";
@@ -132,4 +135,56 @@ uint16_t ElocSystem::getTemperaure() {
         return mLis3DH->lis3dh_get_temperature();
     }
     return 0;
+}
+
+
+esp_err_t ElocSystem::pm_configure(const void* vconfig) {
+    esp_err_t err = esp_pm_configure(vconfig);
+    // calling gpio_sleep_sel_dis must be done after esp_pm_configure() otherwise they will get overwritten
+    // interrupt must be enabled during sleep otherwise they might continously trigger (missing pullup)
+    // or won't work at all
+    gpio_sleep_sel_dis(GPIO_BUTTON);
+    gpio_sleep_sel_dis(LIS3DH_INT_PIN);
+    // now setup GPIOs as wakeup source. This is required to wake up the recorder in tickless idle
+    //BUGME: this seems to be a bug in ESP IDF: https://github.com/espressif/arduino-esp32/issues/7158
+    //       gpio_wakeup_enable does not correctly switch to rtc_gpio_wakeup_enable() for RTC GPIOs.
+    ESP_ERROR_CHECK(rtc_gpio_wakeup_enable(LIS3DH_INT_PIN, GPIO_INTR_HIGH_LEVEL));
+    ESP_ERROR_CHECK(rtc_gpio_wakeup_enable(GPIO_BUTTON, GPIO_INTR_LOW_LEVEL));
+    ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
+
+    return err;
+}
+
+esp_err_t ElocSystem::pm_check_ForRecording(int sample_rate) {
+    esp_pm_config_esp32_t pm_cfg;
+    if (esp_err_t err = esp_pm_get_configuration(&pm_cfg) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to get PM config with %s", esp_err_to_name(err));
+    }
+    else {
+        // see https://github.com/LIFsCode/ELOC-3.0/issues/30 for details
+        // higher sample rates require a higher APB bus speed which is set to the min CPU clock
+        if ((sample_rate >= 30000) && (pm_cfg.min_freq_mhz < 20)) {
+            ESP_LOGI(TAG, "Samplerate %d Hz > 30 kHz, adjusting power management config", sample_rate);
+            pm_cfg.min_freq_mhz = 20;
+            if (esp_err_t err = this->pm_configure(&pm_cfg) != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to set PM config with %s", esp_err_to_name(err));
+               return err;
+            }
+        }
+    }
+    return ESP_OK;
+}
+
+esp_err_t ElocSystem::pm_configure() {
+    /** Setup Power Management */
+    esp_pm_config_esp32_t cfg = {
+        .max_freq_mhz = getConfig().cpuMaxFrequencyMHZ, 
+        .min_freq_mhz = getConfig().cpuMinFrequencyMHZ, 
+        .light_sleep_enable = getConfig().cpuEnableLightSleep
+    };            
+    if (esp_err_t err = this->pm_configure(&cfg) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set PM config with %s", esp_err_to_name(err));
+        return err;
+    }
+    return ESP_OK;
 }

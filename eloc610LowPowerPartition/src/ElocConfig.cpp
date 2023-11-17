@@ -198,13 +198,7 @@ void readConfig() {
     printf(cfg.c_str());
     
     i2s_mic_Config.sample_rate = gMicInfo.MicSampleRate;
-    if (gMicInfo.MicSampleRate <= 32000) { // my wav files sound wierd if apll clock raate is > 32kh. So force non-apll clock if >32khz
-        i2s_mic_Config.use_apll = gMicInfo.MicUseAPLL;
-        ESP_LOGI(TAG, "Sample Rate %u is < 32khz USE APLL Clock %d", gMicInfo.MicSampleRate, gMicInfo.MicUseAPLL);
-    } else {
-        i2s_mic_Config.use_apll = false;
-        ESP_LOGI(TAG, "Sample Rate is %u > 32khz Forcing NO_APLL ", gMicInfo.MicSampleRate);
-    }
+    i2s_mic_Config.use_apll = gMicInfo.MicUseAPLL;
 }
 
 void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {

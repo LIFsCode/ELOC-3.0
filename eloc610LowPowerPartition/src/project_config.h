@@ -134,8 +134,10 @@
          * @note Default volume shift for this mic. -ve value decrease volume, +ve increase. 0 neutral
          *       e.g. value of +1 doubles volume, value of -1 halves volume
          *       change in steps of 1
+         * 
+         *       Set a default as -3 which matches volume of SPH0645 in previous code
         */
-        #define I2S_DEFAULT_VOLUME 0                    
+        #define I2S_DEFAULT_VOLUME -3                    
         
         /** 
          * @brief Enable/ disable automatic gain feature in @file I2SMEMSSampler.cpp

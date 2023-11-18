@@ -16,7 +16,9 @@ The "L" key seems to be mapped to the Enter key too, "J" moves the cursor down a
 https://community.platformio.org/t/esp-idf-sd-card-problem-with-long-file-names/9743/6
 
 
-
+---------------To flash NVS platformio:--------------
+cd .pio\build\esp32dev
+python -m esptool write_flash 0x9000 .\.pio\build\esp32dev\nvs.bin
 
 
 

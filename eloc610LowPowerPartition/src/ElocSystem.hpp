@@ -24,6 +24,8 @@
 #ifndef ELOCSYSTEM_HPP_
 #define ELOCSYSTEM_HPP_
 
+#include <esp_err.h>
+
 #include "CPPI2C/cppi2c.h"
 #include "ELOC_IOEXP.hpp"
 #include "lis3dh.h"
@@ -53,6 +55,24 @@ private:
     CPPI2C::I2c* mI2CInstance;
     ELOC_IOEXP* mIOExpInstance;
     LIS3DH* mLis3DH;
+
+    struct factoryInfo_t {
+        uint16_t hw_gen;
+        uint16_t hw_rev;
+        uint32_t serialNumber;
+    }mFactoryInfo; 
+
+    /**
+     * @brief Set implementation-specific power management configuration. This is a wrapper for esp_pm_configure
+     *        but takes certain IDF bugs into account for handling GPIOs and RTC IOs.
+     * @param config pointer to implementation-specific configuration structure (e.g. esp_pm_config_esp32)
+     * @return
+     *      - ESP_OK on success
+     *      - ESP_ERR_INVALID_ARG if the configuration values are not correct
+     *      - ESP_ERR_NOT_SUPPORTED if certain combination of values is not supported,
+     *        or if CONFIG_PM_ENABLE is not enabled in sdkconfig
+     */
+    esp_err_t pm_configure(const void* vconfig);
 public:
     inline static ElocSystem& GetInstance() {
         static ElocSystem System;
@@ -80,6 +100,16 @@ public:
     inline bool hasLIS3DH() const {
         return mLis3DH != NULL;
     }
+    uint16_t getTemperaure();
+
+    /// @brief Checks and adjusts the power management options if it is necessary based on the required I2S sample rate
+    /// @param sample_rate sample rate in Hz
+    /// @return ESP_OK on success, error code otherwise
+    esp_err_t pm_check_ForRecording(int sample_rate);
+
+    /// @brief Configures the Power Management based on the ElocConfig
+    /// @return ESP_OK on success, error code otherwise
+    esp_err_t pm_configure();
 };
 
 

@@ -1,5 +1,5 @@
 /*
- * Created on Fri May 05 2023
+ * Created on Sun Nov 05 2023
  *
  * Project: International Elephant Project (Wildlife Conservation International)
  *
@@ -21,24 +21,30 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef UTILS_FFSUTILS_H_
-#define UTILS_FFSUTILS_H_
 
-namespace ffsutil {
+#ifndef ELOCSTATUS_HPP_
+#define ELOCSTATUS_HPP_
 
-/// @brief Prints a list of files & subdirectories with sizes of a given path
-/// @param path filesystem directory which needs to be printed
-void printListDir(const char *path);
+#include <stdint.h>
+#include "WString.h"
 
-void printSPIFFS_size();
+//TODO: All these variables are shared across multiple tasks and must be guarded with mutexes
 
-bool fileExist(const char* filename);
+#define ENUM_MACRO(name, v1, v2)\
+    enum class name { v1, v2};\
+    constexpr const char *name##Strings[] = { #v1, #v2}; \
+    constexpr const char *toString(name value) {  return name##Strings[static_cast<int>(value)]; }
 
-long getFileSize(const char* filename);
-
-bool folderExists(const char* folder);
-
-}
+ENUM_MACRO (RecState, IDLE, RECORDING);
 
 
-#endif // UTILS_FFSUTILS_H_
+/* Recording specific status indicators */
+extern RecState gRecording;
+
+extern int64_t gTotalUPTimeSinceReboot;  //esp_timer_get_time returns 64-bit time since startup, in microseconds.
+extern int64_t gTotalRecordTimeSinceReboot;
+extern int64_t gSessionRecordTime;
+extern String gSessionIdentifier;
+
+
+#endif // ELOCSTATUS_HPP_

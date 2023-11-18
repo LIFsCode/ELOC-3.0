@@ -10,12 +10,11 @@
 #include "sdmmc_cmd.h"
 
 #include "SDCardSDIO.h"
-extern bool gMountedSDCard;
 static const char *TAG = "SDC";
 
 #define SPI_DMA_CHAN 1
 
-SDCardSDIO::SDCardSDIO(const char *mount_point)
+SDCardSDIO::SDCardSDIO(const char *mount_point) : m_mounted(false)
 {
   m_mount_point = mount_point;
   esp_err_t ret;
@@ -55,7 +54,7 @@ SDCardSDIO::SDCardSDIO(const char *mount_point)
     }
     return;
   }
-  gMountedSDCard = true;
+  m_mounted = true;
   ESP_LOGI(TAG, "SDCard mounted at: %s", m_mount_point.c_str());
 
   // Card has been initialized, print its properties
@@ -67,6 +66,35 @@ SDCardSDIO::~SDCardSDIO()
   ESP_LOGI(TAG, "Trying to unmount SDIO card" );
   // All done, unmount partition and disable SDMMC or SPI peripheral
   esp_vfs_fat_sdcard_unmount(m_mount_point.c_str(), m_card);
-  gMountedSDCard=false;
   ESP_LOGI(TAG, "SDIO card unmounted");
 }
+
+float SDCardSDIO::getCapacityMB() const {
+  if (!m_mounted) {
+    return 0;
+  }
+  return static_cast<float>((uint64_t) m_card->csd.capacity * m_card->csd.sector_size) / (1024.0 * 1024.0);
+}
+
+float SDCardSDIO::freeSpaceGB() const {
+
+    FATFS *fs;
+    uint32_t fre_clust, fre_sect, tot_sect;
+    FRESULT res;
+    /* Get volume information and free clusters of drive 0 */
+    res = f_getfree(m_mount_point.c_str(), &fre_clust, &fs);
+    if (res != FR_OK) {
+      return 0;
+    }
+    /* Get total sectors and free sectors */
+    tot_sect = (fs->n_fatent - 2) * fs->csize;
+    fre_sect = fre_clust * fs->csize;
+
+    /* Print the free space (assuming 512 bytes/sector) */
+    printf("%10u KiB total drive space.\n%10u KiB available.\n", tot_sect / 2, fre_sect / 2);
+
+    float freeSpaceGB = float((float)fre_sect / 1048576.0 / 2.0);
+    printf("\n %2.1f GB free\n", freeSpaceGB);
+    return freeSpaceGB;
+}
+

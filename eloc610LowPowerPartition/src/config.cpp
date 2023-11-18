@@ -5,7 +5,13 @@ i2s_config_t i2s_mic_Config = {
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
     .sample_rate = I2S_DEFAULT_SAMPLE_RATE, //fails when hardcoded to 22050
     .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,
-    .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT, // Left channel only for ELOC 3.2
+    #ifdef USE_SPI_VERSION
+    .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT, //bug! should be left? for 5.2.0 eave this for both spi and sdio
+    #endif
+    #ifdef USE_SDIO_VERSION
+       .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT, //bug! should be left? for 5.2.0 eave this for both spi and sdio
+    #endif
+
     .communication_format = I2S_COMM_FORMAT_I2S,
     .intr_alloc_flags = I2S_INTR_PIRO,
     .dma_buf_count = I2S_DMA_BUFFER_COUNT,  //so 2000 sample  buffer at 16khz sr gives us 125ms to do our writing
@@ -15,12 +21,13 @@ i2s_config_t i2s_mic_Config = {
     .fixed_mclk = 0,
     //.mclk_multiple =I2S_MCLK_MULTIPLE_DEFAULT,   // I2S_MCLK_MULTIPLE_DEFAULT= 0,       /*!< Default value. mclk = sample_rate * 256 */
     //.bits_per_chan=I2S_BITS_PER_CHAN_DEFAULT
-};
+    };
 
 // i2s microphone pins
 i2s_pin_config_t i2s_mic_pins = {
-
-    .mck_io_num = I2S_PIN_NO_CHANGE, // tbg removed new api?
+  
+   .mck_io_num = I2S_PIN_NO_CHANGE,  //tbg removed new api?
+  
     .bck_io_num = I2S_MIC_SERIAL_CLOCK,
     .ws_io_num = I2S_MIC_LEFT_RIGHT_CLOCK,
     .data_out_num = I2S_PIN_NO_CHANGE,

@@ -29,56 +29,49 @@
 #include "ArduinoJson.h"
 #include "WString.h"
 
-/// @brief Holds all the Microphone & recording specific settings
+/// @brief Holds all the Microphone & recording spedific settings
 typedef struct {
     String   MicType;
     int      MicBitShift;
     uint32_t MicSampleRate; // TODO: this should finally be moved to Mic Info for consistency
     bool     MicUseAPLL;
     bool     MicUseTimingFix;
-    String   MicGPSCoords;
-    String   MicPointingDirectionDegrees;
-    String   MicHeight;
-    String   MicMountType;
 }micInfo_t;
 
-void setMicBitShift(int MicBitShift);
-void setMicType(String MicType);
-void setBluetoothOnOrOffDuringRecord(bool MicBluetoothOnOrOff);
-
 const micInfo_t& getMicInfo();
+
+typedef struct {
+    bool logToSdCard;
+    String filename;
+    uint32_t maxFiles;
+    uint32_t maxFileSize;
+}logConfig_t;
 
 /// @brief holds all the device specific configuration settings
 typedef struct {
     int  secondsPerFile;
     bool listenOnly;
-    int  cpuMaxFrequencyMHZ;        // SPI this fails for anything below 80   //
+    int  cpuMaxFrequencyMHZ;    // SPI this fails for anyting below 80   //
     int  cpuMinFrequencyMHZ;
-    bool cpuEnableLightSleep;       // Only for AUTOMATIC light sleep.
+    bool cpuEnableLightSleep; //only for AUTOMATIC light leep.
     bool bluetoothEnableAtStart;
     bool bluetoothEnableOnTapping;
     bool bluetoothEnableDuringRecord;
     int bluetoothOffTimeoutSeconds;
     bool testI2SClockInput;
+    logConfig_t logConfig;
 }elocConfig_T;
 
 const elocConfig_T& getConfig();
 
-bool setSampleRate(int MicSampleRate);
-bool setSecondsPerFile(int secondsPerFile);
-
 /// @brief Holds all Device Meta data, such as Name, location, etc.
 typedef struct {
-    String location;
+    String fileHeader;
     String locationCode;
-    String locationAccuracy;
+    int locationAccuracy;
     String nodeName;
 }elocDeviceInfo_T;
 const elocDeviceInfo_T& getDeviceInfo();
-
-void setLocationName(const String& location);
-void setLocationSettings(const String& code, const String& accuracy);
-bool setNodeName(const String& nodeName);
 
 /// @brief load configuration from filesystem
 void readConfig();
@@ -90,8 +83,10 @@ bool writeConfig();
 
 void clearConfig();
 
-void printConfig(String& buf);
+enum class CfgType {RUNTIME, DEFAULT_CFG};
 
-esp_err_t updateConfig(const String& buf) ;
+bool printConfig(String& buf, CfgType cfgType = CfgType::RUNTIME);
+
+esp_err_t updateConfig(const char* buf) ;
 
 #endif // ELOCCONFIG_HPP_

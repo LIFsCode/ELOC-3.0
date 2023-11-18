@@ -1,0 +1,6 @@
+# Sample csv file
+key,type,encoding,value
+factory,namespace,,
+hw_gen,data,u16,3
+hw_rev,data,u16,2
+serial,data,u32,666

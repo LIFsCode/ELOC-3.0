@@ -33,8 +33,8 @@
 #include "esp_sleep.h"
 #include "soc/rtc_wdt.h"
 
-#include <sys/types.h> 
-#include <sys/stat.h> 
+#include <sys\types.h> 
+#include <sys\stat.h> 
 #include <time.h>
 #include <sys/time.h>
 

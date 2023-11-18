@@ -123,9 +123,9 @@ Battery::~Battery()
 const char* Battery::getBatType() const {
     switch(mBatteryType) {
         case BAT_LiPo: 
-            return "LiPo Battery";
+            return "LiPo";
         case BAT_LiFePo: 
-            return "BAT_LiFePo Battery";
+            return "LiFePo";
         default:
              return "no Battery";
     }

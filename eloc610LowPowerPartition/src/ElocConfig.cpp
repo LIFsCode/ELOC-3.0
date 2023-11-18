@@ -38,26 +38,16 @@ static const uint32_t JSON_DOC_SIZE = 1024;
 static const char* CFG_FILE = "/spiffs/eloc.config";
 static const char* CFG_FILE_SD = "/sdcard/eloctest.txt";
 
+
 //BUGME: encapsulate these in a struct & implement a getter
 static const micInfo_t C_MicInfo_Default {
     .MicType="ns",
-    .MicBitShift=I2S_DEFAULT_BIT_SHIFT,
+    .MicBitShift=11,
     .MicSampleRate = I2S_DEFAULT_SAMPLE_RATE,
     .MicUseAPLL = true,
-    .MicUseTimingFix = true,
-    .MicGPSCoords="ns",
-    .MicPointingDirectionDegrees="ns",
-    .MicHeight="ns",
-    .MicMountType="ns",
+    .MicUseTimingFix = true
 };
 micInfo_t gMicInfo = C_MicInfo_Default;
-
-void setMicBitShift(int MicBitShift) {
-    gMicInfo.MicBitShift = MicBitShift;
-}
-void setMicType(String MicType) {
-    gMicInfo.MicType = MicType;
-}
 
 const micInfo_t& getMicInfo() {
     return gMicInfo;
@@ -80,60 +70,28 @@ static const elocConfig_T C_ElocConfig_Default {
     .bluetoothEnableOnTapping = true,
     .bluetoothEnableDuringRecord = true,
     .bluetoothOffTimeoutSeconds = 60,
-    .testI2SClockInput = false
+    .testI2SClockInput = false,
+    .logConfig = {
+        .logToSdCard = true,
+        .filename = "/sdcard/log/eloc.log",
+        .maxFiles = 10,
+        .maxFileSize = 5*1024,
+    }
 };
 elocConfig_T gElocConfig = C_ElocConfig_Default;
 const elocConfig_T& getConfig() {
     return gElocConfig;
 }
 
-bool setSampleRate(int MicSampleRate) {
-    if (MicSampleRate <= 0) {
-        ESP_LOGE(TAG, "Invalid Sample rate %d! Ignoring setting\n", MicSampleRate);
-        return false;
-    }
-    //TODO: should we check for a max. sample rate?
-    gMicInfo.MicSampleRate = MicSampleRate;
-    return true;
-}
-bool setSecondsPerFile(int secondsPerFile) {
-    if (secondsPerFile <= 0) {
-        ESP_LOGE(TAG, "Invalid Seconds per File %d! Ignoring setting\n", secondsPerFile);
-        return false;
-    }
-    gElocConfig.secondsPerFile = secondsPerFile;
-    return true;
-}
-void setBluetoothOnOrOffDuringRecord(bool MicBluetoothOnOrOff) {
-    gElocConfig.bluetoothEnableDuringRecord = MicBluetoothOnOrOff;
-}
-
 static const elocDeviceInfo_T C_ElocDeviceInfo_Default {
-    .location = "not_set",
+    .fileHeader = "not_set",
     .locationCode = "unknown", 
-    .locationAccuracy = "99",
+    .locationAccuracy = 99,
     .nodeName = "ELOC_NONAME",
 };
 elocDeviceInfo_T gElocDeviceInfo = C_ElocDeviceInfo_Default;
 const elocDeviceInfo_T& getDeviceInfo() {
     return gElocDeviceInfo;
-}
-
-void setLocationName(const String& location) {
-    gElocDeviceInfo.location = location;
-}
-void setLocationSettings(const String& code, const String& accuracy) {
-    gElocDeviceInfo.locationCode = code;
-    gElocDeviceInfo.locationAccuracy = accuracy;
-}
-
-bool setNodeName(const String& nodeName) {
-    if (nodeName.length() == 0) {
-        ESP_LOGE(TAG, "Invalid Node Name! Node Name must at least hold 1 character!");
-        return false;
-    }
-    gElocDeviceInfo.nodeName = nodeName;
-    return true;
 }
 
 /**************************************************************************************************/
@@ -144,14 +102,14 @@ extern bool gMountedSDCard;
 
 
 void loadDevideInfo(const JsonObject& device) {
-    gElocDeviceInfo.location         = device["location"]         | C_ElocDeviceInfo_Default.location; 
+    gElocDeviceInfo.fileHeader       = device["fileHeader"]       | C_ElocDeviceInfo_Default.fileHeader; 
     gElocDeviceInfo.locationCode     = device["locationCode"]     | C_ElocDeviceInfo_Default.locationCode;
     gElocDeviceInfo.locationAccuracy = device["locationAccuracy"] | C_ElocDeviceInfo_Default.locationAccuracy;
     gElocDeviceInfo.nodeName         = device["nodeName"]         | C_ElocDeviceInfo_Default.nodeName;
 }
 void loadConfig(const JsonObject& config) {
     gElocConfig.secondsPerFile              = config["secondsPerFile"]              | C_ElocConfig_Default.secondsPerFile;             
-    gElocConfig.listenOnly                  = config["listenOnly"]                  | C_ElocConfig_Default.listenOnly;            
+    gElocConfig.listenOnly                  = /* TODO: unusedconfig["listenOnly"] |*/ C_ElocConfig_Default.listenOnly;            
     gElocConfig.cpuMaxFrequencyMHZ          = config["cpuMaxFrequencyMHZ"]          | C_ElocConfig_Default.cpuMaxFrequencyMHZ;    
     gElocConfig.cpuMinFrequencyMHZ          = config["cpuMinFrequencyMHZ"]          | C_ElocConfig_Default.cpuMinFrequencyMHZ;    
     gElocConfig.cpuEnableLightSleep         = config["cpuEnableLightSleep"]         | C_ElocConfig_Default.cpuEnableLightSleep;   
@@ -159,6 +117,10 @@ void loadConfig(const JsonObject& config) {
     gElocConfig.bluetoothEnableOnTapping    = config["bluetoothEnableOnTapping"]    | C_ElocConfig_Default.bluetoothEnableOnTapping; 
     gElocConfig.bluetoothEnableDuringRecord = config["bluetoothEnableDuringRecord"] | C_ElocConfig_Default.bluetoothEnableDuringRecord;
     gElocConfig.bluetoothOffTimeoutSeconds  = config["bluetoothOffTimeoutSeconds"]  | C_ElocConfig_Default.bluetoothOffTimeoutSeconds;
+    gElocConfig.logConfig.logToSdCard       = config["logConfig"]["logToSdCard"]    | C_ElocConfig_Default.logConfig.logToSdCard;
+    gElocConfig.logConfig.filename          = config["logConfig"]["filename"]       | C_ElocConfig_Default.logConfig.filename;
+    gElocConfig.logConfig.maxFiles          = config["logConfig"]["maxFiles"]       | C_ElocConfig_Default.logConfig.maxFiles;
+    gElocConfig.logConfig.maxFileSize       = config["logConfig"]["maxFileSize"]    | C_ElocConfig_Default.logConfig.maxFileSize;
 }
 
 void loadMicInfo(const JsonObject& micInfo) {
@@ -167,10 +129,6 @@ void loadMicInfo(const JsonObject& micInfo) {
     gMicInfo.MicSampleRate               = micInfo["MicSampleRate"]               | C_MicInfo_Default.MicSampleRate;   
     gMicInfo.MicUseAPLL                  = micInfo["MicUseAPLL"]                  | C_MicInfo_Default.MicUseAPLL;             
     gMicInfo.MicUseTimingFix             = micInfo["MicUseTimingFix"]             | C_MicInfo_Default.MicUseTimingFix;
-    gMicInfo.MicGPSCoords                = micInfo["MicGPSCoords"]                | C_MicInfo_Default.MicGPSCoords;           
-    gMicInfo.MicPointingDirectionDegrees = micInfo["MicPointingDirectionDegrees"] | C_MicInfo_Default.MicPointingDirectionDegrees;
-    gMicInfo.MicHeight                   = micInfo["MicHeight"]                   | C_MicInfo_Default.MicHeight;
-    gMicInfo.MicMountType                = micInfo["MicMountType"]                | C_MicInfo_Default.MicMountType;
 }     
 
 bool readConfigFile(const char* filename) {
@@ -240,53 +198,55 @@ void readConfig() {
     printf(cfg.c_str());
     
     i2s_mic_Config.sample_rate = gMicInfo.MicSampleRate;
-    if (gMicInfo.MicSampleRate <= 32000) { // my wav files sound wierd if apll clock raate is > 32kh. So force non-apll clock if >32khz
-        i2s_mic_Config.use_apll = gMicInfo.MicUseAPLL;
-        ESP_LOGI(TAG, "Sample Rate %u is < 32khz USE APLL Clock %d", gMicInfo.MicSampleRate, gMicInfo.MicUseAPLL);
-    } else {
-        i2s_mic_Config.use_apll = false;
-        ESP_LOGI(TAG, "Sample Rate is %u > 32khz Forcing NO_APLL ", gMicInfo.MicSampleRate);
-    }
+    i2s_mic_Config.use_apll = gMicInfo.MicUseAPLL;
 }
 
-void buildConfigFile(JsonDocument& doc) {
+void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
+    const elocDeviceInfo_T& ElocDeviceInfo = \
+            cfgType == CfgType::DEFAULT_CFG ? C_ElocDeviceInfo_Default : gElocDeviceInfo;
+    const elocConfig_T& ElocConfig = \
+            cfgType == CfgType::DEFAULT_CFG ? C_ElocConfig_Default : gElocConfig;
+    const micInfo_t& MicInfo = \
+            cfgType == CfgType::DEFAULT_CFG ? C_MicInfo_Default : gMicInfo;
     doc.clear();
     JsonObject device = doc.createNestedObject("device");
-    device["location"]                    = gElocDeviceInfo.location.c_str();
-    device["locationCode"]                = gElocDeviceInfo.locationCode.c_str();
-    device["locationAccuracy"]            = gElocDeviceInfo.locationAccuracy.c_str();
-    device["nodeName"]                    = gElocDeviceInfo.nodeName.c_str();
+    device["fileHeader"]                  = ElocDeviceInfo.fileHeader.c_str();
+    device["locationCode"]                = ElocDeviceInfo.locationCode.c_str();
+    device["locationAccuracy"]            = ElocDeviceInfo.locationAccuracy;
+    device["nodeName"]                    = ElocDeviceInfo.nodeName.c_str();
 
     JsonObject config = doc.createNestedObject("config");
-    config["secondsPerFile"]              = gElocConfig.secondsPerFile;
-    config["listenOnly"]                  = gElocConfig.listenOnly;
-    config["cpuMaxFrequencyMHZ"]          = gElocConfig.cpuMaxFrequencyMHZ;
-    config["cpuMinFrequencyMHZ"]          = gElocConfig.cpuMinFrequencyMHZ;
-    config["cpuEnableLightSleep"]         = gElocConfig.cpuEnableLightSleep;
-    config["bluetoothEnableAtStart"]      = gElocConfig.bluetoothEnableAtStart;
-    config["bluetoothEnableOnTapping"]    = gElocConfig.bluetoothEnableOnTapping;
-    config["bluetoothEnableDuringRecord"] = gElocConfig.bluetoothEnableDuringRecord;
-    config["bluetoothOffTimeoutSeconds"]  = gElocConfig.bluetoothOffTimeoutSeconds;
+    config["secondsPerFile"]              = ElocConfig.secondsPerFile;
+    config["cpuMaxFrequencyMHZ"]          = ElocConfig.cpuMaxFrequencyMHZ;
+    config["cpuMinFrequencyMHZ"]          = ElocConfig.cpuMinFrequencyMHZ;
+    config["cpuEnableLightSleep"]         = ElocConfig.cpuEnableLightSleep;
+    config["bluetoothEnableAtStart"]      = ElocConfig.bluetoothEnableAtStart;
+    config["bluetoothEnableOnTapping"]    = ElocConfig.bluetoothEnableOnTapping;
+    config["bluetoothEnableDuringRecord"] = ElocConfig.bluetoothEnableDuringRecord;
+    config["bluetoothOffTimeoutSeconds"]  = ElocConfig.bluetoothOffTimeoutSeconds;
+    config["logConfig"]["logToSdCard"]    = gElocConfig.logConfig.logToSdCard;
+    config["logConfig"]["filename"]       = gElocConfig.logConfig.filename;
+    config["logConfig"]["maxFiles"]       = gElocConfig.logConfig.maxFiles;
+    config["logConfig"]["maxFileSize"]    = gElocConfig.logConfig.maxFileSize;
+
     
     JsonObject micInfo = doc.createNestedObject("mic");
-    micInfo["MicType"]                     = gMicInfo.MicType.c_str();
-    micInfo["MicBitShift"]                 = gMicInfo.MicBitShift;
-    micInfo["MicSampleRate"]               = gMicInfo.MicSampleRate;
-    micInfo["MicUseAPLL"]                  = gMicInfo.MicUseAPLL;
-    micInfo["MicUseTimingFix"]             = gMicInfo.MicUseTimingFix;
-    micInfo["MicGPSCoords"]                = gMicInfo.MicGPSCoords.c_str();
-    micInfo["MicPointingDirectionDegrees"] = gMicInfo.MicPointingDirectionDegrees.c_str();
-    micInfo["MicHeight"]                   = gMicInfo.MicHeight.c_str();
-    micInfo["MicMountType"]                = gMicInfo.MicMountType.c_str();
+    micInfo["MicType"]                     = MicInfo.MicType.c_str();
+    micInfo["MicBitShift"]                 = MicInfo.MicBitShift;
+    micInfo["MicSampleRate"]               = MicInfo.MicSampleRate;
+    micInfo["MicUseAPLL"]                  = MicInfo.MicUseAPLL;
+    micInfo["MicUseTimingFix"]             = MicInfo.MicUseTimingFix;
 }
 
-void printConfig(String& buf) {
+bool printConfig(String& buf, CfgType cfgType/* = CfgType::RUNTIME*/) {
 
     StaticJsonDocument<JSON_DOC_SIZE> doc;
-    buildConfigFile(doc);
+    buildConfigFile(doc, cfgType);
     if (serializeJsonPretty(doc, buf) == 0) {
         ESP_LOGE(TAG, "Failed serialize JSON config!");
+        return false;
     }
+    return true;
 }
 
 bool writeConfigFile(const char* filename) {
@@ -339,7 +299,7 @@ static void merge(JsonVariant dst, JsonVariantConst src) {
     }
 }
 
-esp_err_t updateConfig(const String& buf) {
+esp_err_t updateConfig(const char* buf) {
     static StaticJsonDocument<JSON_DOC_SIZE> newCfg;
     newCfg.clear();
 
@@ -362,7 +322,9 @@ esp_err_t updateConfig(const String& buf) {
     JsonObject mic = doc["mic"];
     loadMicInfo(mic);
 
-    writeConfig();
+    if (!writeConfig()) {
+        return ESP_ERR_FLASH_BASE;
+    }
 
     return ESP_OK;
 }

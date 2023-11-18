@@ -49,7 +49,9 @@
 #include "Battery.hpp"
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
-#include "BluetoothServer.hpp"
+#include "ElocStatus.hpp"
+#include "utils/logging.hpp"
+#include "Commands/BluetoothServer.hpp"
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
 
@@ -277,16 +279,15 @@ static void IRAM_ATTR buttonISR(void *args)
     // return;
     // ESP_LOGI(TAG, "button pressed");
     // delay(5000);
-    rec_req_t rec_req = gRecording ? REC_REQ_STOP : REC_REQ_START;
-    // ets_printf("button pressed");
-    xQueueSendFromISR(rec_req_evt_queue, &rec_req, NULL);
+    rec_req_t rec_req = (gRecording != RecState::IDLE) ? REC_REQ_STOP : REC_REQ_START;
+  //ets_printf("button pressed");
+  xQueueSendFromISR(rec_req_evt_queue, &rec_req, (TickType_t)0);
     // detachInterrupt(GPIO_BUTTON);
 }
 
-static void LEDflashError()
-{
-    ESP_LOGV(TAG, "Func: %s", __func__);
 
+
+static void LEDflashError() {
     ESP_LOGI(TAG, "-----fast flash------------");
     for (auto i = 0; i < 10; i++)
     {
@@ -331,22 +332,19 @@ void printPartitionInfo()
     {
         ESP_LOGI(TAG, "Running firmware version: %s", running_app_info.version);
     }
+
 }
 
 
-long getTimeFromTimeObjectMS()
-{
-    ESP_LOGV(TAG, "Func: %s", __func__);
 
-    return (timeObject.getEpoch() * 1000L + timeObject.getMillis());
-}
 
-/**
- * Purpose ??
-*/
-void time()
-{
-    ESP_LOGV(TAG, "Func: %s", __func__);
+
+
+
+
+
+
+void time() {
 
     struct timeval tv_now;
     gettimeofday(&tv_now, NULL);
@@ -898,6 +896,14 @@ void app_main(void)
     ffsutil::printListDir("/sdcard/eloc");
 
     readConfig();
+//setup persistent logging only if SD card is mounted
+    if (sd_card && sd_card->isMounted()) {
+        const logConfig_t& cfg= getConfig().logConfig;
+        esp_err_t err = Logging::init(cfg.logToSdCard, cfg.filename, cfg.maxFiles, cfg.maxFileSize);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initilize logging subsystem with %s", esp_err_to_name(err));
+        }
+    }
 
     // check if a firmware update is triggered via SD card
     checkForFirmwareUpdateFile();
@@ -1025,28 +1031,10 @@ void app_main(void)
     // ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_BUTTON));
 
     /** Setup Power Management */
-    esp_pm_config_esp32_t cfg = {
-        .max_freq_mhz = getConfig().cpuMaxFrequencyMHZ,
-        .min_freq_mhz = getConfig().cpuMinFrequencyMHZ,
-        .light_sleep_enable = getConfig().cpuEnableLightSleep};
-    esp_pm_configure(&cfg);
-    // calling gpio_sleep_sel_dis must be done after esp_pm_configure() otherwise they will get overwritten
-    // interrupt must be enabled during sleep otherwise they might continously trigger (missing pullup)
-    // or won't work at all
-    gpio_sleep_sel_dis(GPIO_BUTTON);
-    gpio_sleep_sel_dis(LIS3DH_INT_PIN);
-    // now setup GPIOs as wakeup source. This is required to wake up the recorder in tickless idle
-    // BUGME: this seems to be a bug in ESP IDF: https://github.com/espressif/arduino-esp32/issues/7158
-    //       gpio_wakeup_enable does not correctly switch to rtc_gpio_wakeup_enable() for RTC GPIOs.
-    ESP_ERROR_CHECK(rtc_gpio_wakeup_enable(LIS3DH_INT_PIN, GPIO_INTR_HIGH_LEVEL));
-    ESP_ERROR_CHECK(rtc_gpio_wakeup_enable(GPIO_BUTTON, GPIO_INTR_LOW_LEVEL));
-    ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
+    ElocSystem::GetInstance().pm_configure();
 
     if (getConfig().testI2SClockInput)
         testInput();
-
-    ESP_LOGI(TAG, "waiting for button or bluetooth");
-    ESP_LOGI(TAG, "voltage is %.3f", Battery::GetInstance().getVoltage());
 
     /**
      * Get the configuration of the I2S microphone & start it
@@ -1106,13 +1094,19 @@ void app_main(void)
     // TODO: Move to wav_writer class
     FILE *fp = nullptr;
     rec_req_t rec_req = REC_REQ_NONE;
-    
+
+    auto loopCnt = 0;
 
     // TODO: Define conditions on which device shuld exit this while() loop
     // e.g. SD card full or I2S error?
-
     while (true)
     {
+        // TODO: Check this is valid, rebased from master
+        if ((loopCnt++ % 10) == 0) {
+            ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC, Temp %d °C", 
+            Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC(), ElocSystem::GetInstance().getTemperaure());
+        }
+
         // Start a new recording?
         if (wav_writer != nullptr &&
             wav_writer->is_file_handle_set() == false && 

@@ -104,22 +104,7 @@ uint64_t gStartupTime; // gets read in at startup to set system time.
 
 char gSessionFolder[65];
 
-// timing
-int64_t gTotalUPTimeSinceReboot = esp_timer_get_time(); // esp_timer_get_time returns 64-bit time since startup, in microseconds.
-int64_t gTotalRecordTimeSinceReboot = 0;
-
-/**  
- *  @deprecated ??
-*/ 
-int64_t gSessionRecordTime = 0;
-
 int gMinutesWaitUntilDeepSleep = 60; // change to 1 or 2 for testing
-
-// session stuff
-String gSessionIdentifier = "";
-
-// String gBluetoothMAC="";
-// String gFirmwareVersion = VERSION; defined elsewhere
 
 ESP32Time timeObject;
 // WebServer server(80);

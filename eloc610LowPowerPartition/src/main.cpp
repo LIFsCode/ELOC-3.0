@@ -608,6 +608,11 @@ void start_sound_recording(FILE *fp){
      *       but this is not reflected in the fp variable here
      *       hence the need to use 'is_file_handle_set()' getter
      */
+
+
+    // TODO: set this as not recording in WAVFileWriter.cpp::finish()
+    gRecording=RecState::RECORDING;
+    
     fp = nullptr;
 
     char file_name[100];

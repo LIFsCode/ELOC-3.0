@@ -84,7 +84,7 @@ bool gMountedSDCard = false;
 /**  
  *  @deprecated ??
 */ 
-bool gRecording = true;
+// bool gRecording = true;
 
 /**
  * @brief Should inference be run on sound samples? 

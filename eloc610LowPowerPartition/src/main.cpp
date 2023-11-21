@@ -119,7 +119,7 @@ int gMinutesWaitUntilDeepSleep = 60; // change to 1 or 2 for testing
 String gSessionIdentifier = "";
 
 // String gBluetoothMAC="";
-String gFirmwareVersion = VERSION;
+// String gFirmwareVersion = VERSION; defined elsewhere
 
 ESP32Time timeObject;
 // WebServer server(80);
@@ -591,19 +591,19 @@ void saveStatusToSD()
 
     sendstring = sendstring + "Firmware Version:  " + gFirmwareVersion + "\n"; // firmware
 
-    sendstring = sendstring + "File Header:  " + getDeviceInfo().location + "\n"; // file header
+    sendstring = sendstring + "File Header:  " + getDeviceInfo().fileHeader + "\n"; // file header
 
     sendstring = sendstring + "Bluetooth on when Record?:   " + (getConfig().bluetoothEnableDuringRecord ? "on" : "off") + "\n";
 
-    sendstring = sendstring + "Sample Rate:  " + String(getMicInfo().MicSampleRate) + "\n";
+    sendstring = sendstring + "Sample Rate:  "      + String(getMicInfo().MicSampleRate) + "\n";
     sendstring = sendstring + "Seconds Per File:  " + String(getConfig().secondsPerFile) + "\n";
 
     // sendstring=sendstring+   "Voltage Offset:  " +String(gVoltageOffset)                  + "\n" ;
-    sendstring = sendstring + "Mic Type:  " + getMicInfo().MicType + "\n";
-    sendstring = sendstring + "SD Card Free GB:   " + String(gFreeSpaceGB) + "\n";
-    sendstring = sendstring + "Mic Gain:  " + String(getMicInfo().MicBitShift) + "\n";
-    sendstring = sendstring + "GPS Location:  " + getDeviceInfo().locationCode + "\n";
-    sendstring = sendstring + "GPS Accuracy:  " + getDeviceInfo().locationAccuracy + " m\n";
+    sendstring = sendstring + "Mic Type:  "         + getMicInfo().MicType + "\n";
+    sendstring = sendstring + "SD Card Free GB:   " + String(sd_card->freeSpaceGB()) + "\n";
+    sendstring = sendstring + "Mic Gain:  "         + String(getMicInfo().MicBitShift) + "\n";
+    sendstring = sendstring + "GPS Location:  "     + getDeviceInfo().locationCode + "\n";
+    sendstring = sendstring + "GPS Accuracy:  "     + getDeviceInfo().locationAccuracy + " m\n";
 
     // sendstring=sendstring+ "\n\n";
 

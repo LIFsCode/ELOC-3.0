@@ -22,4 +22,6 @@ extern i2s_config_t i2s_mic_Config;
 // i2s microphone pins
 extern i2s_pin_config_t i2s_mic_pins;
 
+static const char* const gFirmwareVersion = VERSION;
+
 #endif // _CONFIG_H_

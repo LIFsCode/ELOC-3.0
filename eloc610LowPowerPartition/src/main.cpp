@@ -409,8 +409,8 @@ void initTime()
 bool createSessionFolder()
 {
     String fname;
-    // TODO: check if another session identifier based on ISO time for mat would be more helpful
-    gSessionIdentifier = getDeviceInfo().nodeName + uint64ToString(getSystemTimeMS());
+    //TODO: check if another session identifier based on ISO time for mat would be more helpful
+    gSessionIdentifier = getDeviceInfo().fileHeader + uint64ToString(getSystemTimeMS());
     fname = "/sdcard/eloc/" + gSessionIdentifier;
     ESP_LOGI(TAG, "Creating session folder %s", fname.c_str());
     mkdir(fname.c_str(), 0777);
@@ -501,64 +501,39 @@ bool mountSDCard()
 
 #ifdef USE_SDIO_VERSION
 
-    ESP_LOGI(TAG, "TRYING to mount SDCArd, SDIO ");
-    sd_card = new SDCardSDIO("/sdcard");
-    if (gMountedSDCard)
-    {
-        ESP_LOGI(TAG, "SD card mounted ");
-        const char *ELOC_FOLDER = "/sdcard/eloc";
-        if (!ffsutil::folderExists(ELOC_FOLDER))
-        {
-            ESP_LOGI(TAG, "%s does not exist, creating empty folder", ELOC_FOLDER);
-            mkdir(ELOC_FOLDER, 0777);
+        ESP_LOGI(TAG, "TRYING to mount SDCArd, SDIO ");
+        sd_card = new SDCardSDIO("/sdcard");
+        if (sd_card->isMounted()) {
+            ESP_LOGI(TAG, "SD card mounted ");
+            const char* ELOC_FOLDER = "/sdcard/eloc";
+            if (!ffsutil::folderExists(ELOC_FOLDER)) {
+                ESP_LOGI(TAG, "%s does not exist, creating empty folder", ELOC_FOLDER);
+                mkdir(ELOC_FOLDER, 0777);
+            }
+            float freeSpace = sd_card->freeSpaceGB();
+            float totalSpace = sd_card->getCapacityMB()/1024;
+            ESP_LOGI(TAG, "SD card %f / %f GB free", freeSpace, totalSpace);
         }
-    }
-
-#endif
+    #endif
+    gMountedSDCard = sd_card->isMounted();
     return gMountedSDCard;
 }
 
-void freeSpace()
-{
-    FATFS *fs;
-    uint32_t fre_clust, fre_sect, tot_sect;
-    /* Get volume information and free clusters of drive 0 */
-    auto res = f_getfree("0:", &fre_clust, &fs);
-    /* Get total sectors and free sectors */
-    tot_sect = (fs->n_fatent - 2) * fs->csize;
-    fre_sect = fre_clust * fs->csize;
-    gFreeSpaceGB = float((float)fre_sect / 1048576.0 / 2.0);
-    gFreeSpaceKB = fre_sect / 2;
-    
-    /* Print the free space (assuming 512 bytes/sector) */
-    ESP_LOGI(TAG, "SD card total space: %10u KiB , %10u KiB available.", tot_sect / 2, fre_sect / 2);
-    ESP_LOGI(TAG, "SD card free space: %2.1f GB, %u KB", gFreeSpaceGB, gFreeSpaceKB);
-}
+esp_err_t checkSDCard() {
 
-/**
- * @brief Checks if SD card is mounted and has sufficient free space (> 0.5 GB)
- * 
- * @return esp_err_t 
- */
-esp_err_t checkSDCard()
-{
-
-    if (!gMountedSDCard)
-    {
-        // in case SD card is not yet mounted, mount it now, e.g. not inserted during boot
-        if (!mountSDCard())
-        {
+    if (!gMountedSDCard) {
+        // in case SD card is not yet mounted, mout it now, e.g. not inserted durint boot
+        if (!mountSDCard()) {
             return ESP_ERR_NOT_FOUND;
         }
     }
     // getupdated free space
-    freeSpace();
-    if ((gFreeSpaceGB > 0.0) && (gFreeSpaceGB < 0.5))
-    {
+    float freeSpaceGB = sd_card->freeSpaceGB();
+    if ((freeSpaceGB > 0.0) && (freeSpaceGB < 0.5)) {
         //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
         //  btwrite("SD Card full. Cannot record");
         //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
-        ESP_LOGE(TAG, "SD card is full, Free space %.3f GB", gFreeSpaceGB);
+        ESP_LOGE(TAG, "SD card is full, Free space %.3f GB", freeSpaceGB);
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
@@ -863,7 +838,6 @@ void app_main(void)
         // return;
     }
     mountSDCard();
-    freeSpace();
 
     if (0)
     {

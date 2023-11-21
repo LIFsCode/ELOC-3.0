@@ -110,6 +110,8 @@ void WAVFileWriter::swap_buffers(){
 
 void WAVFileWriter::write()
 {
+  ESP_LOGV(TAG, "Func: %s", __func__);
+
   auto buffer_inactive = buf_select ? 0 : 1;
     
   if (m_fp == nullptr){
@@ -121,7 +123,7 @@ void WAVFileWriter::write()
 
   m_file_size += sizeof(int16_t) * buffer_size_in_samples;
 
-  // Don't swap buffers here, I2MEMSSampler::read() to do it
+  // Don't swap buffers here, let I2MEMSSampler::read() to do it
   buf_ready = 0;
 
   ESP_LOGI(TAG, "WAV file size bytes: %d, secs: %d", m_file_size, (m_file_size / (sizeof(int16_t) * m_sample_rate)));
@@ -130,28 +132,30 @@ void WAVFileWriter::write()
 
 void WAVFileWriter::start_write_thread()
 {
-    while(enable_wav_file_write){
-      
-      if (this->buf_ready){
-        if (m_fp == nullptr){
-          ESP_LOGE(TAG, "enable_wav_file_write enabled & file pointer == nullptr");
-        }
-        else{
-          this->write();
-        }
+  ESP_LOGV(TAG, "Func: %s", __func__);
 
-        if (m_file_size >= (m_sample_rate * secondsPerFile * sizeof(int16_t))){
-          // Won't be saving to this file anymore..
-          enable_wav_file_write = false;
-          this->finish();
-        }
+  while(enable_wav_file_write){
+    
+    if (this->buf_ready){
+      if (m_fp == nullptr){
+        ESP_LOGE(TAG, "enable_wav_file_write enabled & file pointer == nullptr");
       }
-      else
-        // TODO: Change this to wait for a msg from I2SMEMSSampler thread
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
+      else{
+        this->write();
+      }
 
-    vTaskDelete(NULL);
+      if (m_file_size >= (m_sample_rate * secondsPerFile * sizeof(int16_t))){
+        // Won't be saving to this file anymore..
+        enable_wav_file_write = false;
+        this->finish();
+      }
+    }
+    else
+      // TODO: Change this to wait for a msg from I2SMEMSSampler thread
+      vTaskDelay(pdMS_TO_TICKS(100));
+  }
+
+  vTaskDelete(NULL);
 
 }
 
@@ -193,7 +197,14 @@ void WAVFileWriter::start_wav_writer_wrapper(void * _this){
 }
 
 int WAVFileWriter::start_wav_write_task(int secondsPerFile){
-
+  
+  ESP_LOGV(TAG, "Func: %s, secondsPerFile = %d", __func__, secondsPerFile);
+  
+  if(secondsPerFile <= 0){
+    ESP_LOGE(TAG, "secondsPerFile must be > 0");
+    return -1;
+  }
+  
   this->secondsPerFile = secondsPerFile;
 
   int ret = xTaskCreate(this->start_wav_writer_wrapper, "Wav file writer", 1024 * 2, this, 8, NULL);

@@ -71,20 +71,12 @@
     int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
        return edgeImpulse->microphone_audio_signal_get_data(offset, length, out_ptr);
     }
-
-    // bugme: this should somehow be encapsulated
-    int print_results = 0;
      
 #endif
 
 static const char *TAG = "main";
 
 bool gMountedSDCard = false;
-
-/**  
- *  @deprecated ??
-*/ 
-// bool gRecording = true;
 
 /**
  * @brief Should inference be run on sound samples? 
@@ -860,13 +852,16 @@ void app_main(void)
     ffsutil::printListDir("/sdcard/eloc");
 
     readConfig();
-//setup persistent logging only if SD card is mounted
+
+    // TODO: BUGME: Crash when writing to wav & log file simultaneously?
+
+    //setup persistent logging only if SD card is mounted
     if (sd_card && sd_card->isMounted()) {
-        const logConfig_t& cfg= getConfig().logConfig;
-        esp_err_t err = Logging::init(cfg.logToSdCard, cfg.filename, cfg.maxFiles, cfg.maxFileSize);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to initilize logging subsystem with %s", esp_err_to_name(err));
-        }
+        // const logConfig_t& cfg= getConfig().logConfig;
+        // esp_err_t err = Logging::init(cfg.logToSdCard, cfg.filename, cfg.maxFiles, cfg.maxFileSize);
+        // if (err != ESP_OK) {
+        //     ESP_LOGE(TAG, "Failed to initilize logging subsystem with %s", esp_err_to_name(err));
+        // }
     }
 
     // check if a firmware update is triggered via SD card
@@ -1060,6 +1055,7 @@ void app_main(void)
     rec_req_t rec_req = REC_REQ_NONE;
 
     auto loopCnt = 0;
+    auto print_results = 0;
 
     // TODO: Define conditions on which device shuld exit this while() loop
     // e.g. SD card full or I2S error?

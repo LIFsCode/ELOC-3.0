@@ -207,7 +207,7 @@ int WAVFileWriter::start_wav_write_task(int secondsPerFile){
   
   this->secondsPerFile = secondsPerFile;
 
-  int ret = xTaskCreate(this->start_wav_writer_wrapper, "Wav file writer", 1024 * 2, this, 8, NULL);
+  int ret = xTaskCreate(this->start_wav_writer_wrapper, "Wav file writer", 1024 * 4, this, 8, NULL);
 
   return ret;
 }

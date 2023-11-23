@@ -418,7 +418,7 @@ int I2SMEMSSampler::start_read_task(int i2s_samples_to_read){
   this->i2s_samples_to_read = i2s_samples_to_read;
 
   // Stack 1024 * X - experimentally determined
-  int ret = xTaskCreate(this->start_read_thread_wrapper, "I2S read", 1024 * 2, this, 10, NULL);
+  int ret = xTaskCreate(this->start_read_thread_wrapper, "I2S read", 1024 * 4, this, 10, NULL);
 
   return ret;
 }

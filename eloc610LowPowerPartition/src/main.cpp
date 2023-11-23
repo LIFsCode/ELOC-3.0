@@ -857,11 +857,11 @@ void app_main(void)
 
     //setup persistent logging only if SD card is mounted
     if (sd_card && sd_card->isMounted()) {
-        // const logConfig_t& cfg= getConfig().logConfig;
-        // esp_err_t err = Logging::init(cfg.logToSdCard, cfg.filename, cfg.maxFiles, cfg.maxFileSize);
-        // if (err != ESP_OK) {
-        //     ESP_LOGE(TAG, "Failed to initilize logging subsystem with %s", esp_err_to_name(err));
-        // }
+        const logConfig_t& cfg= getConfig().logConfig;
+        esp_err_t err = Logging::init(cfg.logToSdCard, cfg.filename, cfg.maxFiles, cfg.maxFileSize);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initilize logging subsystem with %s", esp_err_to_name(err));
+        }
     }
 
     // check if a firmware update is triggered via SD card

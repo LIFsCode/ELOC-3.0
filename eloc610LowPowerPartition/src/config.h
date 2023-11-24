@@ -9,7 +9,6 @@
 #include "lis3dh_types.h"
 #include "project_config.h"
 
-
 #ifdef USE_SDIO_VERSION
 
         extern lis3dh_config_t lis3dh_config;

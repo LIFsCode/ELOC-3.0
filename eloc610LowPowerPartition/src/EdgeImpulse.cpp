@@ -160,6 +160,11 @@ void EdgeImpulse::free_buffers(void)
 
 }
 
+void EdgeImpulse::run_classifier_init()
+{
+    return ::run_classifier_init();
+}
+
 EI_IMPULSE_ERROR EdgeImpulse::run_classifier_continuous(signal_t *signal, ei_impulse_result_t *result)
 {
 

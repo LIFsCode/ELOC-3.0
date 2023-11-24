@@ -138,6 +138,12 @@ public:
     }
 
     /**
+     * @brief Init static vars
+     * @note: Only for Continuous inferencing!
+     */
+    void run_classifier_init();
+
+    /**
      * @brief Start a continuous inferencing task
      * 
      * @param signal 

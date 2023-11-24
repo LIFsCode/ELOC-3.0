@@ -55,6 +55,7 @@
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
 
+
 // TODO: Remove this..
 // #define EDGE_IMPULSE_ENABLED
 
@@ -1099,6 +1100,8 @@ void app_main(void)
                 continue;
             }
 
+            auto startCounter = cpu_hal_get_cycle_count(); 
+
             ei::signal_t signal;
             signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
             signal.get_data = &microphone_audio_signal_get_data;
@@ -1110,6 +1113,10 @@ void app_main(void)
             #else
                 EI_IMPULSE_ERROR r = edgeImpulse->run_classifier(&signal, &result);
             #endif // AI_CONTINUOUS_INFERENCE
+
+            ESP_LOGI(TAG, "Cycles taken to run inference = %d", (cpu_hal_get_cycle_count() - startCounter)); 
+            ESP_LOGI(TAG, "Min free heap since boot = %d", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
+            ESP_LOGI(TAG, "Min free PSRAM since boot = %d", heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
 
             if (r != EI_IMPULSE_OK)
             {

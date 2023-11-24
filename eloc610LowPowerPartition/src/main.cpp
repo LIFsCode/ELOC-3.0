@@ -1168,6 +1168,9 @@ void app_main(void)
                     print_results = 0;
                 }
         }// end while(ei_running_status == true)
+#else
+        // Delay longer if not EI enabled
+        delay(300);
 
 #endif // EDGE_IMPULSE_ENABLED
 

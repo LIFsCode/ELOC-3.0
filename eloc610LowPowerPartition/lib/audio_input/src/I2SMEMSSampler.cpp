@@ -282,6 +282,8 @@ int I2SMEMSSampler::read()
                 }
             }
 
+            #ifdef EDGE_IMPULSE_ENABLED
+
             // Check buffer exists
             if (inference->buffers[inference->buf_select] != nullptr){
 
@@ -310,6 +312,8 @@ int I2SMEMSSampler::read()
                     skip_current++;
                 }
             }
+
+            #endif // EDGE_IMPULSE_ENABLED
         
             #ifdef VISUALIZE_WAVEFORM
                 total_raw_sample += raw_samples[i];
@@ -334,18 +338,26 @@ int I2SMEMSSampler::read()
         ESP_LOGI(TAG, "writer->buf_select = %d", writer->buf_select);
         ESP_LOGI(TAG, "writer->buf_ready = %d", writer->buf_ready);
         
+        #ifdef EDGE_IMPULSE_ENABLED
+
         ESP_LOGI(TAG, "inference.buf_count = %d", inference->buf_count);
         ESP_LOGI(TAG, "inference.buf_select = %d", inference->buf_select);
         ESP_LOGI(TAG, "inference.buf_ready = %d", inference->buf_ready);
+
+        #endif // EDGE_IMPULSE_ENABLED
     }
 
     if (writer_buffer_overrun == true){
         ESP_LOGW(TAG, "wav buffer overrun");
     }
+
+    #ifdef EDGE_IMPULSE_ENABLED
     
     if (inference_buffer_overrun == true){
         ESP_LOGW(TAG, "inference buffer overrun");
     }
+
+    #endif // EDGE_IMPULSE_ENABLED
 
     if (sound_clip_count > 0){
         ESP_LOGW(TAG, "Audio sample clips occurred %d times", sound_clip_count);

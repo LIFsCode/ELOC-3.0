@@ -1,4 +1,5 @@
 
+
 #include "esp_err.h"
 #include "esp_log.h"
 #include <rom/ets_sys.h>
@@ -54,44 +55,69 @@
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
 
+// TODO: Remove this..
+// #define EDGE_IMPULSE_ENABLED
+
+#ifdef EDGE_IMPULSE_ENABLED
+
+    #include "EdgeImpulse.hpp"              // This file includes trumpet_inferencing.h
+    #include "edge-impulse-sdk/dsp/numpy_types.h"
+    #include "test_samples.h"
+
+    EdgeImpulse *edgeImpulse = nullptr;
+
+    //BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers
+    //       but all EdgeImpulse stuff got encapsulated within a class, which does not match
+    int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
+       return edgeImpulse->microphone_audio_signal_get_data(offset, length, out_ptr);
+    }
+     
+#endif
+
 static const char *TAG = "main";
 
+bool gMountedSDCard = false;
 
-bool gMountedSDCard=false;
+/**
+ * @brief Should inference be run on sound samples? 
+ * @todo Set from Bluetooth / config file
+ */
+bool ai_run_enable = true;      
 
-int32_t *graw_samples;
+/**
+ * @brief The size of the buffer for I2SMEMSampler to store the sound samples
+ *        Appears to be a magic number!
+ *        This value is used in both continuous & non-continuous inferencing examples from Edge Impulse
+ *        Happens to be twice the dma_buf_len of 512
+ */
+const uint32_t sample_buffer_size = sizeof (signed short) * 1024;
 
-int gRawSampleBlockSize=1000;
-int gSampleBlockSize=16000; //must be factor of 1000   in samples
-int gBufferLen=I2S_DMA_BUFFER_LEN; //in samples
-int gBufferCount=I2S_DMA_BUFFER_COUNT;   // so 6*4000 = 24k buf len
-//always keep these in same order
-
-
-////// these are the things you can change for now. 
-
-uint32_t  gRealSampleRate;
-uint64_t gStartupTime; //gets read in at startup to set tystem time. 
+uint64_t gStartupTime; // gets read in at startup to set system time.
 
 char gSessionFolder[65];
 
-int gMinutesWaitUntilDeepSleep=60; //change to 1 or 2 for testing
+int gMinutesWaitUntilDeepSleep = 60; // change to 1 or 2 for testing
 
 ESP32Time timeObject;
-//WebServer server(80);
-//bool updateFinished=false;
-bool gWillUpdate=false;
+// WebServer server(80);
+// bool updateFinished=false;
+bool gWillUpdate = false;
+float gFreeSpaceGB = 0.0;
+uint32_t gFreeSpaceKB = 0;
 
-//String gTimeDifferenceCode; //see getTimeDifferenceCode() below
+// String gTimeDifferenceCode; //see getTimeDifferenceCode() below
 
- #ifdef USE_SPI_VERSION
-    SDCard *theSDCardObject;
- #endif
+#ifdef USE_SPI_VERSION
+    SDCard *sd_card = nullptr;
+#endif
 
 #ifdef USE_SDIO_VERSION
-    SDCardSDIO *theSDCardObject;
- #endif
+    SDCardSDIO *sd_card = nullptr;
+#endif
 
+I2SMEMSSampler *input = nullptr;
+WAVFileWriter *wav_writer = nullptr;
+QueueHandle_t rec_req_evt_queue = nullptr;
 
 void writeSettings(String settings);
 void doDeepSleep();
@@ -102,171 +128,162 @@ void setTime(long epoch, int ms);
 
 extern "C"
 {
-  void app_main(void);
+    void app_main(void);
 }
 
+void resetPeripherals()
+{
+    ESP_LOGV(TAG, "Func: %s", __func__);
 
-void resetPeripherals() {
-   /*
-   periph_module_reset( PERIPH_I2S0_MODULE);  
-    periph_module_reset( PERIPH_BT_MODULE);
-    periph_module_reset( PERIPH_WIFI_BT_COMMON_MODULE);
-    periph_module_reset( PERIPH_BT_MODULE);
-    periph_module_reset(  PERIPH_BT_BASEBAND_MODULE);
-    periph_module_reset(PERIPH_BT_LC_MODULE);
-    //periph_module_reset(PERIPH_UART0_MODULE);    //this used by debugger?
-    periph_module_reset(PERIPH_UART1_MODULE);  //this was it! bug stops bluetooth 
-                                               //from re-broadcasting in other partition on  https://github.com/espressif/esp-idf/issues/9971
-
-    periph_module_reset(PERIPH_UART2_MODULE); //just in case
-    
-   */
-
+    if(0){
+        periph_module_reset(PERIPH_I2S0_MODULE);
+        periph_module_reset(PERIPH_BT_MODULE);
+        periph_module_reset(PERIPH_WIFI_BT_COMMON_MODULE);
+        periph_module_reset(PERIPH_BT_MODULE);
+        periph_module_reset(PERIPH_BT_BASEBAND_MODULE);
+        periph_module_reset(PERIPH_BT_LC_MODULE);
+        //periph_module_reset(PERIPH_UART0_MODULE); //this used by debugger?
+        periph_module_reset(PERIPH_UART1_MODULE);   //this was it! bug stops bluetooth
+                                                    //from re-broadcasting in other partition on  https://github.com/espressif/esp-idf/issues/9971
+        periph_module_reset(PERIPH_UART2_MODULE);   //just in case
+    }
 }
 
+void printRevision()
+{
+    ESP_LOGV(TAG, "Func: %s", __func__);
 
-void printRevision() {
-
-  /*
-    esp_chip_info_t chip_info;
-    esp_chip_info(&chip_info);
-    printf("\nThis is ESP32 chip with %d CPU cores, WiFi%s%s, ",
-            chip_info.cores,
-            (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
-            (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "");
-
-    printf("silicon revision %d, ", chip_info.revision);
-
-    printf("%dMB %s flash\n", spi_flash_get_chip_size() / (1024 * 1024),
-            (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
-    */
+    if(0){
+        esp_chip_info_t chip_info;
+        esp_chip_info(&chip_info);
+        printf("\nThis is ESP32 chip with %d CPU cores, WiFi%s%s, ",
+                chip_info.cores,
+                (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
+                (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "");
+        printf("silicon revision %d, ", chip_info.revision);
+        printf("%dMB %s flash\n", spi_flash_get_chip_size() / (1024 * 1024),
+                (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+    }
 }
 
-void delay (int  ms) {
+void delay(int ms)
+{
+    ESP_LOGV(TAG, "Func: %s", __func__);
 
-  vTaskDelay(pdMS_TO_TICKS(ms));
-
-
-} 
-
-
-void testInput() {
-          I2SSampler *input;
-          for (uint32_t i=1000; i<34000; i=i+2000) {
-                 i2s_mic_Config.sample_rate=i;
-                 i2s_mic_Config.use_apll=getMicInfo().MicUseAPLL;
-           
-
-                 input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-                 input->start();
-                 delay(100);
-                  ESP_LOGI(TAG, "Clockrate: %f", i2s_get_clk(I2S_NUM_0));
-                 input->stop();
-                  delay(100);
-                  //delete input;
-                  //delay(100);
-
-        }
-        //delete input;
+    vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
+void testInput()
+{
+    ESP_LOGV(TAG, "Func: %s", __func__);
 
+    for (uint32_t i = 1000; i < 34000; i = i + 2000)
+    {
+        i2s_mic_Config.sample_rate = i;
+        i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL;
 
+        input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+        input->start();
+        delay(100);
+        ESP_LOGI(TAG, "Clockrate: %f", i2s_get_clk(I2S_NUM_0));
+        input->stop();
+        delay(100);
+    }
 
-void resetESP32() {
-      
-   
-     
+    delete input;
+    input = nullptr;
+    delay(100);
+}
 
-    
-    ESP_LOGI(TAG, "Resetting in some ms");
+void resetESP32()
+{
+    ESP_LOGV(TAG, "Func: %s", __func__);
+
+    ESP_LOGI(TAG, "Resetting..");
     resetPeripherals();
-    // esp_task_wdt_init(30, false); //bump it up to 30 econds doesn't work. 
-    rtc_wdt_protect_off();      //Disable RTC WDT write protection
-    
+    // esp_task_wdt_init(30, false); //bump it up to 30 econds doesn't work.
+    rtc_wdt_protect_off(); // Disable RTC WDT write protection
+
     rtc_wdt_set_stage(RTC_WDT_STAGE0, RTC_WDT_STAGE_ACTION_RESET_RTC);
     rtc_wdt_set_time(RTC_WDT_STAGE0, 500);
-    rtc_wdt_enable();           //Start the RTC WDT timer
-    rtc_wdt_protect_on();       //Enable RTC WDT write protection
-    
+    rtc_wdt_enable();     // Start the RTC WDT timer
+    rtc_wdt_protect_on(); // Enable RTC WDT write protection
+
     // ESP_LOGI(TAG, "starting deep sleep");
-    //delay(50);
-    //esp_deep_sleep_start();
-    //ESP_LOGI(TAG, "deep sleep should never make it here");
-    
-    delay(1000); //should never get here
+    // delay(50);
+    // esp_deep_sleep_start();
+    // ESP_LOGI(TAG, "deep sleep should never make it here");
 
-
-
+    delay(1000); // should never get here
 }
 
+void printMemory()
+{
+    ESP_LOGV(TAG, "Func: %s", __func__);
 
+    ESP_LOGI(TAG, "\n\n\n\n");
+    ESP_LOGI(TAG, "Total Free mem default %d", heap_caps_get_free_size(MALLOC_CAP_DEFAULT));
+    ESP_LOGI(TAG, "Largest Block default %d", heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT));
 
-void printMemory() {
+    ESP_LOGI(TAG, "Total Free mem DMA %d", heap_caps_get_free_size(MALLOC_CAP_DMA));
+    ESP_LOGI(TAG, "Largest Block DMA %d", heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
 
-      ESP_LOGI(TAG, "\n\n\n\n");
-      ESP_LOGI(TAG, "Total Free mem default %d", heap_caps_get_free_size(MALLOC_CAP_DEFAULT));
-      ESP_LOGI(TAG, "Largest Block default %d", heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT ));
+    ESP_LOGI(TAG, "Total Free mem IRAM %d", heap_caps_get_free_size(MALLOC_CAP_IRAM_8BIT));
+    ESP_LOGI(TAG, "Largest Block IRAM %d", heap_caps_get_largest_free_block(MALLOC_CAP_IRAM_8BIT));
 
-      ESP_LOGI(TAG, "Total Free mem DMA %d", heap_caps_get_free_size(MALLOC_CAP_DMA));
-      ESP_LOGI(TAG, "Largest Block DMA %d", heap_caps_get_largest_free_block(MALLOC_CAP_DMA ));
+    ESP_LOGI(TAG, "Total Free mem EXEC %d", heap_caps_get_free_size(MALLOC_CAP_EXEC));
+    ESP_LOGI(TAG, "Largest Block EXEC %d", heap_caps_get_largest_free_block(MALLOC_CAP_EXEC));
 
-      ESP_LOGI(TAG, "Total Free mem IRAM %d", heap_caps_get_free_size(MALLOC_CAP_IRAM_8BIT));
-      ESP_LOGI(TAG, "Largest Block IRAM %d", heap_caps_get_largest_free_block(MALLOC_CAP_IRAM_8BIT));
-
-      ESP_LOGI(TAG, "Total Free mem EXEC %d", heap_caps_get_free_size(MALLOC_CAP_EXEC));
-      ESP_LOGI(TAG, "Largest Block EXEC %d", heap_caps_get_largest_free_block(MALLOC_CAP_EXEC ));
-
-      //heap_caps_dump_all();
-      ESP_LOGI(TAG, "\n\n\n\n");
-
-
+    // heap_caps_dump_all();
+    ESP_LOGI(TAG, "\n\n\n\n");
 }
 
+int64_t getSystemTimeMS()
+{
+    ESP_LOGV(TAG, "Func: %s", __func__);
 
-
-int64_t getSystemTimeMS() {
-             struct timeval tv_now;
-            gettimeofday(&tv_now, NULL);
-            int64_t time_us = (     (int64_t)tv_now.tv_sec      * 1000000L) + (int64_t)tv_now.tv_usec;
-            time_us=time_us/1000;
-          return(time_us);
-
-
+    struct timeval tv_now;
+    gettimeofday(&tv_now, NULL);
+    int64_t time_us = ((int64_t)tv_now.tv_sec * 1000000L) + (int64_t)tv_now.tv_usec;
+    time_us = time_us / 1000;
+    return (time_us);
 }
 
+static void IRAM_ATTR buttonISR(void *args)
+{
+    ESP_LOGV(TAG, "Func: %s", __func__);
 
-
-QueueHandle_t rec_req_evt_queue = NULL;
-
-static  void IRAM_ATTR buttonISR(void *args) {
-  //return;
-  //ESP_LOGI(TAG, "button pressed");
-  //delay(5000);
-  rec_req_t rec_req = (gRecording != RecState::IDLE) ? REC_REQ_STOP : REC_REQ_START;
+    // return;
+    // ESP_LOGI(TAG, "button pressed");
+    // delay(5000);
+    rec_req_t rec_req = (gRecording != RecState::IDLE) ? REC_REQ_STOP : REC_REQ_START;
   //ets_printf("button pressed");
   xQueueSendFromISR(rec_req_evt_queue, &rec_req, (TickType_t)0);
-     
-     //detachInterrupt(GPIO_BUTTON);
-
+    // detachInterrupt(GPIO_BUTTON);
 }
 
 
 
 static void LEDflashError() {
-      ESP_LOGI(TAG, "-----fast flash------------");
-      for (int i=0;i<10;i++){
-       gpio_set_level(STATUS_LED, 1);
-         vTaskDelay(pdMS_TO_TICKS(40));
+    ESP_LOGI(TAG, "-----fast flash------------");
+    for (auto i = 0; i < 10; i++)
+    {
+        gpio_set_level(STATUS_LED, 1);
+        vTaskDelay(pdMS_TO_TICKS(40));
         gpio_set_level(STATUS_LED, 0);
-         vTaskDelay(pdMS_TO_TICKS(40));
-    }  
+        vTaskDelay(pdMS_TO_TICKS(40));
+    }
 }
 
+/**
+ * Iterate through partitions & output to console
+*/
+void printPartitionInfo()
+{
+    ESP_LOGV(TAG, "Func: %s", __func__);
+    
+    // will always set boot partition back to partition0 except if it
 
-void printPartitionInfo() {  ///will always set boot partition back to partition0 except if it 
-    
-    
     esp_partition_iterator_t it;
 
     ESP_LOGI(TAG, "Iterating through app partitions...");
@@ -274,18 +291,22 @@ void printPartitionInfo() {  ///will always set boot partition back to partition
 
     // Loop through all matching partitions, in this case, all with the type 'data' until partition with desired
     // label is found. Verify if its the same instance as the one found before.
-    for (; it != NULL; it = esp_partition_next(it)) {
+    for (; it != NULL; it = esp_partition_next(it))
+    {
         const esp_partition_t *part = esp_partition_get(it);
         ESP_LOGI(TAG, "\tfound partition '%s' at offset 0x%" PRIx32 " with size 0x%" PRIx32, part->label, part->address, part->size);
     }
+
     // Release the partition iterator to release memory allocated for it
     esp_partition_iterator_release(it);
 
     ESP_LOGI(TAG, "Currently running partitions: ");
     const esp_partition_t *running = esp_ota_get_running_partition();
     ESP_LOGI(TAG, "\t '%s' at offset 0x%" PRIx32 " with size 0x%" PRIx32, running->label, running->address, running->size);
+    
     esp_app_desc_t running_app_info;
-    if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK) {
+    if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK)
+    {
         ESP_LOGI(TAG, "Running firmware version: %s", running_app_info.version);
     }
 
@@ -302,58 +323,71 @@ void printPartitionInfo() {  ///will always set boot partition back to partition
 
 void time() {
 
-        struct timeval tv_now;
-      gettimeofday(&tv_now, NULL);
-      int64_t time_us = (     (int64_t)tv_now.tv_sec      * 1000000L) + (int64_t)tv_now.tv_usec;
-      time_us=time_us/1000;
-   
+    struct timeval tv_now;
+    gettimeofday(&tv_now, NULL);
+    int64_t time_us = ((int64_t)tv_now.tv_sec * 1000000L) + (int64_t)tv_now.tv_usec;
+    time_us = time_us / 1000;
 }
 
-String uint64ToString(uint64_t input) {
-  String result = "";
-  uint8_t base = 10;
+/**
+ * Purpose ??
+*/
+String uint64ToString(uint64_t input)
+{
+    ESP_LOGV(TAG, "Func: %s", __func__);
 
-  do {
-    char c = input % base;
-    input /= base;
+    String result = "";
+    uint8_t base = 10;
 
-    if (c < 10)
-      c +='0';
-    else
-      c += 'A' - 10;
-    result = c + result;
-  } while (input);
-  return result;
+    do
+    {
+        char c = input % base;
+        input /= base;
+
+        if (c < 10)
+            c += '0';
+        else
+            c += 'A' - 10;
+        result = c + result;
+    } while (input);
+    
+    return result;
 }
 
+/**
+ * Set device time?
+*/
+void setTime(long epoch, int ms)
+{
+    ESP_LOGV(TAG, "Func: %s", __func__);
+    
+    /*
 
+    setTime(atol(seconds.c_str())+(TIMEZONE_OFFSET*60L*60L),  (atol(milliseconds.c_str()))*1000    );
+    //timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
+    // timestamps coming in from android are always GMT (minus 7 hrs)
+    // if I not add timezone then timeobject is off
+    // so timeobject does not seem to be adding timezone to system time.
+    // timestamps are in gmt+0, so timestamp convrters
 
+    struct timeval tv_now;
+    gettimeofday(&tv_now, NULL);
+    int64_t time_us = (     (int64_t)tv_now.tv_sec      * 1000000L) + (int64_t)tv_now.tv_usec;
+    time_us=time_us/1000;
+    */
 
-void setTime(long epoch, int ms) {
-  /*
-
-  setTime(atol(seconds.c_str())+(TIMEZONE_OFFSET*60L*60L),  (atol(milliseconds.c_str()))*1000    );
-                  //timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
-                  // timestamps coming in from android are always GMT (minus 7 hrs)
-                  // if I not add timezone then timeobject is off 
-                  // so timeobject does not seem to be adding timezone to system time.
-                  // timestamps are in gmt+0, so timestamp convrters
-                
-                  struct timeval tv_now;
-                  gettimeofday(&tv_now, NULL);
-                  int64_t time_us = (     (int64_t)tv_now.tv_sec      * 1000000L) + (int64_t)tv_now.tv_usec;
-                  time_us=time_us/1000;
-  */
-  
-  
-  struct timeval tv;
-  tv.tv_sec = epoch;  // epoch time (seconds)
-  tv.tv_usec = ms;    // microseconds
-  settimeofday(&tv, NULL);
+    struct timeval tv;
+    tv.tv_sec = epoch; // epoch time (seconds)
+    tv.tv_usec = ms;   // microseconds
+    settimeofday(&tv, NULL);
 }
 
-// set initial time. If time is not set the getLocalTime() will stuck for 5 ms due to invalid timestamp
-void initTime() {
+/**
+ * @brief Set initial time
+ * @note If time is not set the getLocalTime() will stuck for 5 ms due to invalid timestamp
+*/
+void initTime()
+{
     struct tm tm;
     strptime(BUILDDATE, "%b %d %Y %H:%M:%S %Y", &tm);
     time_t timeSinceEpoch = mktime(&tm);
@@ -361,7 +395,11 @@ void initTime() {
     ESP_LOGI(TAG, "Setting initial time to build date: %s", BUILDDATE);
 }
 
-bool createSessionFolder () {
+/**
+ * @brief Create folder on SD card
+*/
+bool createSessionFolder()
+{
     String fname;
     //TODO: check if another session identifier based on ISO time for mat would be more helpful
     gSessionIdentifier = getDeviceInfo().fileHeader + uint64ToString(getSystemTimeMS());
@@ -374,23 +412,29 @@ bool createSessionFolder () {
     ESP_LOGI(TAG, "Starting session with this config:\n: %s", cfg.c_str());
     fname += "/" + gSessionIdentifier + ".config";
     FILE *f = fopen(fname.c_str(), "w+");
-    if (f == NULL) {
+    if (f == nullptr)
+    {
         ESP_LOGE(TAG, "Failed to open config file for storage %s!", fname.c_str());
         return false;
-    } 
+    }
     fprintf(f, "%s", cfg.c_str());
     fclose(f);
     return true;
 }
 
-bool createFilename(char *fname, size_t size) {
-
+/**
+ * @brief Create empty wav file on SD card (for use by wav writer)
+ * @todo Move to WAVFileWriter class
+*/
+bool createFilename(char *fname, size_t size)
+{
     char timeStr[64] = {};
     tm timeinfo = timeObject.getTimeStruct();
     strftime(timeStr, sizeof(timeStr), "%F_%H_%M_%S", &timeinfo);
     fname[0] = '\0';
-    int n= snprintf(fname, size, "/sdcard/eloc/%s/%s_%s.wav", gSessionIdentifier.c_str(), gSessionIdentifier.c_str(), timeStr);
-    if ((n<0) || (n > size)) {
+    int n = snprintf(fname, size, "/sdcard/eloc/%s/%s_%s.wav", gSessionIdentifier.c_str(), gSessionIdentifier.c_str(), timeStr);
+    if ((n < 0) || (n > size))
+    {
         ESP_LOGE(TAG, "filename buffer too small");
         return false;
     }
@@ -398,234 +442,72 @@ bool createFilename(char *fname, size_t size) {
     return true;
 }
 
-String getProperDateTime() {
+/**
+ * @brief Get wall clock time & date
+ * @return String
+*/
+String getProperDateTime()
+{
 
-        String year = String(timeObject.getYear()); 
-        String month = String(timeObject.getMonth());
-        String day = String(timeObject.getDay());
-        String hour = String(timeObject.getHour(true));
-        String minute = String(timeObject.getMinute());
-        String second = String(timeObject.getSecond());
-        //String millis = String(timeObject.getMillis());
-        if (month.length()==1) month="0"+month;
-        if (day.length()==1) day="0"+day;
-        if (hour.length()==1) hour="0"+hour;
-        if (minute.length()==1) minute="0"+minute;
-        if (second.length()==1) second="0"+second;
+    String year = String(timeObject.getYear());
+    String month = String(timeObject.getMonth());
+    String day = String(timeObject.getDay());
+    String hour = String(timeObject.getHour(true));
+    String minute = String(timeObject.getMinute());
+    String second = String(timeObject.getSecond());
+    // String millis = String(timeObject.getMillis());
+    if (month.length() == 1)
+        month = "0" + month;
+    if (day.length() == 1)
+        day = "0" + day;
+    if (hour.length() == 1)
+        hour = "0" + hour;
+    if (minute.length() == 1)
+        minute = "0" + minute;
+    if (second.length() == 1)
+        second = "0" + second;
 
-       return(year+"-"+month+"-"+day+" "+hour+":"+minute+":"+second);
-
+    return (year + "-" + month + "-" + day + " " + hour + ":" + minute + ":" + second);
 }
 
-void doDeepSleep(){
-   
+void doDeepSleep()
+{
+    esp_sleep_enable_ext0_wakeup(GPIO_BUTTON, 0); // try commenting this out
 
-      esp_sleep_enable_ext0_wakeup(GPIO_BUTTON, 0); //try commenting this out
-     
-      
-     // printf("Going to sleep now");
-      delay(2000);
-      esp_deep_sleep_start(); //change to deep?  
-      
-      //printf("OK button was pressed.waking up");
-      delay(2000);
-      esp_restart();
+    // printf("Going to sleep now");
+    delay(2000);
+    esp_deep_sleep_start(); // change to deep?
 
-
+    // printf("OK button was pressed.waking up");
+    delay(2000);
+    esp_restart();
 }
 
-void record(I2SSampler *input) {
-  
-  gRecording=RecState::RECORDING;
-  char fname[100];
-  
-    input->start();
-  gRealSampleRate=(int32_t)(i2s_get_clk(I2S_NUM_0));
-  ESP_LOGI(TAG, "I2s REAL clockrate in record  %u", gRealSampleRate  );
+bool mountSDCard()
+{
+    gMountedSDCard = false;
+#ifdef USE_SPI_VERSION
+    ESP_LOGI(TAG, "TRYING to mount SDCArd, SPI ");
+    sd_card = new SDCard("/sdcard", PIN_NUM_MISO, PIN_NUM_MOSI, PIN_NUM_CLK, PIN_NUM_CS);
+#endif
 
-  
-  int64_t recordStartTime= esp_timer_get_time();
-    bool deepSleep=false;
-  float loops;
-  int samples_read;
-  int64_t longestWriteTimeMillis=0;
-  int64_t writeTimeMillis=0;
-  int64_t bufferUnderruns=0;
-  float bufferTimeMillis=(((float)gBufferCount*(float)gBufferLen)/(float)getMicInfo().MicSampleRate)*1000;
-  int64_t writestart,writeend,loopstart,looptime,temptime;
-  
-  //BUGME: this should return the session folder name to parse it to createFilename()
-  createSessionFolder();
-
-  
-
-  graw_samples = (int32_t *)malloc(sizeof(int32_t) * 1000);
-  int16_t *samples = (int16_t *)malloc(sizeof(int16_t) *gSampleBlockSize);
- 
- 
-  
-  FILE *fp=NULL;
-  WAVFileWriter *writer=NULL;
-
- 
- 
-  bool stopit = false;
-  
-
-  
-  if (getConfig().listenOnly)  ESP_LOGI(TAG, "Listening only...");
-  while (!stopit) {
-      
-      
-      if (!getConfig().listenOnly) {
-            createFilename(fname, sizeof(fname));
-            fp = fopen(fname, "wb");
-
-          
-            writer = new WAVFileWriter(fp, gRealSampleRate, NUMBER_OF_CHANNELS);
-      }
-      long loopCounter=0;
-      int64_t recordupdate = esp_timer_get_time();
- 
- 
- 
-      loops= (float)getConfig().secondsPerFile/((gSampleBlockSize)/((float)getMicInfo().MicSampleRate)) ;
-      //printf("loops: "); printf(loops); 
-      loopstart=esp_timer_get_time(); 
-      while (loopCounter < loops ) {
-            loopCounter++;
-            temptime=esp_timer_get_time();
-            looptime=(temptime-loopstart);
-            loopstart=temptime;
-
-           // gpio_set_level(STATUS_LED, 1); //so status led only goes low if we go into light sleep manually.
-            //esp_sleep_enable_timer_wakeup(1500000);  //1.5 sec
-            //esp_light_sleep_start();
-            samples_read=0;
-            samples_read = input->read(samples, gSampleBlockSize); //8khz 16k samples so 2 sec
-            //delay(3000); //3 secs this delay will not get anything from i2s logging. DELAY is turning off the CPU?
-                         // if i use delay I dont get the i2s buffer overflow error. do I ever get it?
-                         // fixed if I don't read anything I get watchdog timer errors. 
-                         // looks like I am getting the i2s errors now. 
-                         //  get the i2s buffer overflow ALWAYS
-                         // there is no i2s output when DELAY is active. but get buffer overflow always
-            
-            gSessionRecordTime=esp_timer_get_time()-recordStartTime;
-             if (!getConfig().listenOnly)  {
-                  writestart = esp_timer_get_time();
-                  writer->write(samples, samples_read);
-                  
-                  writeend = esp_timer_get_time();
-                  writeTimeMillis=(writeend - writestart)/1000;
-                  if (writeTimeMillis > longestWriteTimeMillis) longestWriteTimeMillis=writeTimeMillis;
-                  if (writeTimeMillis>bufferTimeMillis) bufferUnderruns++;
-                  ESP_LOGI(TAG, "Wrote %d samples in %lld ms. Longest: %lld. buffer (ms): %f underrun: %lld loop:%lld",   samples_read,writeTimeMillis,longestWriteTimeMillis,bufferTimeMillis,bufferUnderruns,looptime/1000);
-            }
-            //if (getConfig().listenOnly)  ESP_LOGI(TAG, "Listening only...");
-            rec_req_t rec_req = REC_REQ_NONE;
-            if (xQueueReceive(rec_req_evt_queue, &rec_req, 0))  { // 0 waiting time
-                if (rec_req == REC_REQ_STOP) {
-                  stopit=true; 
-                  loopCounter=10000001L; 
-                  ESP_LOGI(TAG,"stop recording requested");
-                }
-                else {
-                  ESP_LOGI(TAG,"REC_REQ = %d", rec_req);
-                }
-            }
-
-            if ((esp_timer_get_time() - recordupdate  ) > 9000000 ) { //9 seconds for the next loop
-                ESP_LOGI(TAG,"record in second loop--voltage check");
-                //esp_pm_dump_locks(stdout);
-                //vTaskGetRunTimeStats( ( char * ) sBuffer );
-                //ESP_LOGI(TAG,"vTaskGetRunTimeStats:\n %s", sBuffer);
-             
-                //printf("freeSpaceGB "+String(gFreeSpaceGB));
-
-                recordupdate=esp_timer_get_time(); 
-
-                //if (gGPIOButtonPressed)  {stopit=true; loopCounter=10000001L; ESP_LOGI(TAG,"gpio button pressed");}
-               // ok fix me put me back in if (gFreeSpaceGB<0.2f)  {stopit=true; loopCounter=10000001L; }
-                
-                 //voltage check
-                if ((loopCounter % 50)==0 ) {
-                   ESP_LOGI(TAG, "Checking battery state" );
-                   Battery::GetInstance().getVoltage();
-                   ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC", Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC());
-                   if ((Battery::GetInstance().isEmpty())) {
-                     stopit=true; loopCounter=10000001L;
-                     ESP_LOGI(TAG, "Voltage LOW-OFF. Stopping record. " );
-                     deepSleep=true;
-
-                     
-                   }   
-                } 
-
-               
-    
-              }
-  
-          
-      }
-    
-    if (!getConfig().listenOnly) {
-        writer->finish();
-        fclose(fp);
-        delete writer;
-    }
-    
-
-  }
-   ESP_LOGI(TAG, "Stopping record. " );
-  
-  input->stop();
-  //delete input;
-  free(samples);
-  free(graw_samples);
-  
-  gSessionRecordTime=esp_timer_get_time()-recordStartTime;
-  //int64_t recordEndTime= esp_timer_get_time();
-  gTotalRecordTimeSinceReboot=gTotalRecordTimeSinceReboot+gSessionRecordTime; 
-  ESP_LOGI(TAG, "total record time since boot = %s sec", uint64ToString(gTotalRecordTimeSinceReboot/1000/1000).c_str());
- 
-
-  ESP_LOGI(TAG, "Finished recording");
-  //btwrite("Finished recording");
-   gRecording=RecState::IDLE;
-   gSessionRecordTime=0;
- 
-   if (deepSleep) doDeepSleep();
-
-  
-
-}
-
-
-
-
-bool mountSDCard() {
-    #ifdef USE_SPI_VERSION
-          ESP_LOGI(TAG, "TRYING to mount SDCArd, SPI ");
-          theSDCardObject = new SDCard("/sdcard",PIN_NUM_MISO, PIN_NUM_MOSI, PIN_NUM_CLK, PIN_NUM_CS);
-    #endif 
-    
-    #ifdef USE_SDIO_VERSION
+#ifdef USE_SDIO_VERSION
 
         ESP_LOGI(TAG, "TRYING to mount SDCArd, SDIO ");
-        theSDCardObject = new SDCardSDIO("/sdcard");
-        if (theSDCardObject->isMounted()) {
+        sd_card = new SDCardSDIO("/sdcard");
+        if (sd_card->isMounted()) {
             ESP_LOGI(TAG, "SD card mounted ");
             const char* ELOC_FOLDER = "/sdcard/eloc";
             if (!ffsutil::folderExists(ELOC_FOLDER)) {
                 ESP_LOGI(TAG, "%s does not exist, creating empty folder", ELOC_FOLDER);
                 mkdir(ELOC_FOLDER, 0777);
             }
-            float freeSpace = theSDCardObject->freeSpaceGB();
-            float totalSpace = theSDCardObject->getCapacityMB()/1024;
+            float freeSpace = sd_card->freeSpaceGB();
+            float totalSpace = sd_card->getCapacityMB()/1024;
             ESP_LOGI(TAG, "SD card %f / %f GB free", freeSpace, totalSpace);
         }
     #endif
-    gMountedSDCard = theSDCardObject->isMounted();
+    gMountedSDCard = sd_card->isMounted();
     return gMountedSDCard;
 }
 
@@ -638,7 +520,7 @@ esp_err_t checkSDCard() {
         }
     }
     // getupdated free space
-    float freeSpaceGB = theSDCardObject->freeSpaceGB();
+    float freeSpaceGB = sd_card->freeSpaceGB();
     if ((freeSpaceGB > 0.0) && (freeSpaceGB < 0.5)) {
         //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
         //  btwrite("SD Card full. Cannot record");
@@ -649,28 +531,28 @@ esp_err_t checkSDCard() {
     return ESP_OK;
 }
 
-
-void saveStatusToSD() {
+void saveStatusToSD()
+{
     String sendstring;
 
     sendstring = sendstring + "Session ID:  " + gSessionIdentifier + "\n";
 
     sendstring = sendstring + "Session Start Time:  " + String(timeObject.getYear()) + "-" + String(timeObject.getMonth()) + "-" +
-                String(timeObject.getDay()) + " " + String(timeObject.getHour(true)) + ":" + String(timeObject.getMinute()) + ":" +
-                String(timeObject.getSecond()) + "\n";
+                 String(timeObject.getDay()) + " " + String(timeObject.getHour(true)) + ":" + String(timeObject.getMinute()) + ":" +
+                 String(timeObject.getSecond()) + "\n";
 
     sendstring = sendstring + "Firmware Version:  " + gFirmwareVersion + "\n"; // firmware
 
     sendstring = sendstring + "File Header:  " + getDeviceInfo().fileHeader + "\n"; // file header
 
-    sendstring = sendstring + "Bluetooh on when Record?:   " + (getConfig().bluetoothEnableDuringRecord ? "on" : "off") + "\n";
+    sendstring = sendstring + "Bluetooth on when Record?:   " + (getConfig().bluetoothEnableDuringRecord ? "on" : "off") + "\n";
 
     sendstring = sendstring + "Sample Rate:  "      + String(getMicInfo().MicSampleRate) + "\n";
     sendstring = sendstring + "Seconds Per File:  " + String(getConfig().secondsPerFile) + "\n";
 
     // sendstring=sendstring+   "Voltage Offset:  " +String(gVoltageOffset)                  + "\n" ;
     sendstring = sendstring + "Mic Type:  "         + getMicInfo().MicType + "\n";
-    sendstring = sendstring + "SD Card Free GB:   " + String(theSDCardObject->freeSpaceGB()) + "\n";
+    sendstring = sendstring + "SD Card Free GB:   " + String(sd_card->freeSpaceGB()) + "\n";
     sendstring = sendstring + "Mic Gain:  "         + String(getMicInfo().MicBitShift) + "\n";
     sendstring = sendstring + "GPS Location:  "     + getDeviceInfo().locationCode + "\n";
     sendstring = sendstring + "GPS Accuracy:  "     + getDeviceInfo().locationAccuracy + " m\n";
@@ -689,20 +571,171 @@ void saveStatusToSD() {
     fclose(fp);
 }
 
-
-i2s_config_t getI2sConfig() {
-    // update the config with the updated parameters
-    ESP_LOGI(TAG, "Sample rate = %d", getMicInfo().MicSampleRate);
-    i2s_mic_Config.sample_rate = getMicInfo().MicSampleRate; //fails when hardcoded to 22050
-    i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL; //not getting set. getConfig().MicUseAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
-    if (i2s_mic_Config.sample_rate == 0) {
+/**
+ * @brief Get the configuration of the I2S microphone
+ * @note Possible configuration sources are:
+ *         1. '.config' file on SD card
+ *         2. '.config' file on SPIFFS
+ *         3. Setting in src/config.h
+ * TODO: Confirm the priority of the configuration sources??
+ * @return i2s_config_t
+ */
+i2s_config_t getI2sConfig()
+{
+    i2s_mic_Config.sample_rate = getMicInfo().MicSampleRate;
+    i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL; // not getting set. getConfig().MicUseAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
+    if (i2s_mic_Config.sample_rate == 0)
+    {
         ESP_LOGI(TAG, "Resetting invalid sample rate to default = %d", I2S_DEFAULT_SAMPLE_RATE);
         i2s_mic_Config.sample_rate = I2S_DEFAULT_SAMPLE_RATE;
     }
+
+    ESP_LOGI(TAG, "Sample rate = %d", i2s_mic_Config.sample_rate);
     return i2s_mic_Config;
 }
 
-void app_main(void) {
+void start_sound_recording(FILE *fp){
+    /**
+     * @note The file pointer is set to nullptr in the wav_writer class
+     *       but this is not reflected in the fp variable here
+     *       hence the need to use 'is_file_handle_set()' getter
+     */
+
+
+    // TODO: set this as not recording in WAVFileWriter.cpp::finish()
+    gRecording=RecState::RECORDING;
+    
+    fp = nullptr;
+
+    char file_name[100];
+
+    createFilename(file_name, sizeof(file_name));
+    fp = fopen(file_name, "wb");
+
+    if (fp == nullptr)
+    {
+        ESP_LOGE(TAG, "Failed to open file for writing");
+        return;
+    }
+    else
+    {
+        if (wav_writer->set_file_handle(fp) == false){
+            ESP_LOGE(TAG, "Failed to set file handle");
+            return;
+        }
+        wav_writer->set_enable_wav_file_write(true);
+        // Start thread to continuously write to wav file & when sufficient data is collected finish the file
+        wav_writer->start_wav_write_task(getConfig().secondsPerFile);
+    }
+
+}
+
+#ifdef EDGE_IMPULSE_ENABLED
+
+
+bool inference_result_file_SD_available = false;
+
+
+/**
+ * @brief Check if file exists to record inference result from Edge Impulse
+ * @note If the file doesn't exits it will be created with the following details:
+ *          EI Project ID, 186372
+ *          EI Project owner, EDsteve
+ *          EI Project name, trumpet
+ *          EI Project deploy version, 2
+ * @return 0 on success, -1 on fail
+ */
+int create_inference_result_file_SD(String f_name)
+{
+
+    if (checkSDCard() != ESP_OK)
+    {
+        // Abandon
+        return -1;
+    }
+
+    FILE *fp = fopen(f_name.c_str(), "r");
+
+    if (fp)
+    {
+        ESP_LOGI(TAG, "%s exists on SD card", f_name.c_str());
+        fclose(fp);
+        inference_result_file_SD_available = true;
+        return 0;
+    }
+
+    String file_string;
+
+    fp = fopen(f_name.c_str(), "wb");
+    if (!fp)
+    {
+        ESP_LOGE(TAG, "Failed to open file for writing");
+        return -1;
+    }
+
+    // Possible other details to include in file
+    if (0)
+    {
+        file_string += "EI Project ID, ";
+        file_string += EI_CLASSIFIER_PROJECT_ID;
+        file_string += "\nEI Project owner, ";
+        file_string += EI_CLASSIFIER_PROJECT_OWNER;
+        file_string += "\nEI Project name, ";
+        file_string += EI_CLASSIFIER_PROJECT_NAME;
+        file_string += "\nEI Project deploy version, ";
+        file_string += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
+    }
+
+    // Column headers
+    file_string += "\n\nYear-Month-Day Hour:Min:Sec";
+
+    for (auto i = 0; i < EI_CLASSIFIER_NN_OUTPUT_COUNT; i++)
+    {   
+        ei_impulse_result_t results ={ 0 };
+        file_string += " ,";
+        file_string += results.classification[i].label;
+    }
+
+    file_string += "\n";
+
+    fputs(file_string.c_str(), fp);
+    fclose(fp);
+
+    inference_result_file_SD_available = true;
+
+    return 0;
+}
+
+/**
+ * @brief This function accepts a string, prepends date & time & appends to a csv file
+ * @param file_string string in csv format, e.g. 0.94, 0.06
+ * @return 0 on success, -1 on fail
+ */
+int save_inference_result_SD(String f_name, String results_string)
+{
+
+    FILE *fp = fopen(f_name.c_str(), FILE_APPEND);
+
+    if (!fp)
+    {
+        ESP_LOGE(TAG, "Failed to open file for writing");
+        return -1;
+    }
+
+    String file_string;
+
+    file_string += getProperDateTime() + " " + results_string;
+
+    fputs(file_string.c_str(), fp);
+    fclose(fp);
+
+    return 0;
+}
+
+#endif
+
+void app_main(void)
+{
 
     ESP_LOGI(TAG, "\nSETUP--start\n");
     initArduino();
@@ -711,9 +744,20 @@ void app_main(void) {
     printPartitionInfo(); // so if reboots, always boot into the bluetooth partition
 
     ESP_LOGI(TAG, "\n"
-        "------------------------- ELOC Recorder -------------------------\n"
-        "-- VERSION: %s\n"
-        "-----------------------------------------------------------------\n", VERSIONTAG);
+                  "------------------------- ELOC Recorder -------------------------\n"
+                  "-- VERSION: %s\n"
+                  "-----------------------------------------------------------------\n",
+             VERSIONTAG);
+
+#ifdef EDGE_IMPULSE_ENABLED
+    ESP_LOGI(TAG, "Edge Impulse framework enabled");
+
+    #ifdef AI_CONTINUOUS_INFERENCE
+        ESP_LOGI(TAG, "Continuous inference enabled");
+    #else
+        ESP_LOGI(TAG, "Continuous inference disabled");
+    #endif
+#endif
 
     initTime();
 
@@ -764,12 +808,10 @@ void app_main(void) {
     gpio_sleep_sel_dis(I2S_MIC_LEFT_RIGHT_CLOCK);
     gpio_sleep_sel_dis(I2S_MIC_SERIAL_DATA);
 
-    
     gpio_sleep_sel_dis(PIN_NUM_MISO);
     gpio_sleep_sel_dis(PIN_NUM_CLK);
     gpio_sleep_sel_dis(PIN_NUM_MOSI);
     gpio_sleep_sel_dis(PIN_NUM_CS);
-
 
     gpio_set_direction(GPIO_BUTTON, GPIO_MODE_INPUT); //
     gpio_set_pull_mode(GPIO_BUTTON, GPIO_PULLUP_ONLY);
@@ -787,21 +829,34 @@ void app_main(void) {
     ESP_LOGI(TAG, "Setting up Battery...");
     Battery::GetInstance();
 
-    if (!SPIFFS.begin(true, "/spiffs")) {
+    if (!SPIFFS.begin(true, "/spiffs"))
+    {
         ESP_LOGI(TAG, "An Error has occurred while mounting SPIFFS");
         // return;
     }
     mountSDCard();
 
+    if (0)
+    {
+        auto psram_size = esp_spiram_get_size();
+        if (psram_size == 0)
+            ESP_LOGW(TAG, "Error: SPI RAM (PSRAM) Not found");
+        else
+            ESP_LOGI(TAG, "Available SPI RAM (PSRAM): %d bytes, %d MBit", psram_size, (psram_size / 131072));
+    }
+
     // print some file system info
-     ESP_LOGI(TAG, "File system loaded: ");
+    ESP_LOGI(TAG, "File system loaded: ");
     ffsutil::printListDir("/spiffs");
     ffsutil::printListDir("/sdcard");
     ffsutil::printListDir("/sdcard/eloc");
-    
+
     readConfig();
+
+    // TODO: BUGME: Crash when writing to wav & log file simultaneously?
+
     //setup persistent logging only if SD card is mounted
-    if (theSDCardObject && theSDCardObject->isMounted()) {
+    if (sd_card && sd_card->isMounted()) {
         const logConfig_t& cfg= getConfig().logConfig;
         esp_err_t err = Logging::init(cfg.logToSdCard, cfg.filename, cfg.maxFiles, cfg.maxFileSize);
         if (err != ESP_OK) {
@@ -812,26 +867,127 @@ void app_main(void) {
     // check if a firmware update is triggered via SD card
     checkForFirmwareUpdateFile();
 
-
     rec_req_evt_queue = xQueueCreate(10, sizeof(rec_req_t));
     xQueueReset(rec_req_evt_queue);
     ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
 
     ESP_LOGI(TAG, "Creating Bluetooth  task...");
-    if (esp_err_t err = BluetoothServerSetup(false)) {
+    if (esp_err_t err = BluetoothServerSetup(false))
+    {
         ESP_LOGI(TAG, "BluetoothServerSetup failed with %s", esp_err_to_name(err));
     }
 
-    #ifdef USE_PERF_MONITOR
-        ESP_LOGI(TAG, "Creating Performance Monitor task...");
-        if (esp_err_t err = PerfMonitor::setup()) {
-            ESP_LOGI(TAG, "Performance Monitor failed with %s", esp_err_to_name(err));
+#ifdef USE_PERF_MONITOR
+    ESP_LOGI(TAG, "Creating Performance Monitor task...");
+    if (esp_err_t err = PerfMonitor::setup())
+    {
+        ESP_LOGI(TAG, "Performance Monitor failed with %s", esp_err_to_name(err));
+    }
+#endif
+
+#ifdef EDGE_IMPULSE_ENABLED
+
+    auto save_ai_results_to_sd = true;
+
+    String ei_results_filename = "/sdcard/eloc/";
+    ei_results_filename += "EI-results-ID-";
+    ei_results_filename += EI_CLASSIFIER_PROJECT_ID;
+    ei_results_filename += "-DEPLOY-VER-";
+    ei_results_filename += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
+    ei_results_filename += ".csv";
+
+    if (1)
+    {
+        ESP_LOGI(TAG, "EI results filename: %s", ei_results_filename.c_str());
+    }
+
+    // Check if file exists to record results
+    if (gMountedSDCard == true)
+    {
+        create_inference_result_file_SD(ei_results_filename);
+    }
+
+    edgeImpulse = new EdgeImpulse(I2S_DEFAULT_SAMPLE_RATE);   
+    edgeImpulse->output_inferencing_settings();
+    // TODO: Set some flag if this fails??
+    edgeImpulse->buffers_setup();
+
+    if (1){
+        // Run stored audio samples through the model to test it
+        ESP_LOGI(TAG, "Testing model against pre-recorded sample data...");
+
+        static_assert((EI_CLASSIFIER_RAW_SAMPLE_COUNT <= TEST_SAMPLE_LENGTH), "TEST_SAMPLE_LENGTH must be at least equal to EI_CLASSIFIER_RAW_SAMPLE_COUNT");
+
+        if (EI_CLASSIFIER_RAW_SAMPLE_COUNT < TEST_SAMPLE_LENGTH){
+            ESP_LOGI(TAG, "TEST_SAMPLE length is greater than the Edge Impulse model length, applying downsampling");
         }
+
+        ei::signal_t signal;
+        signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
+        signal.get_data = &microphone_audio_signal_get_data;
+        ei_impulse_result_t result = {0};
+
+        // Artifically fill buffer with test data
+        auto ei_skip_rate = TEST_SAMPLE_LENGTH / EI_CLASSIFIER_RAW_SAMPLE_COUNT;
+        auto skip_current = ei_skip_rate;   // Make sure to fill first sample, then start skipping if needed
+
+        for (auto i = 0; i < test_array_size; i++){
+
+            ESP_LOGI(TAG, "Running test category: %s", test_array_categories[i]);
+
+            for (auto test_sample_count = 0, inference_buffer_count = 0; (test_sample_count < TEST_SAMPLE_LENGTH) && 
+                    (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT); test_sample_count++)
+            {
+                if(skip_current >= ei_skip_rate){
+                    edgeImpulse->inference.buffers[0][inference_buffer_count++] = test_array[i][test_sample_count];
+                    skip_current = 1;
+                }
+                else{
+                    skip_current++;
+                }
+            }
+
+            // Mark buffer as ready
+            edgeImpulse->inference.buf_select = 1;   // Mark active buffer as inference.buffers[1], inference run on inactive buffer
+            edgeImpulse->inference.buf_count = 0;
+            edgeImpulse->inference.buf_ready = 1;
+
+            EI_IMPULSE_ERROR r = edgeImpulse->run_classifier(&signal, &result);
+            if (r != EI_IMPULSE_OK) 
+            {
+                ESP_LOGW(TAG,"ERR: Failed to run classifier (%d)", r);
+                return;
+            }
+
+            // print the predictions
+            ESP_LOGI(TAG, "Test model predictions:");
+            ESP_LOGI(TAG, "    (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
+                    result.timing.dsp, result.timing.classification, result.timing.anomaly);
+            for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
+            {
+                ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
+
+                if (strcmp(result.classification[ix].label, "trumpet") == 0 && strcmp(test_array_categories[i], "trumpet") == 0)
+                {
+                    if (result.classification[ix].value < AI_RESULT_THRESHOLD)
+                    {
+                        ESP_LOGW(TAG, "Test of trumpet sample appears to be poor, check model!");
+                    }
+                }
+            }
+        }
+
+        // Reset buffers to default
+        edgeImpulse->inference.buf_select = 0;
+        edgeImpulse->inference.buf_count = 0;
+        edgeImpulse->inference.buf_ready = 0;
+    }
+       
     #endif
 
     // setup button as interrupt
     ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)GPIO_BUTTON));
-    //ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_BUTTON));
+    // ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_BUTTON));
 
     /** Setup Power Management */
     ElocSystem::GetInstance().pm_configure();
@@ -839,31 +995,212 @@ void app_main(void) {
     if (getConfig().testI2SClockInput)
         testInput();
 
-    ESP_LOGI(TAG, "waiting for button or bluetooth");
-    int loopCnt = 0;
-    while (true) {
-        if ((loopCnt % 10) == 0) {
-            ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC, Temp %d °C", 
-                Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC(), ElocSystem::GetInstance().getTemperaure());
-        }
-        loopCnt++;
+    /**
+     * Get the configuration of the I2S microphone & start it
+     * @warning TODO: Check requirements if the configuration changes after this point? Restart required?
+     */
+    getI2sConfig();
 
-        rec_req_t rec_req = REC_REQ_NONE;
-        if (xQueueReceive(rec_req_evt_queue, &rec_req, pdMS_TO_TICKS(500))) {
-            ESP_LOGI(TAG,"REC_REQ = %d", rec_req);
-            if (rec_req == REC_REQ_START) {
-                if (esp_err_t err = checkSDCard() != ESP_OK) {
-                    ESP_LOGE(TAG, "Cannot start recording due to SD error %s", esp_err_to_name(err));
-                    // TODO: set status here and let LED flash as long as the device is in error state
-                    LEDflashError();
-                } else {
-                    getI2sConfig(); 
-                    ElocSystem::GetInstance().pm_check_ForRecording(i2s_mic_Config.sample_rate);
-                    I2SMEMSSampler input (I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-                    record(&input);
-                    ElocSystem::GetInstance().pm_configure();
-                }
+    /**
+     * @note Using MicUseTimingFix == true or false doesn't seem to effect ICS-43434 mic
+     */
+    input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+
+    if (input == nullptr)
+    {
+        ESP_LOGE(TAG, "Failed to create I2SMEMSSampler");
+        return;
+    }
+    else{
+        input->start();
+
+        // Zero DMA buffer, prevents popping sound on start
+        input->zero_dma_buffer(I2S_DEFAULT_PORT);              
+
+        if (checkSDCard() == ESP_OK){
+            // create a new wave file wav_writer & make sure sample rate is up to date
+            wav_writer = new WAVFileWriter((int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 2, NUMBER_OF_CHANNELS);
+            // Block until properly registered otherwise will get error later
+            while (input->register_wavFileWriter(wav_writer) == false){
+                ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
+                delay(5);
+            }
+
+            //Populate gSessionIdentifier for wav filename
+            createSessionFolder();
+
+            // TODO: DEBUG - should be set from Bletooth config
+            wav_writer->set_mode(WAVFileWriter::Mode::continuous);
+        }
+        else
+        {
+            ESP_LOGE(TAG, "SD card not mounted, cannot create WAVFileWriter");
+            wav_writer = nullptr;
+            #ifdef EDGE_IMPULSE_ENABLED
+                save_ai_results_to_sd = false;
+            #endif
+        }
+
+        #ifdef EDGE_IMPULSE_ENABLED
+            input->register_ei_inference(&edgeImpulse->getInference(), EI_CLASSIFIER_FREQUENCY);
+            edgeImpulse->set_ei_running_status(true);
+        #endif
+        
+        input->start_read_task(sample_buffer_size/ sizeof(signed short));
+    }
+
+    // wav file pointer
+    // TODO: Move to wav_writer class
+    FILE *fp = nullptr;
+    rec_req_t rec_req = REC_REQ_NONE;
+
+    auto loopCnt = 0;
+    auto print_results = 0;
+
+    // TODO: Define conditions on which device shuld exit this while() loop
+    // e.g. SD card full or I2S error?
+    while (true)
+    {
+        // TODO: Check this is valid, rebased from master
+        if ((loopCnt++ % 10) == 0) {
+            ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC, Temp %d °C", 
+            Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC(), ElocSystem::GetInstance().getTemperaure());
+        }
+
+        // Start a new recording?
+        if (wav_writer != nullptr &&
+            wav_writer->is_file_handle_set() == false && 
+            wav_writer->get_mode() == WAVFileWriter::Mode::continuous &&
+            checkSDCard() == ESP_OK)
+        {   
+            start_sound_recording(fp);
+        }
+
+#ifdef EDGE_IMPULSE_ENABLED
+        // Try to restart if not running
+        if (edgeImpulse->get_ei_running_status() == false)
+        {
+            if (edgeImpulse->buffers_setup() == false)
+            {
+                // ESP_LOGE(TAG, "ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+                ESP_LOGE(TAG, "ERR: inference_stetup failed, restarting...");
+                delay(500);
+                edgeImpulse->set_ei_running_status(false);
             }
         }
+
+        if (ai_run_enable == true && edgeImpulse->get_ei_running_status() == true)
+        {
+            bool m = edgeImpulse->microphone_inference_record();
+            // Blocking function - unblocks when buffer is full
+            if (!m)
+            {
+                ESP_LOGE(TAG, "ERR: Failed to record audio...");
+                continue;
+            }
+
+            ei::signal_t signal;
+            signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
+            signal.get_data = &microphone_audio_signal_get_data;
+            ei_impulse_result_t result = {0};
+
+
+            #ifdef AI_CONTINUOUS_INFERENCE
+                EI_IMPULSE_ERROR r = edgeImpulse->run_classifier_continuous(&signal, &result);
+            #else
+                EI_IMPULSE_ERROR r = edgeImpulse->run_classifier(&signal, &result);
+            #endif // AI_CONTINUOUS_INFERENCE
+
+            if (r != EI_IMPULSE_OK)
+            {
+                ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
+                edgeImpulse->set_ei_running_status(false);
+                continue;
+            }
+
+            #ifdef AI_CONTINUOUS_INFERENCE
+                if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))
+            #else
+                // Non-continous, always print
+                if (1)
+            #endif // AI_CONTINUOUS_INFERENCE
+                {
+                    // print the predictions
+                    ESP_LOGI(TAG, "Predictions ");
+                    ESP_LOGI(TAG, "(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
+                            result.timing.dsp, result.timing.classification, result.timing.anomaly);
+
+                    String file_str;
+
+                    for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
+                    {
+                        ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
+
+                        // Build string to save to inference results file
+                        file_str += ", ";
+                        file_str += result.classification[ix].value;
+
+                        if ((strcmp(result.classification[ix].label, "background") != 0) && 
+                            result.classification[ix].value > AI_RESULT_THRESHOLD)
+                        {
+                            // Start recording??
+                            if (wav_writer != nullptr &&
+                                wav_writer->is_file_handle_set() == false && 
+                                wav_writer->get_mode() == WAVFileWriter::Mode::single &&
+                                checkSDCard() == ESP_OK)
+                            {   
+                                start_sound_recording(fp);
+                            }
+                        }
+                    }
+
+                    file_str += "\n";
+                    // Save results to file
+                    // TODO: Only save results & wav file if classification value exceeds a threshold?
+                    if (save_ai_results_to_sd == true && checkSDCard() == ESP_OK)
+                    {
+                        save_inference_result_SD(ei_results_filename, file_str);
+                    }              
+
+                #if EI_CLASSIFIER_HAS_ANOMALY == 1
+                    ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
+                #endif
+                    print_results = 0;
+                }
+        }// end while(ei_running_status == true)
+
+#endif // EDGE_IMPULSE_ENABLED
+
+        // Don't forget the watchdog
+        delay(1);
+
+    } // end while(true)
+
+    // Should never get here
+    if (input != nullptr){
+        input->stop();
+        delete input;
+        input = nullptr;
     }
+    
+    if (wav_writer != nullptr){
+        wav_writer->finish();
+        delete wav_writer;
+        wav_writer = nullptr;
+    }
+
+    if (sd_card != nullptr){
+        delete sd_card;
+        sd_card = nullptr;
+    }
+
+    ESP_LOGI(TAG, "app_main done");
+
+    // TODO: Trigger reset here & then restart??
 }
+
+#ifdef EDGE_IMPULSE_ENABLED
+    #if !defined(EI_CLASSIFIER_SENSOR) || EI_CLASSIFIER_SENSOR != EI_CLASSIFIER_SENSOR_MICROPHONE
+    #error "Invalid model for current sensor."
+    #endif
+#endif

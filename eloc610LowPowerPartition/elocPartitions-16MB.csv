@@ -1,0 +1,31 @@
+# 
+# Ref:
+# https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/partition-tables.html
+#
+#
+# Notes: 
+# Flash size set to 'Detect flash size when flashing bootloader' in config > Serial flasher config
+# Offset offset must be a multiple of 4 KB/ 0x1000
+# Type 'app' have to be placed at offsets aligned to 0x10000 (64 K).
+# 4MB = 524300 bytes 
+#
+# Changes:
+# 15th Nov '23 - Increased size of partition0 & partition1. Total flash size 16MB
+# 23rd Jul '23 - Increased size of partition0 & partition1. Total flash size 4MB
+
+# This is the 4MB partition setup:
+# Name,     Type,   SubType,    Offset,     Size,       Flags
+# nvs,        data,   nvs,        0x9000,     0x5000,
+# otadata,    data,   ota,        0xe000,     0x2000,
+# partition0, app,    ota_0,      0x10000,    0x1E0000,
+# partition1, app,    ota_1,      0x1F0000,   0x1E0000,
+# spiffs,     data,   spiffs,     0x3D0000,   0x30000,
+
+# This is the 16MB partition setup:
+# Name,     Type,   SubType,    Offset,     Size,       Flags
+nvs,        data,   nvs,        0x9000,     0x5000,
+otadata,    data,   ota,        0xe000,     0x2000,
+partition0, app,    ota_0,      0x10000,    0x7E0000,
+partition1, app,    ota_1,      0x7F0000,   0x7E0000,
+spiffs,     data,   spiffs,     0xFD0000,   0x30000,
+

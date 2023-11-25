@@ -985,6 +985,7 @@ void app_main(void)
 
     #ifdef AI_CONTINUOUS_INFERENCE
         edgeImpulse->buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
+        auto print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
     #else
         edgeImpulse->buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
     #endif // AI_CONTINUOUS_INFERENCE
@@ -1066,7 +1067,6 @@ void app_main(void)
     rec_req_t rec_req = REC_REQ_NONE;
 
     auto loopCnt = 0;
-    auto print_results = 0;
 
     // TODO: Define conditions on which device shuld exit this while() loop
     // e.g. SD card full or I2S error?
@@ -1125,10 +1125,15 @@ void app_main(void)
             auto startCounter = cpu_hal_get_cycle_count(); 
 
             ei::signal_t signal;
-            signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
+            
+            #ifdef AI_CONTINUOUS_INFERENCE
+                signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
+            #else
+                signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
+            #endif // AI_CONTINUOUS_INFERENCE
+
             signal.get_data = &microphone_audio_signal_get_data;
             ei_impulse_result_t result = {0};
-
 
             #ifdef AI_CONTINUOUS_INFERENCE
                 EI_IMPULSE_ERROR r = edgeImpulse->run_classifier_continuous(&signal, &result);
@@ -1138,7 +1143,6 @@ void app_main(void)
 
             ESP_LOGI(TAG, "Cycles taken to run inference = %d", (cpu_hal_get_cycle_count() - startCounter)); 
            
-
             if (r != EI_IMPULSE_OK)
             {
                 ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
@@ -1192,8 +1196,12 @@ void app_main(void)
 
                 #if EI_CLASSIFIER_HAS_ANOMALY == 1
                     ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
-                #endif
+                #endif // EI_CLASSIFIER_HAS_ANOMALY
+
+                #ifdef AI_CONTINUOUS_INFERENCE
                     print_results = 0;
+                #endif // AI_CONTINUOUS_INFERENCE
+
                 }
         }// end while(ei_running_status == true)
 #else

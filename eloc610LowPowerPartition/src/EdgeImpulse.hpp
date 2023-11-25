@@ -81,7 +81,8 @@ public:
     /**
      * @brief   Init inferencing struct and setup/start PDM
      * @param   n_samples number of samples of the buffer required.
-     *  
+     * @note    For continuous inferencing = EI_CLASSIFIER_SLICE_SIZE
+     *          For non-continuous inferencing = EI_CLASSIFIER_RAW_SAMPLE_COUNT
      * @return  true if successful
      */
     bool buffers_setup(uint32_t n_samples);

@@ -41,21 +41,21 @@ void EdgeImpulse::output_inferencing_settings()
  * @brief      Init buffers for inference
  * @return     true if successful
  */
-bool EdgeImpulse::buffers_setup()
+bool EdgeImpulse::buffers_setup(uint32_t n_samples)
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
     ei_running_status = false;
 
-    inference.buffers[0] = (int16_t *)heap_caps_malloc(EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+    inference.buffers[0] = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
 
     if (inference.buffers[0] == NULL)
     {
-        ESP_LOGE(TAG, "Failed to allocate %d bytes for inference buffer", EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t));
+        ESP_LOGE(TAG, "Failed to allocate %d bytes for inference buffer", n_samples * sizeof(int16_t));
         return false;
     }
 
-    inference.buffers[1] = (int16_t *)heap_caps_malloc(EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+    inference.buffers[1] = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
 
     if (inference.buffers[1] == NULL)
     {
@@ -65,7 +65,7 @@ bool EdgeImpulse::buffers_setup()
 
     inference.buf_select = 0;
     inference.buf_count = 0;
-    inference.n_samples = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
+    inference.n_samples = n_samples;
     inference.buf_ready = 0;
 
     ei_running_status = true;

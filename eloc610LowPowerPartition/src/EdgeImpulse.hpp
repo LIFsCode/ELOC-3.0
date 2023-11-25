@@ -79,11 +79,12 @@ public:
     void capture_samples(void *arg);
 
     /**
-     * @brief      Init inferencing struct and setup/start PDM
-     *
-     * @return     true if successful
+     * @brief   Init inferencing struct and setup/start PDM
+     * @param   n_samples number of samples of the buffer required.
+     *  
+     * @return  true if successful
      */
-    bool buffers_setup();
+    bool buffers_setup(uint32_t n_samples);
 
     /**
      * @brief  Wait on new data.

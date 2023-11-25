@@ -910,8 +910,9 @@ void app_main(void)
 
     edgeImpulse = new EdgeImpulse(I2S_DEFAULT_SAMPLE_RATE);   
     edgeImpulse->output_inferencing_settings();
+
     // TODO: Set some flag if this fails??
-    edgeImpulse->buffers_setup();
+    edgeImpulse->buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
 
     if (1){
         // Run stored audio samples through the model to test it
@@ -978,13 +979,17 @@ void app_main(void)
             }
         }
 
-        // Reset buffers to default
-        edgeImpulse->inference.buf_select = 0;
-        edgeImpulse->inference.buf_count = 0;
-        edgeImpulse->inference.buf_ready = 0;
+        // Free buffers as the buffer size for continouus & non-continous differs
+        edgeImpulse->free_buffers();
     }
+
+    #ifdef AI_CONTINUOUS_INFERENCE
+        edgeImpulse->buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
+    #else
+        edgeImpulse->buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+    #endif // AI_CONTINUOUS_INFERENCE
        
-    #endif
+    #endif // EDGE_IMPULSE_ENABLED
 
     // setup button as interrupt
     ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)GPIO_BUTTON));
@@ -1066,6 +1071,10 @@ void app_main(void)
         if ((loopCnt++ % 10) == 0) {
             ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC, Temp %d °C", 
             Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC(), ElocSystem::GetInstance().getTemperaure());
+            
+            // Display memory usage
+            ESP_LOGI(TAG, "Min free heap since boot = %d", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
+            ESP_LOGI(TAG, "Min free PSRAM since boot = %d", heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
         }
 
         // Start a new recording?
@@ -1080,8 +1089,16 @@ void app_main(void)
 #ifdef EDGE_IMPULSE_ENABLED
         // Try to restart if not running
         if (edgeImpulse->get_ei_running_status() == false)
-        {
-            if (edgeImpulse->buffers_setup() == false)
+        {       
+                auto buf_setup_result = false;
+
+                #ifdef AI_CONTINUOUS_INFERENCE
+                    buf_setup_result = edgeImpulse->buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
+                #else
+                    buf_setup_result = edgeImpulse->buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+                #endif // AI_CONTINUOUS_INFERENCE
+
+            if (buf_setup_result == false)
             {
                 // ESP_LOGE(TAG, "ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
                 ESP_LOGE(TAG, "ERR: inference_stetup failed, restarting...");
@@ -1115,8 +1132,7 @@ void app_main(void)
             #endif // AI_CONTINUOUS_INFERENCE
 
             ESP_LOGI(TAG, "Cycles taken to run inference = %d", (cpu_hal_get_cycle_count() - startCounter)); 
-            ESP_LOGI(TAG, "Min free heap since boot = %d", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
-            ESP_LOGI(TAG, "Min free PSRAM since boot = %d", heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
+           
 
             if (r != EI_IMPULSE_OK)
             {

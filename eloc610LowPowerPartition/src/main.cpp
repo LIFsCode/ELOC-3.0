@@ -1048,6 +1048,11 @@ void app_main(void)
         }
 
         #ifdef EDGE_IMPULSE_ENABLED
+            #ifdef AI_CONTINUOUS_INFERENCE
+                // Init static vars
+                edgeImpulse->run_classifier_init();
+            #endif // AI_CONTINUOUS_INFERENCE
+            
             input->register_ei_inference(&edgeImpulse->getInference(), EI_CLASSIFIER_FREQUENCY);
             edgeImpulse->set_ei_running_status(true);
         #endif
@@ -1073,8 +1078,8 @@ void app_main(void)
             Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC(), ElocSystem::GetInstance().getTemperaure());
             
             // Display memory usage
-            ESP_LOGI(TAG, "Min free heap since boot = %d", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
-            ESP_LOGI(TAG, "Min free PSRAM since boot = %d", heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
+            ESP_LOGI(TAG, "Min free heap since boot = %d bytes", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
+            ESP_LOGI(TAG, "Min free PSRAM since boot = %d bytes", heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
         }
 
         // Start a new recording?

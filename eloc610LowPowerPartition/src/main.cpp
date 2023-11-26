@@ -313,15 +313,6 @@ void printPartitionInfo()
 
 }
 
-
-
-
-
-
-
-
-
-
 void time() {
 
     struct timeval tv_now;
@@ -633,9 +624,7 @@ void start_sound_recording(FILE *fp){
 
 #ifdef EDGE_IMPULSE_ENABLED
 
-
 bool inference_result_file_SD_available = false;
-
 
 /**
  * @brief Check if file exists to record inference result from Edge Impulse
@@ -692,9 +681,13 @@ int create_inference_result_file_SD(String f_name)
 
     for (auto i = 0; i < EI_CLASSIFIER_NN_OUTPUT_COUNT; i++)
     {   
-        ei_impulse_result_t results ={ 0 };
+        ei_impulse_result_t results = { 0 };
         file_string += " ,";
         file_string += results.classification[i].label;
+
+        // FIXME:
+        // Need to create a wrapper to access this
+        //file_string += ei_classifier_inferencing_categories[i];
     }
 
     file_string += "\n";
@@ -916,6 +909,7 @@ void app_main(void)
 
     if (1){
         // Run stored audio samples through the model to test it
+        // Use non-continous process for this
         ESP_LOGI(TAG, "Testing model against pre-recorded sample data...");
 
         static_assert((EI_CLASSIFIER_RAW_SAMPLE_COUNT <= TEST_SAMPLE_LENGTH), "TEST_SAMPLE_LENGTH must be at least equal to EI_CLASSIFIER_RAW_SAMPLE_COUNT");
@@ -1105,7 +1099,6 @@ void app_main(void)
 
             if (buf_setup_result == false)
             {
-                // ESP_LOGE(TAG, "ERR: Could not allocate audio buffer (size %d), this could be due to the window length of your model\r\n", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
                 ESP_LOGE(TAG, "ERR: inference_stetup failed, restarting...");
                 delay(500);
                 edgeImpulse->set_ei_running_status(false);

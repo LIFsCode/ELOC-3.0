@@ -27,6 +27,7 @@
 
 #include <stdint.h>
 #include "WString.h"
+#include "WAVFileWriter.h"
 
 //TODO: All these variables are shared across multiple tasks and must be guarded with mutexes
 
@@ -39,7 +40,7 @@ ENUM_MACRO (RecState, IDLE, RECORDING);
 
 
 /* Recording specific status indicators */
-extern RecState gRecording;
+extern WAVFileWriter *wav_writer;
 
 extern int64_t gTotalUPTimeSinceReboot;  //esp_timer_get_time returns 64-bit time since startup, in microseconds.
 extern int64_t gTotalRecordTimeSinceReboot;

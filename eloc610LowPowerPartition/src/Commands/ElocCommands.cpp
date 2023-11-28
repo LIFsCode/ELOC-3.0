@@ -70,10 +70,13 @@ void printStatus(String& buf) {
     battery["voltage[V]"]          = round(Battery::GetInstance().getVoltage(), 2);
 
     JsonObject session = doc.createNestedObject("session");
-    session["identifier"]                = gSessionIdentifier;
-    JsonObject recordingState = session.createNestedObject("recordingState");
-    addEnum(recordingState, gRecording);
-    session["recordingTime[h]"]          = (float)gSessionRecordTime / 1000 / 1000 / 60 / 60;
+    session["identifier"]          = gSessionIdentifier;
+    // JsonObject recordingState = session.createNestedObject("recordingState");
+    // addEnum(recordingState, gRecording);
+    if (wav_writer != nullptr){
+        session["recordingState"]   = wav_writer->get_mode_str();
+    }
+    session["recordingTime[h]"]    = (float)gSessionRecordTime / 1000 / 1000 / 60 / 60;
     
     JsonObject device = doc.createNestedObject("device");
     device["firmware"]                   = gFirmwareVersion;
@@ -234,39 +237,53 @@ void cmd_SetTime(CmdParser *cmdParser) {
 
 void cmd_SetRecordMode(CmdParser* cmdParser) {
     CmdResponse& resp = CmdResponse::getInstance();
-    const char* mode = cmdParser->getValueFromKey("mode");
-    rec_req_t rec_req;
-    if (!mode) {
+    const char* req_mode = cmdParser->getValueFromKey("mode");
+    // rec_req_t rec_req;
+    auto wav_write_mode = wav_writer->get_mode();
+
+    const char* newMode = "";
+
+    if (!req_mode) {
         // if no explicit mode is set, recording mode is toggled
-        rec_req = (gRecording != RecState::IDLE) ? REC_REQ_STOP : REC_REQ_START;
+        if(wav_write_mode == WAVFileWriter::Mode::disabled){
+            ESP_LOGI(TAG, "Starting recording");
+            wav_writer->set_mode(WAVFileWriter::Mode::continuous);
+        } else {
+            ESP_LOGI(TAG, "Stopping recording");
+            wav_writer->set_mode(WAVFileWriter::Mode::disabled);
+        }
     }
     else {
-        if (!strcasecmp(mode, "on")) {
-            rec_req = REC_REQ_START;
+        // Change this string to 'continuous' ?
+        if (!strcasecmp(req_mode, "on")) {
+            newMode = "Start";
+            wav_writer->set_mode(WAVFileWriter::Mode::continuous);
         }
-        else if (!strcasecmp(mode, "off")) {
-            rec_req = REC_REQ_STOP;
+        // Change this string to 'disabled' ?
+        else if (!strcasecmp(req_mode, "off")) {
+            newMode = "Stop";
+            wav_writer->set_mode(WAVFileWriter::Mode::disabled);
+        }
+        else if (!strcasecmp(req_mode, "single")) {
+            newMode = "Single";
+            wav_writer->set_mode(WAVFileWriter::Mode::single);
         }
         else {
             char errMsg[64];
-            snprintf(errMsg, sizeof(errMsg), "Invalid mode %s", mode);
+            snprintf(errMsg, sizeof(errMsg), "Invalid mode %s", req_mode);
             ESP_LOGE(TAG, "%s", errMsg);
             resp.setError(ESP_ERR_INVALID_ARG, errMsg);
         }
     }
-    const char* newMode = "";
-    if (rec_req == REC_REQ_START) {
-        newMode = "Start";
-    }
-    if (rec_req == REC_REQ_STOP) {
-        newMode = "Stop";
-    }
+
     String& status = resp.getPayload(); 
     status += "{\"recordingState\" : ";
-    status += String(rec_req == REC_REQ_START);
+    // status += String(rec_req == REC_REQ_START);
     status += "}";
     ESP_LOGI(TAG, "%s Recording...", newMode);
-    xQueueSend(rec_req_evt_queue, &rec_req, (TickType_t)0);
+    wav_write_mode = wav_writer->get_mode();
+
+    xQueueSend(rec_req_evt_queue, &wav_write_mode, (TickType_t)0);
     resp.setResultSuccess(status);
 }
 

@@ -24,8 +24,6 @@
 #include "ElocStatus.hpp"
 #include "esp_timer.h"
 
-RecState gRecording = RecState::IDLE;
-
 int64_t gTotalUPTimeSinceReboot=esp_timer_get_time();  //esp_timer_get_time returns 64-bit time since startup, in microseconds.
 int64_t gTotalRecordTimeSinceReboot=0;
 int64_t gSessionRecordTime=0;

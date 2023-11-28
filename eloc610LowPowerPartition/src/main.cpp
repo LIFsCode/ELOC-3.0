@@ -250,19 +250,33 @@ int64_t getSystemTimeMS()
     return (time_us);
 }
 
+
+/**
+ * @brief Receive button presses & set sound recording state
+ * @todo  Decide whether to cycle between different modes or 
+ *        just from disabled to enabled
+ * @note Terminal output from this function seems to cause watchdog to timeout
+ * @param args 
+ */
 static void IRAM_ATTR buttonISR(void *args)
 {
-    ESP_LOGV(TAG, "Func: %s", __func__);
+    if (wav_writer == nullptr) {
+        return;
+    }
+    
+    if(wav_writer->get_mode() == WAVFileWriter::Mode::disabled){
+        // ESP_LOGI(TAG, "Starting recording");
+        wav_writer->set_mode(WAVFileWriter::Mode::continuous);
+    } else {
+        // ESP_LOGI(TAG, "Stopping recording");
+        wav_writer->set_mode(WAVFileWriter::Mode::disabled);
+    }
 
-    // return;
-    // ESP_LOGI(TAG, "button pressed");
-    // delay(5000);
-    rec_req_t rec_req = (gRecording != RecState::IDLE) ? REC_REQ_STOP : REC_REQ_START;
-  //ets_printf("button pressed");
-  xQueueSendFromISR(rec_req_evt_queue, &rec_req, (TickType_t)0);
-    // detachInterrupt(GPIO_BUTTON);
+    auto mode = wav_writer->get_mode();
+
+    xQueueSendFromISR(rec_req_evt_queue, &mode, (TickType_t)0);
+
 }
-
 
 
 static void LEDflashError() {
@@ -595,7 +609,7 @@ void start_sound_recording(FILE *fp){
 
 
     // TODO: set this as not recording in WAVFileWriter.cpp::finish()
-    gRecording=RecState::RECORDING;
+    // gRecording=RecState::RECORDING;
     
     fp = nullptr;
 
@@ -1058,7 +1072,6 @@ void app_main(void)
     // wav file pointer
     // TODO: Move to wav_writer class
     FILE *fp = nullptr;
-    rec_req_t rec_req = REC_REQ_NONE;
 
     auto loopCnt = 0;
 
@@ -1066,6 +1079,28 @@ void app_main(void)
     // e.g. SD card full or I2S error?
     while (true)
     {
+        auto new_mode = new WAVFileWriter::Mode;
+
+        if (xQueueReceive(rec_req_evt_queue, new_mode, pdMS_TO_TICKS(500))) {
+            if(*new_mode == WAVFileWriter::Mode::continuous)
+            {
+                ESP_LOGI(TAG,"wav writer mode = continuous");
+                wav_writer->set_mode(*new_mode);
+            }
+            else if(*new_mode == WAVFileWriter::Mode::single)
+            {
+                ESP_LOGI(TAG,"wav writer mode = single");
+                wav_writer->set_mode(*new_mode);
+            }
+            else if(*new_mode == WAVFileWriter::Mode::disabled){
+                ESP_LOGI(TAG,"wav writer mode = disabled");
+                wav_writer->set_mode(*new_mode);
+            }
+            else{
+                ESP_LOGE(TAG,"wav writer mode = unknown");
+            }
+        }
+
         // TODO: Check this is valid, rebased from master
         if ((loopCnt++ % 10) == 0) {
             ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC, Temp %d °C", 

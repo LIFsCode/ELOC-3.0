@@ -25,12 +25,17 @@
 #define BLUETOOTHSERVER_HPP_
 
 #include "esp_err.h"
+#include "WAVFileWriter.h"
 
 /// @brief BluetoothServerSetup will setup LIS3DH for waking up ESP on double tap event
 /// @param installGpioIsr : true: BluetoothServerSetup will call gpio_install_isr_service()
 ///                       : false: BluetoothServerSetup() will expect gpio isr to be already installed
 /// @return 
 esp_err_t BluetoothServerSetup(bool installGpioIsr);
+
+
+// Control sound recording
+extern WAVFileWriter *wav_writer;
 
 #endif // BLUETOOTHSERVER_HPP_
 

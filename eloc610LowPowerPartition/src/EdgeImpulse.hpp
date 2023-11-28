@@ -38,12 +38,11 @@ public:
      */
     inference_t inference;
 
+    enum class Status { not_running = 0, running = 1}; 
+
 private:
-    // static const uint32_t sample_buffer_size = 2048;
-    // signed short sampleBuffer[sample_buffer_size];
     bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
-    int print_results = 0;
-    bool ei_running_status = false;
+    Status status = Status::not_running;
 
 public:
     /**
@@ -112,9 +111,9 @@ public:
      * @return true running
      * @return false not running
      */
-    bool get_ei_running_status() const
+    enum Status get_status() const
     {
-        return ei_running_status;
+        return status;
     }
 
     /**
@@ -122,9 +121,9 @@ public:
      * 
      * @param newStatus true or false
      */
-    void set_ei_running_status(bool newStatus)
+    void set_status(enum Status newStatus)
     {
-        ei_running_status = newStatus;
+        status = newStatus;
     }
 
     /**

@@ -21,8 +21,7 @@ EdgeImpulse::EdgeImpulse(int i2s_sample_rate)
     if (EI_CLASSIFIER_RAW_SAMPLE_COUNT > i2s_sample_rate)
         ESP_LOGE(TAG,"The I2S sample rate must be at least %d", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
 
-    print_results = 0;
-    ei_running_status = false;
+    status = Status::not_running;
 }
 
 void EdgeImpulse::output_inferencing_settings()
@@ -45,7 +44,7 @@ bool EdgeImpulse::buffers_setup(uint32_t n_samples)
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
-    ei_running_status = false;
+    status = Status::not_running;
 
     inference.buffers[0] = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
 
@@ -68,7 +67,7 @@ bool EdgeImpulse::buffers_setup(uint32_t n_samples)
     inference.n_samples = n_samples;
     inference.buf_ready = 0;
 
-    ei_running_status = true;
+    status = Status::running;
 
     return true;
 }
@@ -130,9 +129,7 @@ int EdgeImpulse::microphone_audio_signal_get_data(size_t offset, size_t length, 
 void EdgeImpulse::free_buffers(void)
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
-
-    ei_running_status = false;
-
+    status = Status::not_running;
     // Delay in case I2SMEMSSampler::read() is currently loading samples into buffers
     delay(100);
 

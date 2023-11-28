@@ -1049,7 +1049,7 @@ void app_main(void)
             #endif // AI_CONTINUOUS_INFERENCE
             
             input->register_ei_inference(&edgeImpulse->getInference(), EI_CLASSIFIER_FREQUENCY);
-            edgeImpulse->set_ei_running_status(true);
+            edgeImpulse->set_status(edgeImpulse->Status::running);
         #endif
         
         input->start_read_task(sample_buffer_size/ sizeof(signed short));
@@ -1087,7 +1087,7 @@ void app_main(void)
 
 #ifdef EDGE_IMPULSE_ENABLED
         // Try to restart if not running
-        if (edgeImpulse->get_ei_running_status() == false)
+        if (edgeImpulse->get_status() == edgeImpulse->Status::not_running)
         {       
                 auto buf_setup_result = false;
 
@@ -1101,11 +1101,12 @@ void app_main(void)
             {
                 ESP_LOGE(TAG, "ERR: inference_stetup failed, restarting...");
                 delay(500);
-                edgeImpulse->set_ei_running_status(false);
+                edgeImpulse->set_status(edgeImpulse->Status::not_running);
             }
         }
 
-        if (ai_run_enable == true && edgeImpulse->get_ei_running_status() == true)
+        if (ai_run_enable == true && 
+            edgeImpulse->get_status() == edgeImpulse->Status::running)
         {
             bool m = edgeImpulse->microphone_inference_record();
             // Blocking function - unblocks when buffer is full
@@ -1139,7 +1140,7 @@ void app_main(void)
             if (r != EI_IMPULSE_OK)
             {
                 ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
-                edgeImpulse->set_ei_running_status(false);
+                edgeImpulse->set_status(edgeImpulse->Status::not_running);
                 continue;
             }
 

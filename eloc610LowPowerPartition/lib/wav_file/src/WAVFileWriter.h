@@ -22,6 +22,8 @@ private:
   int secondsPerFile = 60;            // Seconds per file to write
   Mode mode = Mode::disabled;         // Mode of operation
 
+  const char *mode_str[3] = {"disabled", "single", "continuous"};
+
   /**
    * @deprecated ??
    */
@@ -88,11 +90,17 @@ public:
    */
   bool is_file_handle_set() { return m_fp != nullptr; }
 
-/**
- * @brief Get the mode object
- * @return enum Mode 
- */
+  /**
+   * @brief Get the mode object
+   * @return enum Mode 
+   */
   enum Mode get_mode() { return mode; }
+
+  /**
+   * @brief Get the mode string
+   * @return const char* 
+   */
+  const char *get_mode_str() { return mode_str[(int)mode]; }
 
   /**
    * @brief Set the mode object

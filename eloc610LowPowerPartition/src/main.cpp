@@ -118,7 +118,8 @@ uint32_t gFreeSpaceKB = 0;
 
 I2SMEMSSampler *input = nullptr;
 WAVFileWriter *wav_writer = nullptr;
-QueueHandle_t rec_req_evt_queue = nullptr;
+QueueHandle_t rec_req_evt_queue = nullptr;  // wav recording queue
+QueueHandle_t rec_ai_evt_queue = nullptr;   // AI inference queue
 
 void writeSettings(String settings);
 void doDeepSleep();
@@ -253,8 +254,7 @@ int64_t getSystemTimeMS()
 
 /**
  * @brief Receive button presses & set sound recording state
- * @todo  Decide whether to cycle between different modes or 
- *        just from disabled to enabled
+ * @todo Long button press should change AI detection state
  * @note Terminal output from this function seems to cause watchdog to timeout
  * @param args 
  */
@@ -263,21 +263,19 @@ static void IRAM_ATTR buttonISR(void *args)
     if (wav_writer == nullptr) {
         return;
     }
-    
+        
     if(wav_writer->get_mode() == WAVFileWriter::Mode::disabled){
-        // ESP_LOGI(TAG, "Starting recording");
         wav_writer->set_mode(WAVFileWriter::Mode::continuous);
     } else {
-        // ESP_LOGI(TAG, "Stopping recording");
         wav_writer->set_mode(WAVFileWriter::Mode::disabled);
     }
 
-    auto mode = wav_writer->get_mode();
+    /**
+     * Any point in send this command via the queue instead?
+     */
 
-    xQueueSendFromISR(rec_req_evt_queue, &mode, (TickType_t)0);
-
+    //xQueueSendFromISR(rec_req_evt_queue, &mode, (TickType_t)0);
 }
-
 
 static void LEDflashError() {
     ESP_LOGI(TAG, "-----fast flash------------");
@@ -875,8 +873,14 @@ void app_main(void)
     // check if a firmware update is triggered via SD card
     checkForFirmwareUpdateFile();
 
+    // Queue for recording requests
     rec_req_evt_queue = xQueueCreate(10, sizeof(rec_req_t));
     xQueueReset(rec_req_evt_queue);
+
+    // Queue for AI requests
+    rec_ai_evt_queue = xQueueCreate(10, sizeof(bool));
+    xQueueReset(rec_ai_evt_queue);
+
     ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
 
     ESP_LOGI(TAG, "Creating Bluetooth  task...");
@@ -1045,7 +1049,7 @@ void app_main(void)
             createSessionFolder();
 
             // TODO: DEBUG - should be set from Bletooth config
-            wav_writer->set_mode(WAVFileWriter::Mode::continuous);
+            wav_writer->set_mode(WAVFileWriter::Mode::disabled);
         }
         else
         {
@@ -1079,6 +1083,8 @@ void app_main(void)
     // e.g. SD card full or I2S error?
     while (true)
     {
+        
+        // This might be redundant, set directly
         auto new_mode = new WAVFileWriter::Mode;
 
         if (xQueueReceive(rec_req_evt_queue, new_mode, pdMS_TO_TICKS(500))) {
@@ -1121,6 +1127,11 @@ void app_main(void)
         }
 
 #ifdef EDGE_IMPULSE_ENABLED
+
+        if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
+            ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);
+        }            
+
         // Try to restart if not running
         if (edgeImpulse->get_status() == edgeImpulse->Status::not_running)
         {       

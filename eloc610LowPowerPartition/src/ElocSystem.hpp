@@ -46,6 +46,8 @@ typedef enum {
 
 //TODO: handle rec_req_evt_queue at a single point
 extern QueueHandle_t rec_req_evt_queue;
+extern QueueHandle_t rec_ai_evt_queue;
+extern bool ai_run_enable;
 
 class ElocSystem
 {

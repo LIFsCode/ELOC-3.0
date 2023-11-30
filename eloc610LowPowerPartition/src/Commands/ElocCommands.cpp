@@ -71,13 +71,19 @@ void printStatus(String& buf) {
 
     JsonObject session = doc.createNestedObject("session");
     session["identifier"]          = gSessionIdentifier;
-    // JsonObject recordingState = session.createNestedObject("recordingState");
-    // addEnum(recordingState, gRecording);
+    JsonObject recordingState = session.createNestedObject("recordingState");
+    
     if (wav_writer != nullptr){
-        session["recordingState"]   = wav_writer->get_mode_str();
+        recordingState["val"], wav_writer->get_mode_int();
+        recordingState["state"] = wav_writer->get_mode_str();
+    }
+    else {
+        recordingState["val"] = 99;
+        recordingState["state"] = "unknown";
     }
     session["recordingTime[h]"]    = (float)gSessionRecordTime / 1000 / 1000 / 60 / 60;
-    
+    JsonObject ai = session.createNestedObject("ai");
+    ai["state"]                   = ai_run_enable;
     JsonObject device = doc.createNestedObject("device");
     device["firmware"]                   = gFirmwareVersion;
     device["Uptime[h]"]                  = (float)esp_timer_get_time() / 1000 / 1000 / 60 / 60;
@@ -278,12 +284,51 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
 
     String& status = resp.getPayload(); 
     status += "{\"recordingState\" : ";
-    // status += String(rec_req == REC_REQ_START);
+    status += String(wav_writer->get_mode_int());
     status += "}";
     ESP_LOGI(TAG, "%s Recording...", newMode);
-    wav_write_mode = wav_writer->get_mode();
+    
+    /*
+        Recording mode set directly above
+        Could alternatively send via queue
+        
+        wav_write_mode = wav_writer->get_mode();
+        xQueueSend(rec_req_evt_queue, &wav_write_mode, (TickType_t)0);
 
-    xQueueSend(rec_req_evt_queue, &wav_write_mode, (TickType_t)0);
+    */    
+    resp.setResultSuccess(status);
+}
+
+void cmd_SetAIMode(CmdParser* cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    const char* req_mode = cmdParser->getValueFromKey("mode");
+    auto newMode = true;
+
+    if (!req_mode) {
+        // if no explicit mode is set, AI mode is toggled
+        newMode = !ai_run_enable;
+    }
+    else {
+        if (!strcasecmp(req_mode, "on")) {
+            newMode = true;
+        }
+        else if (!strcasecmp(req_mode, "off")) {
+            newMode = false;
+        }
+        else {
+            char errMsg[64];
+            snprintf(errMsg, sizeof(errMsg), "Invalid mode %s", req_mode);
+            ESP_LOGE(TAG, "%s", errMsg);
+            resp.setError(ESP_ERR_INVALID_ARG, errMsg);
+        }
+    }
+
+    String& status = resp.getPayload(); 
+    status += "{\"ai_state\" : ";
+    status += newMode;
+    status += "}";
+    ESP_LOGI(TAG, "%d AI...", newMode);
+    xQueueSend(rec_ai_evt_queue, &newMode, (TickType_t)0);
     resp.setResultSuccess(status);
 }
 
@@ -295,6 +340,7 @@ bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     success &= cmdCallback.addCmd("getStatus", &cmd_GetStatus, "Returns the current status in JSON format");
     success &= cmdCallback.addCmd("setTime", &cmd_SetTime, "Set the current Time. Time format is given as JSON, e.g. setTime#time={\"seconds\":1351824120,\"ms\":42,\"timezone\":6,\"type\":\"G\"}");
     success &= cmdCallback.addCmd("setRecordMode", &cmd_SetRecordMode, "Enable/disable recording. If used without arguments, current mode is toggled(on/off). Otherwise set recording to specified mode, e.g. setRecordMode#mode=on");
+    success &= cmdCallback.addCmd("setAIMode", &cmd_SetAIMode, "Enable/disable AI. If used without arguments, current mode is toggled(on/off). Otherwise set AI to specified mode, e.g. setAIMode#mode=on");
     success &= cmdCallback.addCmd("setLogPersistent", &cmd_SetLogPersistent, "Configure the logging messages to be stored on a rotating log file on SD carde.g. setLogPersitent#cfg={\"logToSdCard\":\"true\",\"filename\":\"/sdcard/log/eloc.log\",\"maxFiles\":6,\"maxFileSize\":1024}");
     if (!success) {
         ESP_LOGE(TAG, "Failed to add all BT commands!");

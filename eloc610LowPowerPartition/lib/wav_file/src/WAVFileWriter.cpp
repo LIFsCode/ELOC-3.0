@@ -144,7 +144,11 @@ void WAVFileWriter::start_write_thread()
         this->write();
       }
 
-      if (m_file_size >= (m_sample_rate * secondsPerFile * sizeof(int16_t))){
+      /**
+       * Have we reached the required file size OR has 
+       * recording been disabled & now needs to be stopped??
+       */
+      if ((m_file_size >= (m_sample_rate * secondsPerFile * sizeof(int16_t)) || mode == Mode::disabled)){
         // Won't be saving to this file anymore..
         enable_wav_file_write = false;
         this->finish();

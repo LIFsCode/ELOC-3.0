@@ -23,6 +23,7 @@ private:
   Mode mode = Mode::disabled;         // Mode of operation
 
   const char *mode_str[3] = {"disabled", "single", "continuous"};
+  const int mode_int[3] = {0, 1, 2};
 
   /**
    * @deprecated ??
@@ -101,6 +102,13 @@ public:
    * @return const char* 
    */
   const char *get_mode_str() { return mode_str[(int)mode]; }
+
+  /**
+   * @brief Get the mode int object
+   * 
+   * @return const int 
+   */
+  int get_mode_int() { return mode_int[(int)mode]; }
 
   /**
    * @brief Set the mode object

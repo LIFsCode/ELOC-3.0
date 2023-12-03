@@ -245,51 +245,58 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
     CmdResponse& resp = CmdResponse::getInstance();
     const char* req_mode = cmdParser->getValueFromKey("mode");
     // rec_req_t rec_req;
-    auto wav_write_mode = wav_writer->get_mode();
 
-    const char* new_wav_Mode = "";
-    const char* new_AI_Mode = "";
+    const char* new_mode = "";
+    auto new_ai_mode = true;
+    auto ai_mode_change = false;
 
     if (!req_mode) {
-        // if no explicit mode is set, recording mode is toggled
+        auto wav_write_mode = wav_writer->get_mode();
+        /**
+         * If no explicit mode is set, recording mode is toggled, no change to AI mode
+         * @warning This is debug feature, shouldn't be generally used
+         */
         if(wav_write_mode == WAVFileWriter::Mode::disabled){
-            ESP_LOGI(TAG, "Starting recording");
-            new_wav_Mode = "continuous";
+            new_mode = "recordOn(AI ?)";
             wav_writer->set_mode(WAVFileWriter::Mode::continuous);
         } else {
-            ESP_LOGI(TAG, "Stopping recording");
-            new_wav_Mode = "disabled";
+            new_mode = "recordOff(AI ?)";
             wav_writer->set_mode(WAVFileWriter::Mode::disabled);
         }
     }
     else {
+
+        
         // Change this string to 'continuous' ?
         if (!strcasecmp(req_mode, "recordOn")) {
             // No change to AI mode
-            new_wav_Mode = "continuous";
+            new_mode = "recordOn";
             wav_writer->set_mode(WAVFileWriter::Mode::continuous);
         }
         // Change this string to 'disabled' ?
         else if (!strcasecmp(req_mode, "recordOff")) {
             // No change to AI mode
-            new_wav_Mode = "disabled";
+            new_mode = "recordOff";
             wav_writer->set_mode(WAVFileWriter::Mode::disabled);
         }
         else if (!strcasecmp(req_mode, "recordOnEvent")) {
-            new_wav_Mode = "single";
-            new_AI_Mode = "on";         //<-- Must be on for recording to be triggered
+            new_mode = "recordOnEvent";     
+            new_ai_mode = true;    //<-- Must be on for recording to be triggered
+            ai_mode_change = true;
             wav_writer->set_mode(WAVFileWriter::Mode::single);
         }
         else if (!strcasecmp(req_mode, "recordOn_DetectOn")) {
-            new_wav_Mode = "continuous";
-            new_AI_Mode = "on";
+            new_mode = "recordOn_DetectOn";
+            new_ai_mode = true;
+            ai_mode_change = true;
             wav_writer->set_mode(WAVFileWriter::Mode::continuous);
         }
         else if (!strcasecmp(req_mode, "recordOff_DetectOff")) {
             // Set wav_recording mode to disabled
             // Change to AI mode to ON
-            new_wav_Mode = "disabled";
-            new_AI_Mode = "on";
+            new_mode = "recordOff_DetectOff";
+            new_ai_mode = false;
+            ai_mode_change = true;
             wav_writer->set_mode(WAVFileWriter::Mode::disabled);
         }
         else {
@@ -300,28 +307,28 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
         }
     }
 
-    String& status = resp.getPayload();
-    
-    if(!strcasecmp(new_wav_Mode, "")){
-        status += "{\"recordingState\" : ";
-        status += new_wav_Mode;
-        status += ", ";
+    if (ai_mode_change){
+        xQueueSend(rec_ai_evt_queue, &new_ai_mode, (TickType_t)0);
     }
-    if (!strcasecmp(new_AI_Mode,"")){
-        status += "{\"ai_state\" : ";
-        status += new_AI_Mode;
-        status += ", ";
-    }
-    ESP_LOGI(TAG, "Recording = %s, AI = %s", new_wav_Mode, new_AI_Mode);
-    
-    /*
-        Recording mode set directly above
-        Could alternatively send via queue
-        
-        wav_write_mode = wav_writer->get_mode();
-        xQueueSend(rec_req_evt_queue, &wav_write_mode, (TickType_t)0);
 
-    */    
+    String& status = resp.getPayload(); 
+    status += "{\"recordingState\" : ";
+    status += new_mode;
+    status += "}";
+
+    if (!req_mode){
+        ESP_LOGI(TAG, "setRecordMode requested <none>");
+    }
+    else{
+        ESP_LOGI(TAG, "setRecordMode requested %s", req_mode);
+    }
+
+    ESP_LOGI(TAG, "setRecordMode now %s", new_mode);
+    ESP_LOGI(TAG, "wav_writer mode = %s", wav_writer->get_mode_str());
+    if (ai_mode_change){
+        ESP_LOGI(TAG, "ai mode = %s", new_ai_mode ? "ON" : "OFF");
+    }
+
     resp.setResultSuccess(status);
 }
 

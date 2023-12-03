@@ -1081,26 +1081,26 @@ void app_main(void)
 
     // TODO: Define conditions on which device shuld exit this while() loop
     // e.g. SD card full or I2S error?
+
+    // This might be redundant, set directly in ElocCommands.cpp
+    auto new_mode =  WAVFileWriter::Mode::disabled;
+    
     while (true)
     {
-        
-        // This might be redundant, set directly
-        auto new_mode = new WAVFileWriter::Mode;
-
-        if (xQueueReceive(rec_req_evt_queue, new_mode, pdMS_TO_TICKS(500))) {
-            if(*new_mode == WAVFileWriter::Mode::continuous)
+        if (xQueueReceive(rec_req_evt_queue, &new_mode, pdMS_TO_TICKS(500))) {
+            if(new_mode == WAVFileWriter::Mode::continuous)
             {
                 ESP_LOGI(TAG,"wav writer mode = continuous");
-                wav_writer->set_mode(*new_mode);
+                wav_writer->set_mode(new_mode);
             }
-            else if(*new_mode == WAVFileWriter::Mode::single)
+            else if(new_mode == WAVFileWriter::Mode::single)
             {
                 ESP_LOGI(TAG,"wav writer mode = single");
-                wav_writer->set_mode(*new_mode);
+                wav_writer->set_mode(new_mode);
             }
-            else if(*new_mode == WAVFileWriter::Mode::disabled){
+            else if(new_mode == WAVFileWriter::Mode::disabled){
                 ESP_LOGI(TAG,"wav writer mode = disabled");
-                wav_writer->set_mode(*new_mode);
+                wav_writer->set_mode(new_mode);
             }
             else{
                 ESP_LOGE(TAG,"wav writer mode = unknown");

@@ -251,6 +251,8 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
     auto ai_mode_change = false;
 
     if (!req_mode) {
+        ESP_LOGI(TAG, "setRecordMode requested <none>");
+        
         auto wav_write_mode = wav_writer->get_mode();
         /**
          * If no explicit mode is set, recording mode is toggled, no change to AI mode
@@ -265,9 +267,9 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
         }
     }
     else {
-
-        
         // Change this string to 'continuous' ?
+        ESP_LOGI(TAG, "setRecordMode requested %s", req_mode);
+
         if (!strcasecmp(req_mode, "recordOn")) {
             // No change to AI mode
             new_mode = "recordOn";
@@ -315,13 +317,6 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
     status += "{\"recordingState\" : ";
     status += new_mode;
     status += "}";
-
-    if (!req_mode){
-        ESP_LOGI(TAG, "setRecordMode requested <none>");
-    }
-    else{
-        ESP_LOGI(TAG, "setRecordMode requested %s", req_mode);
-    }
 
     ESP_LOGI(TAG, "setRecordMode now %s", new_mode);
     ESP_LOGI(TAG, "wav_writer mode = %s", wav_writer->get_mode_str());

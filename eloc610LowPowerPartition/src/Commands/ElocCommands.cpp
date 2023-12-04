@@ -301,6 +301,14 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
             ai_mode_change = true;
             wav_writer->set_mode(WAVFileWriter::Mode::disabled);
         }
+        else if (!strcasecmp(req_mode, "recordOff_DetectOff")) {
+            // Set wav_recording mode to disabled
+            // Change to AI mode to Off
+            new_mode = "recordOff_DetectOff";
+            new_ai_mode = true;
+            ai_mode_change = false;
+            wav_writer->set_mode(WAVFileWriter::Mode::disabled);
+        }
         else {
             char errMsg[64];
             snprintf(errMsg, sizeof(errMsg), "Invalid mode %s", req_mode);

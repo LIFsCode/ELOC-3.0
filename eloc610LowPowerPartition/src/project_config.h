@@ -137,8 +137,8 @@
          * 
          *       Set a default as -3 which matches volume of SPH0645 in previous code
         */
-        #define I2S_DEFAULT_VOLUME -3                    
-        
+        #define I2S_DEFAULT_VOLUME -3
+
         /** 
          * @brief Enable/ disable automatic gain feature in @file I2SMEMSSampler.cpp
          *        This feature adjust volume for optimum performance
@@ -154,7 +154,7 @@
          * @note: This is a debug feature and will cause significant serial output!
          * 
          */              
-        //#define VISUALIZE_WAVEFORM      
+        //  #define VISUALIZE_WAVEFORM
 
         /**
          * End ELOC 3.2 board definitions
@@ -186,7 +186,7 @@
 #define USE_PERF_MONITOR
 
 
-//////////////////////////////////////////////////// AI Related configurations ////////////////////////////////////////////////////
+/////////////////////////////////// AI Related configurations ///////////////////////////////////
 /**
  * @note A value threshold of 0.8 is used to determine if target sound has been detected
  * @todo Make this configurable via Bluetooth?
@@ -201,10 +201,16 @@
 // #define AI_CONTINUOUS_INFERENCE
 
 
-//////////////////////////////////////////////////// Bluetooth Related configurations ////////////////////////////////////////////////////
+/////////////////////////////////// Bluetooth Related configurations ///////////////////////////////////
 
 #define MAX_COMMANDS 32
 
+/////////////////////////////////// Memory Related configurations ///////////////////////////////////
 
+// Place buffers in PSRAM, otherwise in RAM
+// Possible power savings & performance improvement
+#define I2S_BUFFER_IN_PSRAM
+#define WAV_BUFFER_IN_PSRAM     // too big to fit in RAM??
+#define EI_BUFFER_IN_PSRAM
 
-#endif // _PROJECT_CONFIG_H_
+#endif  // _PROJECT_CONFIG_H_

@@ -14,8 +14,8 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
-
 #include "ei_inference.h" // inference_t
+#include "project_config.h"
 
 #ifndef PIO_UNIT_TESTING
 // For unit testing

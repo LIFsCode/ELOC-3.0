@@ -7,7 +7,6 @@
 
 #include "EdgeImpulse.hpp"
 #include "trumpet_trimmed_inferencing.h"
-#include "config.h"
 
 static const char *TAG = "EdgeImpulse";
 
@@ -46,7 +45,11 @@ bool EdgeImpulse::buffers_setup(uint32_t n_samples)
 
     status = Status::not_running;
 
-    inference.buffers[0] = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+    #ifdef EI_BUFFER_IN_PSRAM
+        inference.buffers[0] = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+    #else
+        inference.buffers[0] = (int16_t *)malloc(n_samples * sizeof(int16_t));
+    #endif
 
     if (inference.buffers[0] == NULL)
     {
@@ -54,11 +57,20 @@ bool EdgeImpulse::buffers_setup(uint32_t n_samples)
         return false;
     }
 
-    inference.buffers[1] = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+    #ifdef EI_BUFFER_IN_PSRAM
+        inference.buffers[1] = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+    #else
+        inference.buffers[1] = (int16_t *)malloc(n_samples * sizeof(int16_t));
+    #endif
 
     if (inference.buffers[1] == NULL)
     {
-        ei_free(inference.buffers[0]);
+        #ifdef EI_BUFFER_IN_PSRAM
+            heap_caps_free(inference.buffers[0]);
+        #else
+            free(inference.buffers[0]);
+        #endif
+
         return false;
     }
 
@@ -85,7 +97,7 @@ bool EdgeImpulse::microphone_inference_record(void)
 
     bool ret = true;
 
-    // TODO: Expect this to be set as loading from another point?
+    // TODO(oohehir): Expect this to be set as loading from another point?
     // if (inference.buf_ready == 1)
     // {
     //   ESP_LOGE(TAG, "Error sample buffer overrun. Decrease the number of slices per model window "

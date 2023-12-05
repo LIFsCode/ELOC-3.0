@@ -1,12 +1,11 @@
 #include "I2SMEMSSampler.h"
 #include "soc/i2s_reg.h"
-
 #include "esp_err.h"
 #include "esp_log.h"
 
 static const char *TAG = "I2SMEMSSampler";
 
-I2SMEMSSampler::I2SMEMSSampler(
+I2SMEMSSampler::I2SMEMSSampler (
     i2s_port_t i2s_port,
     i2s_pin_config_t &i2s_pins,
     i2s_config_t i2s_config,
@@ -24,14 +23,14 @@ I2SMEMSSampler::I2SMEMSSampler(
     writer = nullptr;
     inference = {};
 
-    if(1){
+    if (1) {
         ESP_LOGI(TAG, "i2s_port = %d", i2s_port);
         ESP_LOGI(TAG, "i2s_sampling_rate = %d", i2s_sampling_rate);
         ESP_LOGI(TAG, "mBitShift = %d", mBitShift);
         ESP_LOGI(TAG, "mListenOnly = %d", mListenOnly);
         ESP_LOGI(TAG, "m_fixSPH0645 = %d", m_fixSPH0645);
     }
-    
+
 }
 
 bool I2SMEMSSampler::configureI2S()
@@ -66,7 +65,7 @@ bool I2SMEMSSampler::zero_dma_buffer(i2s_port_t i2sPort)
 }
 
 bool I2SMEMSSampler::register_wavFileWriter(WAVFileWriter *ext_writer){
-    
+
     writer = ext_writer;
 
     if (writer == nullptr){
@@ -78,7 +77,7 @@ bool I2SMEMSSampler::register_wavFileWriter(WAVFileWriter *ext_writer){
 }
 
 bool I2SMEMSSampler::deregister_wavFileWriter(){
-    
+
     if (writer == nullptr){
         ESP_LOGE(TAG, "deregister_wavFileWriter() - WAVFileWriter not previously registered");
         return false;
@@ -105,7 +104,7 @@ bool I2SMEMSSampler::register_ei_inference(inference_t *ext_inference, int ext_e
 int I2SMEMSSampler::read()
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
-    
+
     #ifdef ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
         // Automatic gain defintions
         #define LAST_GAIN_INCREASE_THD 30   // How often can gain be increased? 
@@ -114,7 +113,6 @@ int I2SMEMSSampler::read()
         #define SAMPLE_HIGH_LEVEL_THD 0.95  // SAMPLE_HIGH_COUNT reach/ exceed this volume -> decrease gain
         #define SAMPLE_LOW_LEVEL_THD 0.5    // SAMPLE_LOW_COUNT fail to reach/ exceed this volume -> increase gain
     #endif
-    
 
     /** 
      * Flag if there's buffer overruns - for debug purposes
@@ -143,12 +141,16 @@ int I2SMEMSSampler::read()
         // Used to notification to serial monitor when volume is changed
         bool volume_change = false;
     #endif
-    
-    // Allocate a buffer of BYTES sufficient for sample size
-    int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * i2s_samples_to_read), MALLOC_CAP_SPIRAM);
 
-    if (raw_samples == NULL)
-    {
+    // Allocate a buffer of BYTES sufficient for sample size
+
+    #ifdef I2S_BUFFER_IN_PSRAM
+        int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * i2s_samples_to_read), MALLOC_CAP_SPIRAM);
+    #else
+        int32_t *raw_samples = (int32_t *)malloc((sizeof(int32_t) * i2s_samples_to_read));
+    #endif
+
+    if (raw_samples == NULL) {
         ESP_LOGE(TAG, "Could not allocate memory for samples");
         return 0;
     }
@@ -165,24 +167,21 @@ int I2SMEMSSampler::read()
 
     TODO: Test what happens when not an even multiple!
     */
-    auto skip_current = ei_skip_rate;   // Make sure first sample is saved, then skip if needed
-    
+    auto skip_current = ei_skip_rate;  // Make sure first sample is saved, then skip if needed
+
     auto result = i2s_read(m_i2sPort, raw_samples, sizeof(int32_t) * i2s_samples_to_read, &bytes_read, portMAX_DELAY);
 
-    if (result != ESP_OK)
-    {
+    if (result != ESP_OK) {
         ESP_LOGE(TAG, "Error in I2S read : %d", result);
     }
 
     // Convert the number of bytes into the number of samples
     int samples_read = bytes_read / sizeof(int32_t);
-    ESP_LOGV(TAG, "samples_read = %d", samples_read); 
+    ESP_LOGV(TAG, "samples_read = %d", samples_read);
 
-    if (bytes_read <= 0) {
+    if (bytes_read == 0) {
       ESP_LOGE(TAG, "Error in I2S read : %d", bytes_read);
-    }
-    else 
-    {
+    } else {
         if (bytes_read < sizeof(int32_t) * i2s_samples_to_read) {
             ESP_LOGW(TAG, "Partial I2S read");
         }
@@ -202,8 +201,7 @@ int I2SMEMSSampler::read()
         auto overall_bit_shift = (32 - I2S_BITS_PER_SAMPLE) - volume_shift;
         ESP_LOGV(TAG, "volume_shift = %d, overall_bit_shift = %d", volume_shift, overall_bit_shift);
 
-        for (auto i = 0; i < samples_read; i++)
-        {   
+        for (auto i = 0; i < samples_read; i++) {
             /**
              * I2S mics seem to be generally 16 or 24 bit, 2's complement, MSB first.
              * This data needs to be shifted right to correct position.
@@ -240,26 +238,24 @@ int I2SMEMSSampler::read()
             static_assert(sizeof(processed_sample_16bit) == 2, "check datatype of processed_sample_16bit is int16_t");
             static_assert(INT16_MAX == 32767, "INT16_MAX != 32767");
             static_assert(INT16_MIN == -32768, "INT16_MIN != -32768");
-            
-            if (processed_sample_32bit < INT16_MIN){
+
+            if (processed_sample_32bit < INT16_MIN) {
                 processed_sample_16bit = INT16_MIN;
                 sound_clip_count++;
-            }
-            else if (processed_sample_32bit > INT16_MAX){
+            } else if (processed_sample_32bit > INT16_MAX) {
                 processed_sample_16bit = INT16_MAX;
                 sound_clip_count++;
             }
 
             #ifdef ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
-            if (abs(processed_sample_16bit) > (INT16_MAX * SAMPLE_HIGH_LEVEL_THD)){
+            if (abs(processed_sample_16bit) > (INT16_MAX * SAMPLE_HIGH_LEVEL_THD)) {
                 sample_high_count++;
-            }
-            else if (abs(processed_sample_16bit) > (INT16_MAX * SAMPLE_LOW_LEVEL_THD)){
+            } else if (abs(processed_sample_16bit) > (INT16_MAX * SAMPLE_LOW_LEVEL_THD)) {
                 sample_low_count++;
             }
             #endif
-            
-            if(writer != nullptr){
+
+            if (writer != nullptr) {
                 /*
                  * @warning If writer == nullptr (file not created) these buffers won't exist!
                  */ 
@@ -267,13 +263,13 @@ int I2SMEMSSampler::read()
                 // Store into wav file buffer
                 writer->buffers[writer->buf_select][writer->buf_count++] = processed_sample_16bit;
 
-                if (writer->buf_count >= writer->buffer_size_in_samples){
+                if (writer->buf_count >= writer->buffer_size_in_samples) {
                     // Swap buffers and set buf_ready
                     writer->buf_select ^= 1;
                     writer->buf_count = 0;
 
                     // Flag overrun for later
-                    if (writer->buf_ready == 1){
+                    if (writer->buf_ready == 1) {
                         writer_buffer_overrun = true;
                     }
                     writer->buf_ready = 1;
@@ -285,36 +281,34 @@ int I2SMEMSSampler::read()
             #ifdef EDGE_IMPULSE_ENABLED
 
             // Check buffer exists
-            if (inference->buffers[inference->buf_select] != nullptr){
+            if (inference->buffers[inference->buf_select] != nullptr) {
 
                 // Store into edge-impulse buffer taking into requirement to skip if necessary
-                if (skip_current >= ei_skip_rate){
+                if (skip_current >= ei_skip_rate) {
                     ESP_LOGV(TAG, "Saving sample, skip_current = %d", skip_current);
 
                     inference->buffers[inference->buf_select][inference->buf_count++] = processed_sample_16bit;
                     skip_current = 1;
 
-                    if (inference->buf_count >= inference->n_samples)
-                    {
+                    if (inference->buf_count >= inference->n_samples) {
                     inference->buf_select ^= 1;
                     inference->buf_count = 0;
 
                     // Flag overrun for later
-                    if(inference->buf_ready == 1){
+                    if (inference->buf_ready == 1) {
                         inference_buffer_overrun = true;
                     }
-                    
+
                     inference->buf_ready = 1;
                     }
-                }
-                else{
+                } else {
                     ESP_LOGV(TAG, "Not saving sample, skip_current = %d", skip_current);
                     skip_current++;
                 }
             }
 
-            #endif // EDGE_IMPULSE_ENABLED
-        
+            #endif  // EDGE_IMPULSE_ENABLED
+
             #ifdef VISUALIZE_WAVEFORM
                 total_raw_sample += raw_samples[i];
                 total_processed_sample_16bit += processed_sample_16bit;
@@ -322,7 +316,7 @@ int I2SMEMSSampler::read()
                 total_processed_sample_32bit += processed_sample_32bit;
 
                 // Print out every 125ms/ 8 times a second
-                if (i % (i2s_sampling_rate / 8) == 0){
+                if (i % (i2s_sampling_rate / 8) == 0) {
                     // printf(">avg_raw_sample:%f\n", float(total_raw_sample/ samples_read));
                     // printf(">avg_shifted_sample:%f\n", float(total_shifted_sample_32bit/ samples_read));
                     // printf(">avg_processed_sample_32bit:%f\n", float(total_processed_sample_32bit/ samples_read));
@@ -333,49 +327,49 @@ int I2SMEMSSampler::read()
 
     }
 
-    if(0){
+    if (0) {
         ESP_LOGI(TAG, "writer->buf_count = %d", writer->buf_count);
         ESP_LOGI(TAG, "writer->buf_select = %d", writer->buf_select);
         ESP_LOGI(TAG, "writer->buf_ready = %d", writer->buf_ready);
-        
+
         #ifdef EDGE_IMPULSE_ENABLED
 
         ESP_LOGI(TAG, "inference.buf_count = %d", inference->buf_count);
         ESP_LOGI(TAG, "inference.buf_select = %d", inference->buf_select);
         ESP_LOGI(TAG, "inference.buf_ready = %d", inference->buf_ready);
 
-        #endif // EDGE_IMPULSE_ENABLED
+        #endif  // EDGE_IMPULSE_ENABLED
     }
 
-    if (writer_buffer_overrun == true){
+    if (writer_buffer_overrun == true) {
         ESP_LOGW(TAG, "wav buffer overrun");
     }
 
     #ifdef EDGE_IMPULSE_ENABLED
-    
-    if (inference_buffer_overrun == true){
+
+    if (inference_buffer_overrun == true) {
         ESP_LOGW(TAG, "inference buffer overrun");
     }
 
-    #endif // EDGE_IMPULSE_ENABLED
+    #endif  // EDGE_IMPULSE_ENABLED
 
-    if (sound_clip_count > 0){
+    if (sound_clip_count > 0) {
         ESP_LOGW(TAG, "Audio sample clips occurred %d times", sound_clip_count);
     }
 
     // Automatic gain adjustment
     #ifdef ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
-    if (sample_high_count > SAMPLE_HIGH_COUNT * samples_read){
-        // TODO: check when volume_shift is -ve
-        if (volume_shift > 0){
+    if (sample_high_count > SAMPLE_HIGH_COUNT * samples_read) {
+        // TODO(oohehir): check when volume_shift is -ve
+        if (volume_shift > 0) {
             volume_shift = volume_shift >> 1;
         }
         last_gain_increase = 0;
         volume_change = true;
         ESP_LOGV(TAG, "sample_high_count = %d, decreasing gain to %d", sample_high_count, volume_shift);
-    } else if (sample_low_count < SAMPLE_LOW_COUNT * samples_read){
+    } else if (sample_low_count < SAMPLE_LOW_COUNT * samples_read) {
         // Increase gain if not recently increased
-        if (last_gain_increase > LAST_GAIN_INCREASE_THD){
+        if (last_gain_increase > LAST_GAIN_INCREASE_THD) {
             volume_shift = volume_shift << 1;
             last_gain_increase = 0;
             volume_change = true;
@@ -387,29 +381,33 @@ int I2SMEMSSampler::read()
     }
 
     // Boundary check
-    if (volume_shift < -2){
+    if (volume_shift < -2) {
         volume_shift = -2;
-    } else if (volume_shift > 4){
+    } else if (volume_shift > 4) {
         volume_shift = 4;
     }
 
-    if (volume_change == true){
+    if (volume_change == true) {
         ESP_LOGI(TAG, "volume_shift = %d", volume_shift);
     }
 
     #endif
 
-    free(raw_samples);
+    #ifdef I2S_BUFFER_IN_PSRAM
+        heap_caps_free(raw_samples);
+    #else
+        free(raw_samples);
+    #endif
 
     return samples_read;
 }
 
 void I2SMEMSSampler::start_read_thread()
 {
-    while(enable_read){
+    while (enable_read) {
         auto samples_read = this->read();
 
-        if (samples_read != i2s_samples_to_read){
+        if (samples_read != i2s_samples_to_read) {
         ESP_LOGW(TAG, "samples_read = %d, i2s_samples_to_read = %d", samples_read, i2s_samples_to_read);
         }
     }
@@ -417,14 +415,11 @@ void I2SMEMSSampler::start_read_thread()
     vTaskDelete(NULL);
 }
 
-void I2SMEMSSampler::start_read_thread_wrapper(void * _this){
-
+void I2SMEMSSampler::start_read_thread_wrapper(void * _this) {
   ((I2SMEMSSampler*)_this)->start_read_thread();
-
 }
 
-int I2SMEMSSampler::start_read_task(int i2s_samples_to_read){
-
+int I2SMEMSSampler::start_read_task(int i2s_samples_to_read) {
   // logical right shift divides a number by 2, throwing out any remainders
   // Need to divide by 2 because reading bytes into a int16_t buffer
   this->i2s_samples_to_read = i2s_samples_to_read;
@@ -435,7 +430,5 @@ int I2SMEMSSampler::start_read_task(int i2s_samples_to_read){
   return ret;
 }
 
-
-I2SMEMSSampler::~I2SMEMSSampler(){
-
+I2SMEMSSampler::~I2SMEMSSampler() {
 }

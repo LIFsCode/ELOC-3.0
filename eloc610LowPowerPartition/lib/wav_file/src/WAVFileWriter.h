@@ -8,12 +8,13 @@
 #include "WAVFile.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "../../../src/project_config.h"
 class WAVFileWriter
 {
-  public:
-  enum class Mode { disabled = 0, single = 1, continuous = 2 }; 
+ public:
+  enum class Mode { disabled = 0, single = 1, continuous = 2 };
 
-private:
+ private:
   u_int32_t m_file_size;              // Size of wav file in bytes
   FILE *m_fp = nullptr;               // pointer to wav file
   wav_header_t m_header;              // struct of wav header
@@ -28,7 +29,7 @@ private:
   /**
    * @deprecated ??
    */
-  void setSample_rate (int sample_rate);
+  void setSample_rate(int sample_rate);
    /**
    * @deprecated ??
    */
@@ -41,7 +42,7 @@ private:
   */
   void start_write_thread();
 
-public:
+ public:
 
   /**
    * Use a double buffer system
@@ -66,7 +67,7 @@ public:
    *     The buffer_size_in_samples is calculated as follows (this is a sensible default):
    *     =  int((sample_rate * buffer_time) / 512) * 512;
    */
-  size_t buffer_size_in_samples = (int(16000 * 2/512)) * 512; 
+  size_t buffer_size_in_samples = (int(16000 * 2/512)) * 512;
   signed short *buffers[2];
 
   /**

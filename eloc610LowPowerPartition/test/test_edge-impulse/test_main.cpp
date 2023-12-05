@@ -5,6 +5,7 @@
 
 #include "trumpet_inferencing.h"
 #include "test_samples.h"
+#include "config.h"
 
 /** Audio buffers, pointers and selectors */
 typedef struct
@@ -48,7 +49,11 @@ void test_led_builtin_pin_number(void)
   signal.get_data = &microphone_audio_signal_get_data;
   ei_impulse_result_t result = {0};
 
-  inference.buffer = (int16_t *)heap_caps_malloc(EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+  #ifdef EI_BUFFER_IN_PSRAM
+    inference.buffer = (int16_t *)heap_caps_malloc(EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+  #else
+    inference.buffer = (int16_t *)malloc(EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t));
+  #endif
 
   if (!inference.buffer)
   {
@@ -73,8 +78,14 @@ void test_led_builtin_pin_number(void)
   }
 
   // Free buffer
-  if (inference.buffer)
-    heap_caps_free(inference.buffer);
+  if (inference.buffer) {
+    #ifdef EI_BUFFER_IN_PSRAM
+      heap_caps_free(inference.buffer);
+    #else
+      free(inference.buffer);
+    #endif
+  }
+
 }
 
 void test_led_state_high(void)

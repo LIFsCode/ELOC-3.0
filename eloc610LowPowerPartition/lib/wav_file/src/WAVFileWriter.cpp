@@ -25,29 +25,44 @@ WAVFileWriter::WAVFileWriter(int sample_rate, int buffer_time, int ch_count /*=1
 
   ESP_LOGI(TAG, "buffer_size = %d", buffer_size_in_samples);
 
-  buffers[0] = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+  #ifdef WAV_BUFFER_IN_PSRAM
+    ESP_LOGI(TAG, "Allocating buffers in PSRAM");
+    buffers[0] = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+  #else
+    ESP_LOGI(TAG, "Allocating buffers in RAM");
+    buffers[0] = (int16_t *)malloc(buffer_size_in_samples * sizeof(int16_t));
+  #endif
 
   if (buffers[0] == NULL)
   {
       ESP_LOGE(TAG, "Failed to allocate %d bytes for wav file buffer[0]", buffer_size_in_samples * sizeof(int16_t));
   }
 
-  buffers[1] = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
-
+  #ifdef WAV_BUFFER_IN_PSRAM
+    buffers[1] = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+  #else
+    buffers[1] = (int16_t *)malloc(buffer_size_in_samples * sizeof(int16_t));
+  #endif
+  
   if (buffers[1] == NULL)
   {
       ESP_LOGE(TAG, "Failed to allocate %d bytes for wav file buffer[1]", buffer_size_in_samples * sizeof(int16_t));
-      heap_caps_free(buffers[0]);
+
+      #ifdef WAV_BUFFER_IN_PSRAM
+        heap_caps_free(buffers[0]);
+      #else
+        free(buffers[0]);
+      #endif
   }
 
   buffers[0][0] = {0};
   buffers[1][0] = {0};
 }
 
-bool WAVFileWriter::set_file_handle(FILE *fp){
+bool WAVFileWriter::set_file_handle(FILE *fp) {
     m_fp = fp;
-  
-  if(m_fp == nullptr){
+
+  if (m_fp == nullptr) {
     ESP_LOGE(TAG, "File pointer is NULL");
     return false;
   }
@@ -79,12 +94,20 @@ WAVFileWriter::~WAVFileWriter(){
 
   if (buffers[0] != NULL)
   {
+    #ifdef WAV_BUFFER_IN_PSRAM
       heap_caps_free(buffers[0]);
+    #else
+      free(buffers[0]);
+    #endif
   }
   
   if (buffers[1] != NULL)
   {
+    #ifdef WAV_BUFFER_IN_PSRAM
       heap_caps_free(buffers[1]);
+    #else
+      free(buffers[1]);
+    #endif
   }
 }
 

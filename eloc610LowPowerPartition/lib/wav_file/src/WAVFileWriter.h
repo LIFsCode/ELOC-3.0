@@ -9,6 +9,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "../../../src/project_config.h"
+
+extern TaskHandle_t i2s_TaskHandler;
+
 class WAVFileWriter
 {
  public:

@@ -5,6 +5,7 @@
 #include "../../../include/ei_inference.h"
 #include "../../../src/project_config.h"
 
+extern TaskHandle_t i2s_TaskHandler;
 class I2SMEMSSampler : public I2SSampler
 {
 private:
@@ -44,7 +45,7 @@ private:
      * @brief Read I2S samples from DMA buffer
      * @return The number of SAMPLES (i.e. not bytes) read
     */
-    virtual int read();
+    int read() override;
 
     /**
      * 
@@ -56,10 +57,10 @@ private:
     */
     static void start_read_thread_wrapper(void * _this);
 
-protected:
-    bool configureI2S();
+ protected:
+    bool configureI2S() override;
 
-public:
+ public:
     I2SMEMSSampler(
         i2s_port_t i2s_port,
         i2s_pin_config_t &i2s_pins,
@@ -83,7 +84,7 @@ public:
      * @note This is only required for TX (i.e. recording)
      * @return true on success
     */
-    virtual bool zero_dma_buffer(i2s_port_t i2sPort);
+    bool zero_dma_buffer(i2s_port_t i2sPort) override;
 
     /**
      * @brief Register an external WAVFileWriter

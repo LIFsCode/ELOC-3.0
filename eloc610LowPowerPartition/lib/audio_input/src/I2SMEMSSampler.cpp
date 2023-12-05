@@ -30,13 +30,10 @@ I2SMEMSSampler::I2SMEMSSampler (
         ESP_LOGI(TAG, "mListenOnly = %d", mListenOnly);
         ESP_LOGI(TAG, "m_fixSPH0645 = %d", m_fixSPH0645);
     }
-
 }
 
-bool I2SMEMSSampler::configureI2S()
-{
-    if (m_fixSPH0645)
-    {
+bool I2SMEMSSampler::configureI2S() {
+    if (m_fixSPH0645) {
         // Undocumented (?!) manipulation of I2S peripheral registers
         // to fix MSB timing issues with some I2S microphones
         REG_SET_BIT(I2S_TIMING_REG(m_i2sPort), BIT(9));
@@ -45,50 +42,45 @@ bool I2SMEMSSampler::configureI2S()
 
     auto ret = i2s_set_pin(m_i2sPort, &m_i2sPins);
 
-    if (ret != ESP_OK){
+    if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Func: %s, error i2s_set_pin", __func__);
     }
 
     return ret;
 }
 
-bool I2SMEMSSampler::zero_dma_buffer(i2s_port_t i2sPort)
-{
+bool I2SMEMSSampler::zero_dma_buffer(i2s_port_t i2sPort) {
     auto ret = i2s_zero_dma_buffer((i2s_port_t) i2sPort);
 
-    if (ret != ESP_OK)
-    {
+    if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Func: %s, i2s_zero_dma_buffer", __func__);
     }
 
     return ret;
 }
 
-bool I2SMEMSSampler::register_wavFileWriter(WAVFileWriter *ext_writer){
-
+bool I2SMEMSSampler::register_wavFileWriter(WAVFileWriter *ext_writer) {
     writer = ext_writer;
 
-    if (writer == nullptr){
+    if (writer == nullptr) {
         ESP_LOGE(TAG, "register_wavFileWriter() - WAVFileWriter not registered");
         return false;
-    }else{
+    } else {
         return true;
     }
 }
 
-bool I2SMEMSSampler::deregister_wavFileWriter(){
-
-    if (writer == nullptr){
+bool I2SMEMSSampler::deregister_wavFileWriter() {
+    if (writer == nullptr) {
         ESP_LOGE(TAG, "deregister_wavFileWriter() - WAVFileWriter not previously registered");
         return false;
-    }else{
+    } else {
         writer = nullptr;
         return true;
     }
-
 }
 
-bool I2SMEMSSampler::register_ei_inference(inference_t *ext_inference, int ext_ei_sampling_freq){
+bool I2SMEMSSampler::register_ei_inference(inference_t *ext_inference, int ext_ei_sampling_freq) {
 
     ESP_LOGV(TAG, "Func: %s", __func__);
 
@@ -107,7 +99,7 @@ int I2SMEMSSampler::read()
 
     #ifdef ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
         // Automatic gain defintions
-        #define LAST_GAIN_INCREASE_THD 30   // How often can gain be increased? 
+        #define LAST_GAIN_INCREASE_THD 30   // How often can gain be increased?
         #define SAMPLE_HIGH_COUNT 0.1       // % of samples before gain is decreased
         #define SAMPLE_LOW_COUNT 0.5        // % of samples before gain is increased
         #define SAMPLE_HIGH_LEVEL_THD 0.95  // SAMPLE_HIGH_COUNT reach/ exceed this volume -> decrease gain
@@ -256,10 +248,6 @@ int I2SMEMSSampler::read()
             #endif
 
             if (writer != nullptr) {
-                /*
-                 * @warning If writer == nullptr (file not created) these buffers won't exist!
-                 */ 
-
                 // Store into wav file buffer
                 writer->buffers[writer->buf_select][writer->buf_count++] = processed_sample_16bit;
 
@@ -275,6 +263,10 @@ int I2SMEMSSampler::read()
                     writer->buf_ready = 1;
 
                     // Note: Trying to write to SD card here causes poor performance
+
+                    // Wake up the write thread
+                    if (i2s_TaskHandler != NULL)
+                        xTaskNotify(i2s_TaskHandler, (0), eNoAction);
                 }
             }
 
@@ -282,7 +274,6 @@ int I2SMEMSSampler::read()
 
             // Check buffer exists
             if (inference->buffers[inference->buf_select] != nullptr) {
-
                 // Store into edge-impulse buffer taking into requirement to skip if necessary
                 if (skip_current >= ei_skip_rate) {
                     ESP_LOGV(TAG, "Saving sample, skip_current = %d", skip_current);
@@ -408,7 +399,7 @@ void I2SMEMSSampler::start_read_thread()
         auto samples_read = this->read();
 
         if (samples_read != i2s_samples_to_read) {
-        ESP_LOGW(TAG, "samples_read = %d, i2s_samples_to_read = %d", samples_read, i2s_samples_to_read);
+            ESP_LOGW(TAG, "samples_read = %d, i2s_samples_to_read = %d", samples_read, i2s_samples_to_read);
         }
     }
 

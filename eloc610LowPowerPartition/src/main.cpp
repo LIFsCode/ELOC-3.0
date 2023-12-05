@@ -67,12 +67,12 @@
 
     EdgeImpulse *edgeImpulse = nullptr;
 
-    //BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers
+    // BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers
     //       but all EdgeImpulse stuff got encapsulated within a class, which does not match
     int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
        return edgeImpulse->microphone_audio_signal_get_data(offset, length, out_ptr);
     }
-     
+
 #endif
 
 static const char *TAG = "main";
@@ -83,7 +83,7 @@ bool gMountedSDCard = false;
  * @brief Should inference be run on sound samples? 
  * @todo Set from Bluetooth / config file
  */
-bool ai_run_enable = true;      
+bool ai_run_enable = true;
 
 /**
  * @brief The size of the buffer for I2SMEMSampler to store the sound samples
@@ -120,6 +120,7 @@ I2SMEMSSampler *input = nullptr;
 WAVFileWriter *wav_writer = nullptr;
 QueueHandle_t rec_req_evt_queue = nullptr;  // wav recording queue
 QueueHandle_t rec_ai_evt_queue = nullptr;   // AI inference queue
+TaskHandle_t i2s_TaskHandler = nullptr;     // Task handler from I2S to wav writer & AI inference
 
 void writeSettings(String settings);
 void doDeepSleep();
@@ -881,6 +882,7 @@ void app_main(void)
     rec_ai_evt_queue = xQueueCreate(10, sizeof(bool));
     xQueueReset(rec_ai_evt_queue);
 
+
     ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
 
     ESP_LOGI(TAG, "Creating Bluetooth  task...");
@@ -1046,9 +1048,10 @@ void app_main(void)
             }
 
             //Populate gSessionIdentifier for wav filename
+            // TODO: Should only be created on first recording
             createSessionFolder();
 
-            // TODO: DEBUG - should be set from Bletooth config
+            // TODO: DEBUG - should be set from Bluetooth config
             wav_writer->set_mode(WAVFileWriter::Mode::disabled);
         }
         else

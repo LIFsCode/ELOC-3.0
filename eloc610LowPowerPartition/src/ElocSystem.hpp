@@ -53,6 +53,22 @@ class StatusLED;
 
 class ElocSystem
 {
+public:
+    typedef struct Status_t {
+        bool btEnabled;
+        bool btConnected;
+        int recMode;
+        bool sdCardMounted;
+        bool batteryLow;
+        inline bool operator==(const Status_t& rhs) const
+        {
+            return ((this->btEnabled == rhs.btEnabled) &&
+                    (this->btConnected == rhs.btConnected) &&
+                    (this->recMode == rhs.recMode) &&
+                    (this->sdCardMounted == rhs.sdCardMounted) &&
+                    (this->batteryLow == rhs.batteryLow));
+        }
+    }Status_t;
 private:
     /* data */
     ElocSystem();
@@ -61,6 +77,8 @@ private:
     LIS3DH* mLis3DH;
     StatusLED* mStatusLed;
     StatusLED* mBatteryLed;
+
+    Status_t mStatus;
 
     struct factoryInfo_t {
         uint16_t hw_gen;
@@ -116,6 +134,8 @@ public:
     /// @brief Configures the Power Management based on the ElocConfig
     /// @return ESP_OK on success, error code otherwise
     esp_err_t pm_configure();
+
+    esp_err_t handleSystemStatus(bool btEnabled, bool btConnected, int recordMode);
 };
 
 

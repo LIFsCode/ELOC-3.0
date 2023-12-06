@@ -29,8 +29,13 @@
 #include <driver/rtc_io.h>
 
 #include "config.h"
+#include "SDCardSDIO.h"
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
+#include "Battery.hpp"
+
+//TODO move sd card into ELOC system
+extern SDCardSDIO *sd_card;
 
 
 static const char *TAG = "ElocSystem";
@@ -75,14 +80,14 @@ public:
         mCurrentState = initial;
         mStartedMs = millis();
         mPeriodStartMs = mStartedMs;
-        ESP_LOGI(TAG, "%s: mOnDurationMs %d, mOffDurationMs %d, mDurationMs=%d", mName, mOnDurationMs, mOffDurationMs, mDurationMs);
+        ESP_LOGV(TAG, "%s: mOnDurationMs %d, mOffDurationMs %d, mDurationMs=%d", mName, mOnDurationMs, mOffDurationMs, mDurationMs);
         return mIOExpInstance.setOutputBit(mIObit, mCurrentState);
     }
     esp_err_t setBlinkingPeriodic(uint32_t onMs, uint32_t offMs, int32_t durationMs, uint32_t repeats) {
         mIsRepeating = true;
         mRepeats = repeats*2; // double the repeats for high low period
         mRepeatCnt = 0;
-        ESP_LOGI(TAG, "%s: Repeated mode %d repeats", mName, mRepeats);
+        ESP_LOGV(TAG, "%s: Repeated mode %d repeats", mName, mRepeats);
         return setBlinking(false, onMs, offMs, durationMs);
     }
 
@@ -90,14 +95,12 @@ public:
         if(mIsBlinking) {
             if (millis() - mStartedMs >= mDurationMs) {
                 if (mIsRepeating) {
-                    ESP_LOGI(TAG, "%s: repeatint pattern", mName);
                     mStartedMs = millis();
                     mPeriodStartMs = mStartedMs;
                     mRepeatCnt = 0;
                 }
                 else {
                     mIsBlinking = false;
-                    ESP_LOGI(TAG, "%s: stop blinking", mName);
                     return mIOExpInstance.setOutputBit(mIObit, false);
                 }
             }
@@ -108,7 +111,6 @@ public:
                     if (mRepeatCnt == mRepeats) {
                         // if we already repeated the required times i
                         mCurrentState = false;
-                        ESP_LOGI(TAG, "%s: waiting for repeat", mName);
                         return mIOExpInstance.setOutputBit(mIObit, false);
                     }
                     else if (mRepeatCnt >= mRepeats) {
@@ -213,6 +215,18 @@ ElocSystem::ElocSystem():
                 ESP_LOGI(TAG, "Temperature: %d °C", lis3dh.lis3dh_get_temperature());
             }
         }
+
+        mStatusLed = new StatusLED(*mIOExpInstance, ELOC_IOEXP::LED_STATUS, "StatusLED");
+        if (!mStatusLed) {
+            ESP_LOGE(TAG, "Failed to create status LED!");
+        }
+        mBatteryLed = new StatusLED(*mIOExpInstance, ELOC_IOEXP::LED_BATTERY, "BatteryLED");
+        if (!mBatteryLed) {
+            ESP_LOGE(TAG, "Failed to create battery LED!");
+        }
+
+        mBatteryLed->setBlinking(true, 500, 500, -1);
+        mStatusLed->setBlinking(true, 500, 500, -1);
     }
 
 
@@ -278,5 +292,57 @@ esp_err_t ElocSystem::pm_configure() {
         ESP_LOGE(TAG, "Failed to set PM config with %s", esp_err_to_name(err));
         return err;
     }
+    return ESP_OK;
+}
+
+esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected, int recordMode) {
+
+    Status_t status;
+    status.batteryLow = Battery::GetInstance().isLow();
+    status.btEnabled = btEnabled;
+    status.btConnected = btConnected;
+    status.recMode = recordMode;
+    status.sdCardMounted = sd_card->isMounted();
+    if (mStatus == status) {
+        if (esp_err_t err = mStatusLed->update()) {
+            ESP_LOGE(TAG, "mStatusLed->update() failed with %s", esp_err_to_name(err));
+        }
+        if (esp_err_t err = mBatteryLed->update()) {
+            ESP_LOGE(TAG, "mBatteryLed->update() failed with %s", esp_err_to_name(err));
+        }
+    }
+    else {
+        if (status.batteryLow) {
+            mStatusLed->setBlinkingPeriodic(50, 100, 5*1000, 3);
+            mBatteryLed->setBlinkingPeriodic(50, 100, 5*1000, 3);
+            ESP_LOGW(TAG, "Battery Low detected!");
+        }
+        else if (!status.sdCardMounted) {
+            mStatusLed->setBlinkingPeriodic(50, 100, 1*1000, 5);
+            mBatteryLed->setBlinkingPeriodic(50, 100, 1*1000, 5);
+            ESP_LOGW(TAG, "SD Card not mounted!");
+        }
+        //TODO: not yet implemented Record & detection evaluation
+        // else if (status.recMode != 0) {
+        //     mStatusLed->setBlinking(true, 100, 900, 30*1000);
+        //     mBatteryLed->setState(false);
+        // }
+        else if (status.btConnected) {
+            mStatusLed->setState(true);
+            mBatteryLed->setState(true);
+        }
+        else if (status.btEnabled) {
+            mStatusLed->setState(true);
+            mBatteryLed->setState(false);
+        }
+        else {
+            // off else wise: TODO: check if this is intended behavior
+            mStatusLed->setState(false);
+            mBatteryLed->setState(false);
+        }
+    }
+
+    mStatus = status;
+
     return ESP_OK;
 }

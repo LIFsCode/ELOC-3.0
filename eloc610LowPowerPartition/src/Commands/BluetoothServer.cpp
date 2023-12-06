@@ -294,6 +294,8 @@ void wakeup_task (void *pvParameters)
                 }
             }
         }
+        int recordMode = (wav_writer != nullptr) ? wav_writer->get_mode_int() : 0;
+        ElocSystem::GetInstance().handleSystemStatus(gBluetoothEnabled, SerialBT.connected(), recordMode);
 
         if (gBluetoothEnabled) {
             wait_for_bt_command();

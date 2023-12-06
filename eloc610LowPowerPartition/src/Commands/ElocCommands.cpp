@@ -282,14 +282,14 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
             wav_writer->set_mode(WAVFileWriter::Mode::disabled);
         }
         else if (!strcasecmp(req_mode, "recordOnEvent")) {
-            new_mode = "recordOnEvent";     
+            new_mode = "recordOnEvent";
             new_ai_mode = true;    //<-- Must be on for recording to be triggered
             ai_mode_change = true;
             wav_writer->set_mode(WAVFileWriter::Mode::single);
         }
-        else if (!strcasecmp(req_mode, "recordOn_DetectOff")) {
-            new_mode = "recordOn_DetectOff";
-            new_ai_mode = false;
+        else if (!strcasecmp(req_mode, "recordOn_DetectOn")) {
+            new_mode = "recordOn_DetectOn";
+            new_ai_mode = true;
             ai_mode_change = true;
             wav_writer->set_mode(WAVFileWriter::Mode::continuous);
         }

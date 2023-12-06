@@ -101,7 +101,7 @@ with open(partition_file) as csv_file:
             nvs_base = row[3]
             nvs_size = row[4]
         if (row[0] == "partition0"):
-            print(f'NVS base: {row[3]}')
+            print(f'partition0 base: {row[3]}')
             partition_base = row[3]
     subprocess.call([get_python_exe(), nvs_tool,'generate', 'nvs.csv','.pio/build/esp32dev/nvs.bin', nvs_size])
     print("NVS generated successuflly")

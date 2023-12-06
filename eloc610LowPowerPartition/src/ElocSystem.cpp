@@ -35,6 +35,98 @@
 
 static const char *TAG = "ElocSystem";
 
+class StatusLED
+{
+private:
+    ELOC_IOEXP& mIOExpInstance;
+    uint32_t mIObit;
+    int32_t mDurationMs;
+    uint32_t mOnDurationMs;
+    uint32_t mOffDurationMs;
+    uint32_t mRepeats;
+    uint32_t mRepeatCnt;
+    bool mIsBlinking;
+    bool mIsRepeating;
+
+    uint32_t mStartedMs;
+    uint32_t mPeriodStartMs;    
+    bool mCurrentState;
+    const char* mName;
+public:
+
+    StatusLED(ELOC_IOEXP& IOExpInstance, uint32_t bit, const char* name ="") :
+        mIOExpInstance(IOExpInstance), mIObit(bit),
+        mDurationMs(-1), mOnDurationMs(0), mOffDurationMs(0), mRepeats(0),mRepeatCnt(0),
+        mIsBlinking(false), mIsRepeating(false), mStartedMs(0), mPeriodStartMs(0), mName(name) {
+    }
+    virtual ~StatusLED() {};
+
+    esp_err_t  setState(bool val) {
+        mDurationMs = -1;
+        mIsBlinking = false;
+        mIsRepeating = false;
+        return mIOExpInstance.setOutputBit(mIObit, val);
+    }
+    esp_err_t setBlinking(bool initial, uint32_t onMs, uint32_t offMs, int32_t durationMs) {
+        mIsBlinking = true;
+        mOnDurationMs = onMs;
+        mOffDurationMs = offMs;
+        mDurationMs = durationMs;
+        mCurrentState = initial;
+        mStartedMs = millis();
+        mPeriodStartMs = mStartedMs;
+        ESP_LOGI(TAG, "%s: mOnDurationMs %d, mOffDurationMs %d, mDurationMs=%d", mName, mOnDurationMs, mOffDurationMs, mDurationMs);
+        return mIOExpInstance.setOutputBit(mIObit, mCurrentState);
+    }
+    esp_err_t setBlinkingPeriodic(uint32_t onMs, uint32_t offMs, int32_t durationMs, uint32_t repeats) {
+        mIsRepeating = true;
+        mRepeats = repeats*2; // double the repeats for high low period
+        mRepeatCnt = 0;
+        ESP_LOGI(TAG, "%s: Repeated mode %d repeats", mName, mRepeats);
+        return setBlinking(false, onMs, offMs, durationMs);
+    }
+
+    esp_err_t update() {
+        if(mIsBlinking) {
+            if (millis() - mStartedMs >= mDurationMs) {
+                if (mIsRepeating) {
+                    ESP_LOGI(TAG, "%s: repeatint pattern", mName);
+                    mStartedMs = millis();
+                    mPeriodStartMs = mStartedMs;
+                    mRepeatCnt = 0;
+                }
+                else {
+                    mIsBlinking = false;
+                    ESP_LOGI(TAG, "%s: stop blinking", mName);
+                    return mIOExpInstance.setOutputBit(mIObit, false);
+                }
+            }
+            uint32_t periodLimit = mCurrentState ? mOnDurationMs : mOffDurationMs;
+            if (millis() - mPeriodStartMs >= periodLimit) {
+                if (mIsRepeating) {
+                    mRepeatCnt++;
+                    if (mRepeatCnt == mRepeats) {
+                        // if we already repeated the required times i
+                        mCurrentState = false;
+                        ESP_LOGI(TAG, "%s: waiting for repeat", mName);
+                        return mIOExpInstance.setOutputBit(mIObit, false);
+                    }
+                    else if (mRepeatCnt >= mRepeats) {
+                        return ESP_OK; // idle until mDurationMs expires
+                    }
+                }
+                mPeriodStartMs = millis();
+                mCurrentState = !mCurrentState;
+                return mIOExpInstance.setOutputBit(mIObit, mCurrentState);
+            }
+        }
+        return ESP_OK; 
+    }
+};
+
+
+
+
 ElocSystem::ElocSystem():
     mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mFactoryInfo()
 {

@@ -49,6 +49,8 @@ extern QueueHandle_t rec_req_evt_queue;
 extern QueueHandle_t rec_ai_evt_queue;
 extern bool ai_run_enable;
 
+class StatusLED;
+
 class ElocSystem
 {
 private:
@@ -57,6 +59,8 @@ private:
     CPPI2C::I2c* mI2CInstance;
     ELOC_IOEXP* mIOExpInstance;
     LIS3DH* mLis3DH;
+    StatusLED* mStatusLed;
+    StatusLED* mBatteryLed;
 
     struct factoryInfo_t {
         uint16_t hw_gen;

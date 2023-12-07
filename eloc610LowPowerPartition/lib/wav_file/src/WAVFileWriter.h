@@ -12,6 +12,11 @@
 
 extern TaskHandle_t i2s_TaskHandler;
 
+#ifndef WAV_BUFFER_IN_PSRAM
+  static const size_t wav_static_buffer_size = (static_cast<int>(6000 * 2/512)) * 512;
+  static signed short wav_static_buffers[2][wav_static_buffer_size];
+#endif
+
 class WAVFileWriter
 {
  public:
@@ -70,8 +75,14 @@ class WAVFileWriter
    *     The buffer_size_in_samples is calculated as follows (this is a sensible default):
    *     =  int((sample_rate * buffer_time) / 512) * 512;
    */
-  size_t buffer_size_in_samples = (int(16000 * 2/512)) * 512;
-  signed short *buffers[2];
+
+  #ifdef WAV_BUFFER_IN_PSRAM
+    size_t buffer_size_in_samples = (int(16000 * 2/512)) * 512;
+    signed short *buffers[2];
+  #else
+    size_t buffer_size_in_samples = wav_static_buffer_size;
+    signed short *buffers[2];
+  #endif
 
   /**
    * @brief Construct a new WAVFileWriter object

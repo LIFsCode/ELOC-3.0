@@ -203,10 +203,11 @@
 
 /////////////////////////////////// Memory Related configurations ///////////////////////////////////
 
-// Place buffers in PSRAM, otherwise in RAM
-// Possible power savings & performance improvement
-#define I2S_BUFFER_IN_PSRAM
-#define WAV_BUFFER_IN_PSRAM     // too big to fit in RAM??
+// Place buffers in PSRAM? Otherwise stored in RAM
+// Storing in PSRAM appears to be significantly slower & hence power hungry
+
+// #define I2S_BUFFER_IN_PSRAM
+// #define WAV_BUFFER_IN_PSRAM     // too big to fit in RAM??
 #define EI_BUFFER_IN_PSRAM
 
 #endif  // _PROJECT_CONFIG_H_

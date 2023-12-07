@@ -20,17 +20,18 @@ WAVFileWriter::WAVFileWriter(int sample_rate, int buffer_time, int ch_count /*=1
   buf_select = 0;
   buf_count = 0;
 
-  // Make buffer size a multiple of 512
-  buffer_size_in_samples = int((sample_rate * buffer_time) / 512) * 512;
-
-  ESP_LOGI(TAG, "buffer_size = %d", buffer_size_in_samples);
-
   #ifdef WAV_BUFFER_IN_PSRAM
+    // Make buffer size a multiple of 512
+    buffer_size_in_samples = int((sample_rate * buffer_time) / 512) * 512;
+
     ESP_LOGI(TAG, "Allocating buffers in PSRAM");
     buffers[0] = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
   #else
     ESP_LOGI(TAG, "Allocating buffers in RAM");
-    buffers[0] = (int16_t *)malloc(buffer_size_in_samples * sizeof(int16_t));
+    buffer_size_in_samples = wav_static_buffer_size;
+    // buffers[0] = (int16_t *)malloc(buffer_size_in_samples * sizeof(int16_t));
+    // buffers[0] = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_INTERNAL);
+    buffers[0] = wav_static_buffers[0];
   #endif
 
   if (buffers[0] == NULL) {
@@ -40,7 +41,9 @@ WAVFileWriter::WAVFileWriter(int sample_rate, int buffer_time, int ch_count /*=1
   #ifdef WAV_BUFFER_IN_PSRAM
     buffers[1] = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
   #else
-    buffers[1] = (int16_t *)malloc(buffer_size_in_samples * sizeof(int16_t));
+    // buffers[1] = (int16_t *)malloc(buffer_size_in_samples * sizeof(int16_t));
+    // buffers[1] = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_INTERNAL);
+    buffers[1] = wav_static_buffers[1];
   #endif
 
   if (buffers[1] == NULL) {
@@ -212,7 +215,6 @@ void WAVFileWriter::start_wav_writer_wrapper(void * _this) {
 }
 
 int WAVFileWriter::start_wav_write_task(int secondsPerFile) {
-
   ESP_LOGV(TAG, "Func: %s, secondsPerFile = %d", __func__, secondsPerFile);
 
   if (secondsPerFile <= 0) {
@@ -224,6 +226,11 @@ int WAVFileWriter::start_wav_write_task(int secondsPerFile) {
 
   int ret = xTaskCreate(this->start_wav_writer_wrapper, "wav_file_writer", 1024 * 4, this, 8, &i2s_TaskHandler);
 
-  return ret;
+  if (ret != pdPASS) {
+    ESP_LOGE(TAG, "Failed to create wav file writer task");
+    return -1;
+  }
+
+  return 0;
 }
 

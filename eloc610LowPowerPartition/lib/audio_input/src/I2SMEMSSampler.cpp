@@ -139,7 +139,9 @@ int I2SMEMSSampler::read()
     #ifdef I2S_BUFFER_IN_PSRAM
         int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * i2s_samples_to_read), MALLOC_CAP_SPIRAM);
     #else
-        int32_t *raw_samples = (int32_t *)malloc((sizeof(int32_t) * i2s_samples_to_read));
+        // Use MALLOC_CAP_DMA to allocate in DMA-able memory
+        // MALLOC_CAP_32BIT to allocate in 32-bit aligned memory
+        int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * i2s_samples_to_read), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     #endif
 
     if (raw_samples == NULL) {

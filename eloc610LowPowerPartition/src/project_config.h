@@ -207,7 +207,7 @@
 // Storing in PSRAM appears to be significantly slower & hence power hungry
 
 // #define I2S_BUFFER_IN_PSRAM
-// #define WAV_BUFFER_IN_PSRAM     // too big to fit in RAM??
+// #define WAV_BUFFER_IN_PSRAM
 #define EI_BUFFER_IN_PSRAM
 
 #endif  // _PROJECT_CONFIG_H_

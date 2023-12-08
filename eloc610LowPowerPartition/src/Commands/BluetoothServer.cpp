@@ -194,16 +194,16 @@ void wait_for_bt_command() {
 
     String serialIN;
 
-    if (    wav_writer != nullptr &&
-            wav_writer->get_mode() != WAVFileWriter::Mode::disabled && 
+    if (    wav_writer &&
+            wav_writer.get_mode() != WAVFileWriter::Mode::disabled &&
             !getConfig().bluetoothEnableDuringRecord) {
         btwrite("recording");
-        btwrite("");btwrite("");
+        btwrite(""); btwrite("");
         btwrite("ELOC will disconnect. USE button to stop recording.");
 
-        btwrite("");btwrite("");
+        btwrite(""); btwrite("");
         vTaskDelay(pdMS_TO_TICKS(300));
-        //disable bluetooth
+        // disable bluetooth
         disableBluetooth();
         return;
     }

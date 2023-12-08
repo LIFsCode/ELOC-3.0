@@ -23,6 +23,14 @@ class WAVFileWriter
  public:
   enum class Mode { disabled = 0, single = 1, continuous = 2 };
 
+  /**
+   * @brief Use to check if object is instantiated
+   * 
+   * @return true object is instantiated
+   * @return false 
+   */
+  explicit operator bool() const {return true; }
+
  private:
   u_int32_t m_file_size;              // Size of wav file in bytes
   FILE *m_fp = nullptr;               // pointer to wav file
@@ -87,11 +95,16 @@ class WAVFileWriter
 
   /**
    * @brief Construct a new WAVFileWriter object
+   */
+  WAVFileWriter();
+
+  /**
+   * @brief Construct a new WAVFileWriter object
    * @param sample_rate I2S sample rate
    * @param buffer_time Buffer size required (seconds) 
    * @param ch_count number of channels
    */
-  WAVFileWriter(int sample_rate, int buffer_time, int ch_count = 1);
+  bool initialize(int sample_rate, int buffer_time, int ch_count = 1);
 
   /**
    * @brief Register a file to write to & write header

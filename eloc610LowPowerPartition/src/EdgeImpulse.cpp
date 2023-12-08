@@ -108,8 +108,8 @@ bool EdgeImpulse::microphone_inference_record(void)
     while (inference.buf_ready == 0)
     {
         // NOTE: Trying to write audio out here seems to leads to poor audio performance?
-        // if(wav_writer->buf_ready == 1){
-        //   wav_writer->write();
+        // if(wav_writer.buf_ready == 1){
+        //   wav_writer.write();
         // }
         // else
         // {

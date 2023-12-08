@@ -40,7 +40,7 @@ ENUM_MACRO (RecState, IDLE, RECORDING);
 
 
 /* Recording specific status indicators */
-extern WAVFileWriter *wav_writer;
+extern WAVFileWriter wav_writer;
 
 extern int64_t gTotalUPTimeSinceReboot;  //esp_timer_get_time returns 64-bit time since startup, in microseconds.
 extern int64_t gTotalRecordTimeSinceReboot;

@@ -117,7 +117,7 @@ uint32_t gFreeSpaceKB = 0;
 #endif
 
 I2SMEMSSampler *input = nullptr;
-WAVFileWriter *wav_writer = nullptr;
+WAVFileWriter wav_writer;
 QueueHandle_t rec_req_evt_queue = nullptr;  // wav recording queue
 QueueHandle_t rec_ai_evt_queue = nullptr;   // AI inference queue
 TaskHandle_t i2s_TaskHandler = nullptr;     // Task handler from I2S to wav writer & AI inference
@@ -261,21 +261,21 @@ int64_t getSystemTimeMS()
  */
 static void IRAM_ATTR buttonISR(void *args)
 {
-    if (wav_writer == nullptr) {
+    if (!wav_writer) {
         return;
     }
-        
-    if(wav_writer->get_mode() == WAVFileWriter::Mode::disabled){
-        wav_writer->set_mode(WAVFileWriter::Mode::continuous);
+
+    if (wav_writer.get_mode() == WAVFileWriter::Mode::disabled) {
+        wav_writer.set_mode(WAVFileWriter::Mode::continuous);
     } else {
-        wav_writer->set_mode(WAVFileWriter::Mode::disabled);
+        wav_writer.set_mode(WAVFileWriter::Mode::disabled);
     }
 
     /**
      * Any point in send this command via the queue instead?
      */
 
-    //xQueueSendFromISR(rec_req_evt_queue, &mode, (TickType_t)0);
+    // xQueueSendFromISR(rec_req_evt_queue, &mode, (TickType_t)0);
 }
 
 static void LEDflashError() {
@@ -477,11 +477,11 @@ String getProperDateTime()
 
 void doDeepSleep()
 {
-    esp_sleep_enable_ext0_wakeup(GPIO_BUTTON, 0); // try commenting this out
+    esp_sleep_enable_ext0_wakeup(GPIO_BUTTON, 0);  // try commenting this out
 
     // printf("Going to sleep now");
     delay(2000);
-    esp_deep_sleep_start(); // change to deep?
+    esp_deep_sleep_start();  // change to deep?
 
     // printf("OK button was pressed.waking up");
     delay(2000);
@@ -517,7 +517,6 @@ bool mountSDCard()
 }
 
 esp_err_t checkSDCard() {
-
     if (!gMountedSDCard) {
         // in case SD card is not yet mounted, mout it now, e.g. not inserted durint boot
         if (!mountSDCard()) {
@@ -542,15 +541,20 @@ void saveStatusToSD()
 
     sendstring = sendstring + "Session ID:  " + gSessionIdentifier + "\n";
 
-    sendstring = sendstring + "Session Start Time:  " + String(timeObject.getYear()) + "-" + String(timeObject.getMonth()) + "-" +
-                 String(timeObject.getDay()) + " " + String(timeObject.getHour(true)) + ":" + String(timeObject.getMinute()) + ":" +
+    sendstring = sendstring + "Session Start Time:  " +
+                 String(timeObject.getYear()) + "-" +
+                 String(timeObject.getMonth()) + "-" +
+                 String(timeObject.getDay()) + " " +
+                 String(timeObject.getHour(true)) + ":" +
+                 String(timeObject.getMinute()) + ":" +
                  String(timeObject.getSecond()) + "\n";
 
-    sendstring = sendstring + "Firmware Version:  " + gFirmwareVersion + "\n"; // firmware
+    sendstring = sendstring + "Firmware Version:  " + gFirmwareVersion + "\n";  // firmware
 
-    sendstring = sendstring + "File Header:  " + getDeviceInfo().fileHeader + "\n"; // file header
+    sendstring = sendstring + "File Header:  " + getDeviceInfo().fileHeader + "\n";  // file header
 
-    sendstring = sendstring + "Bluetooth on when Record?:   " + (getConfig().bluetoothEnableDuringRecord ? "on" : "off") + "\n";
+    sendstring = sendstring + "Bluetooth on when Record?:   " +
+                (getConfig().bluetoothEnableDuringRecord ? "on" : "off") + "\n";
 
     sendstring = sendstring + "Sample Rate:  "      + String(getMicInfo().MicSampleRate) + "\n";
     sendstring = sendstring + "Seconds Per File:  " + String(getConfig().secondsPerFile) + "\n";
@@ -585,12 +589,11 @@ void saveStatusToSD()
  * TODO: Confirm the priority of the configuration sources??
  * @return i2s_config_t
  */
-i2s_config_t getI2sConfig()
-{
+i2s_config_t getI2sConfig() {
     i2s_mic_Config.sample_rate = getMicInfo().MicSampleRate;
-    i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL; // not getting set. getConfig().MicUseAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
-    if (i2s_mic_Config.sample_rate == 0)
-    {
+    // not getting set. getConfig().MicUseAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
+    i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL;
+    if (i2s_mic_Config.sample_rate == 0) {
         ESP_LOGI(TAG, "Resetting invalid sample rate to default = %d", I2S_DEFAULT_SAMPLE_RATE);
         i2s_mic_Config.sample_rate = I2S_DEFAULT_SAMPLE_RATE;
     }
@@ -599,7 +602,7 @@ i2s_config_t getI2sConfig()
     return i2s_mic_Config;
 }
 
-void start_sound_recording(FILE *fp){
+void start_sound_recording(FILE *fp) {
     /**
      * @note The file pointer is set to nullptr in the wav_writer class
      *       but this is not reflected in the fp variable here
@@ -609,7 +612,7 @@ void start_sound_recording(FILE *fp){
 
     // TODO: set this as not recording in WAVFileWriter.cpp::finish()
     // gRecording=RecState::RECORDING;
-    
+
     fp = nullptr;
 
     char file_name[100];
@@ -617,22 +620,18 @@ void start_sound_recording(FILE *fp){
     createFilename(file_name, sizeof(file_name));
     fp = fopen(file_name, "wb");
 
-    if (fp == nullptr)
-    {
+    if (fp == nullptr) {
         ESP_LOGE(TAG, "Failed to open file for writing");
         return;
-    }
-    else
-    {
-        if (wav_writer->set_file_handle(fp) == false){
+    } else {
+        if (wav_writer.set_file_handle(fp) == false) {
             ESP_LOGE(TAG, "Failed to set file handle");
             return;
         }
-        wav_writer->set_enable_wav_file_write(true);
+        wav_writer.set_enable_wav_file_write(true);
         // Start thread to continuously write to wav file & when sufficient data is collected finish the file
-        wav_writer->start_wav_write_task(getConfig().secondsPerFile);
+        wav_writer.start_wav_write_task(getConfig().secondsPerFile);
     }
-
 }
 
 #ifdef EDGE_IMPULSE_ENABLED
@@ -720,11 +719,9 @@ int create_inference_result_file_SD(String f_name)
  */
 int save_inference_result_SD(String f_name, String results_string)
 {
-
     FILE *fp = fopen(f_name.c_str(), FILE_APPEND);
 
-    if (!fp)
-    {
+    if (!fp) {
         ESP_LOGE(TAG, "Failed to open file for writing");
         return -1;
     }
@@ -743,12 +740,11 @@ int save_inference_result_SD(String f_name, String results_string)
 
 void app_main(void)
 {
-
     ESP_LOGI(TAG, "\nSETUP--start\n");
     initArduino();
     ESP_LOGI(TAG, "initArduino done");
 
-    printPartitionInfo(); // so if reboots, always boot into the bluetooth partition
+    printPartitionInfo();  // So if reboots, always boot into the bluetooth partition
 
     ESP_LOGI(TAG, "\n"
                   "------------------------- ELOC Recorder -------------------------\n"
@@ -789,7 +785,7 @@ void app_main(void)
     gpio_set_pull_mode(PIN_NUM_CS, GPIO_PULLUP_ONLY);
 
     // new
-    gpio_set_direction(GPIO_BUTTON, GPIO_MODE_INPUT); //
+    gpio_set_direction(GPIO_BUTTON, GPIO_MODE_INPUT);
     gpio_set_pull_mode(GPIO_BUTTON, GPIO_PULLUP_ONLY);
     // end new
     gpio_sleep_sel_dis(GPIO_BUTTON);
@@ -820,7 +816,7 @@ void app_main(void)
     gpio_sleep_sel_dis(PIN_NUM_MOSI);
     gpio_sleep_sel_dis(PIN_NUM_CS);
 
-    gpio_set_direction(GPIO_BUTTON, GPIO_MODE_INPUT); //
+    gpio_set_direction(GPIO_BUTTON, GPIO_MODE_INPUT);
     gpio_set_pull_mode(GPIO_BUTTON, GPIO_PULLUP_ONLY);
     gpio_set_intr_type(GPIO_BUTTON, GPIO_INTR_POSEDGE);
     gpio_sleep_sel_dis(GPIO_BUTTON);
@@ -860,14 +856,12 @@ void app_main(void)
 
     readConfig();
 
-    // TODO: BUGME: Crash when writing to wav & log file simultaneously?
-
-    //setup persistent logging only if SD card is mounted
+    // Setup persistent logging only if SD card is mounted
     if (sd_card && sd_card->isMounted()) {
-        const logConfig_t& cfg= getConfig().logConfig;
+        const logConfig_t& cfg = getConfig().logConfig;
         esp_err_t err = Logging::init(cfg.logToSdCard, cfg.filename, cfg.maxFiles, cfg.maxFileSize);
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to initilize logging subsystem with %s", esp_err_to_name(err));
+            ESP_LOGE(TAG, "Failed to initialize logging subsystem with %s", esp_err_to_name(err));
         }
     }
 
@@ -891,15 +885,13 @@ void app_main(void)
     getI2sConfig();
 
     ESP_LOGI(TAG, "Creating Bluetooth  task...");
-    if (esp_err_t err = BluetoothServerSetup(false))
-    {
+    if (esp_err_t err = BluetoothServerSetup(false)) {
         ESP_LOGI(TAG, "BluetoothServerSetup failed with %s", esp_err_to_name(err));
     }
 
 #ifdef USE_PERF_MONITOR
     ESP_LOGI(TAG, "Creating Performance Monitor task...");
-    if (esp_err_t err = PerfMonitor::setup())
-    {
+    if (esp_err_t err = PerfMonitor::setup()) {
         ESP_LOGI(TAG, "Performance Monitor failed with %s", esp_err_to_name(err));
     }
 #endif
@@ -915,31 +907,30 @@ void app_main(void)
     ei_results_filename += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
     ei_results_filename += ".csv";
 
-    if (1)
-    {
+    if (1) {
         ESP_LOGI(TAG, "EI results filename: %s", ei_results_filename.c_str());
     }
 
     // Check if file exists to record results
-    if (gMountedSDCard == true)
-    {
+    if (gMountedSDCard == true) {
         create_inference_result_file_SD(ei_results_filename);
     }
 
-    edgeImpulse = new EdgeImpulse(I2S_DEFAULT_SAMPLE_RATE);   
+    edgeImpulse = new EdgeImpulse(I2S_DEFAULT_SAMPLE_RATE);
     edgeImpulse->output_inferencing_settings();
 
     // TODO: Set some flag if this fails??
     edgeImpulse->buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
 
-    if (1){
+    if (1) {
         // Run stored audio samples through the model to test it
         // Use non-continous process for this
         ESP_LOGI(TAG, "Testing model against pre-recorded sample data...");
 
-        static_assert((EI_CLASSIFIER_RAW_SAMPLE_COUNT <= TEST_SAMPLE_LENGTH), "TEST_SAMPLE_LENGTH must be at least equal to EI_CLASSIFIER_RAW_SAMPLE_COUNT");
+        static_assert((EI_CLASSIFIER_RAW_SAMPLE_COUNT <= TEST_SAMPLE_LENGTH),
+                       "TEST_SAMPLE_LENGTH must be at least equal to EI_CLASSIFIER_RAW_SAMPLE_COUNT");
 
-        if (EI_CLASSIFIER_RAW_SAMPLE_COUNT < TEST_SAMPLE_LENGTH){
+        if (EI_CLASSIFIER_RAW_SAMPLE_COUNT < TEST_SAMPLE_LENGTH) {
             ESP_LOGI(TAG, "TEST_SAMPLE length is greater than the Edge Impulse model length, applying downsampling");
         }
 
@@ -952,31 +943,29 @@ void app_main(void)
         auto ei_skip_rate = TEST_SAMPLE_LENGTH / EI_CLASSIFIER_RAW_SAMPLE_COUNT;
         auto skip_current = ei_skip_rate;   // Make sure to fill first sample, then start skipping if needed
 
-        for (auto i = 0; i < test_array_size; i++){
+        for (auto i = 0; i < test_array_size; i++) {
 
             ESP_LOGI(TAG, "Running test category: %s", test_array_categories[i]);
 
-            for (auto test_sample_count = 0, inference_buffer_count = 0; (test_sample_count < TEST_SAMPLE_LENGTH) && 
-                    (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT); test_sample_count++)
-            {
-                if(skip_current >= ei_skip_rate){
+            for (auto test_sample_count = 0, inference_buffer_count = 0; (test_sample_count < TEST_SAMPLE_LENGTH) &&
+                    (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT); test_sample_count++) {
+                if (skip_current >= ei_skip_rate) {
                     edgeImpulse->inference.buffers[0][inference_buffer_count++] = test_array[i][test_sample_count];
                     skip_current = 1;
-                }
-                else{
+                } else {
                     skip_current++;
                 }
             }
 
             // Mark buffer as ready
-            edgeImpulse->inference.buf_select = 1;   // Mark active buffer as inference.buffers[1], inference run on inactive buffer
+            // Mark active buffer as inference.buffers[1], inference run on inactive buffer
+            edgeImpulse->inference.buf_select = 1;
             edgeImpulse->inference.buf_count = 0;
             edgeImpulse->inference.buf_ready = 1;
 
             EI_IMPULSE_ERROR r = edgeImpulse->run_classifier(&signal, &result);
-            if (r != EI_IMPULSE_OK) 
-            {
-                ESP_LOGW(TAG,"ERR: Failed to run classifier (%d)", r);
+            if (r != EI_IMPULSE_OK) {
+                ESP_LOGW(TAG, "ERR: Failed to run classifier (%d)", r);
                 return;
             }
 
@@ -984,14 +973,12 @@ void app_main(void)
             ESP_LOGI(TAG, "Test model predictions:");
             ESP_LOGI(TAG, "    (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
                     result.timing.dsp, result.timing.classification, result.timing.anomaly);
-            for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
-            {
+            for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
                 ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
 
-                if (strcmp(result.classification[ix].label, "trumpet") == 0 && strcmp(test_array_categories[i], "trumpet") == 0)
-                {
-                    if (result.classification[ix].value < AI_RESULT_THRESHOLD)
-                    {
+                if (strcmp(result.classification[ix].label, "trumpet") == 0 &&
+                    strcmp(test_array_categories[i], "trumpet") == 0) {
+                    if (result.classification[ix].value < AI_RESULT_THRESHOLD) {
                         ESP_LOGW(TAG, "Test of trumpet sample appears to be poor, check model!");
                     }
                 }
@@ -1007,9 +994,9 @@ void app_main(void)
         auto print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
     #else
         edgeImpulse->buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
-    #endif // AI_CONTINUOUS_INFERENCE
-       
-    #endif // EDGE_IMPULSE_ENABLED
+    #endif  // AI_CONTINUOUS_INFERENCE
+
+    #endif  // EDGE_IMPULSE_ENABLED
 
     // setup button as interrupt
     ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)GPIO_BUTTON));
@@ -1024,39 +1011,41 @@ void app_main(void)
     /**
      * @note Using MicUseTimingFix == true or false doesn't seem to effect ICS-43434 mic
      */
-    input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+    input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,
+                               getConfig().listenOnly, getMicInfo().MicUseTimingFix);
 
-    if (input == nullptr)
-    {
+    if (input == nullptr) {
         ESP_LOGE(TAG, "Failed to create I2SMEMSSampler");
         return;
-    }
-    else{
+    } else {
         input->start();
 
         // Zero DMA buffer, prevents popping sound on start
-        input->zero_dma_buffer(I2S_DEFAULT_PORT);              
+        input->zero_dma_buffer(I2S_DEFAULT_PORT);
 
-        if (checkSDCard() == ESP_OK){
+        if (checkSDCard() == ESP_OK) {
             // create a new wave file wav_writer & make sure sample rate is up to date
-            wav_writer = new WAVFileWriter((int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 2, NUMBER_OF_CHANNELS);
+            if (wav_writer.initialize((int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 2, NUMBER_OF_CHANNELS) != true) {
+                ESP_LOGE(TAG, "Failed to initialize WAVFileWriter");
+            }
+
             // Block until properly registered otherwise will get error later
-            while (input->register_wavFileWriter(wav_writer) == false){
+            while (input->register_wavFileWriter(&wav_writer) == false) {
                 ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
                 delay(5);
             }
 
-            //Populate gSessionIdentifier for wav filename
+            // Populate gSessionIdentifier for wav filename
             // TODO: Should only be created on first recording
             createSessionFolder();
 
             // TODO: DEBUG - should be set from Bluetooth config
-            wav_writer->set_mode(WAVFileWriter::Mode::disabled);
-        }
-        else
-        {
+            wav_writer.set_mode(WAVFileWriter::Mode::disabled);
+
+        } else {
             ESP_LOGE(TAG, "SD card not mounted, cannot create WAVFileWriter");
-            wav_writer = nullptr;
+            if (wav_writer)
+                wav_writer.set_mode(WAVFileWriter::Mode::disabled);
             #ifdef EDGE_IMPULSE_ENABLED
                 save_ai_results_to_sd = false;
             #endif
@@ -1066,12 +1055,12 @@ void app_main(void)
             #ifdef AI_CONTINUOUS_INFERENCE
                 // Init static vars
                 edgeImpulse->run_classifier_init();
-            #endif // AI_CONTINUOUS_INFERENCE
-            
+            #endif  // AI_CONTINUOUS_INFERENCE
+
             input->register_ei_inference(&edgeImpulse->getInference(), EI_CLASSIFIER_FREQUENCY);
             edgeImpulse->set_status(edgeImpulse->Status::running);
         #endif
-        
+
         input->start_read_task(sample_buffer_size/ sizeof(signed short));
     }
 
@@ -1089,15 +1078,17 @@ void app_main(void)
 
     while (true) {
         if (xQueueReceive(rec_req_evt_queue, &new_mode, pdMS_TO_TICKS(500))) {
+            ESP_LOGI(TAG, "Received new wav writer mode");
+
             if (new_mode == WAVFileWriter::Mode::continuous) {
                 ESP_LOGI(TAG, "wav writer mode = continuous");
-                wav_writer->set_mode(new_mode);
+                wav_writer.set_mode(new_mode);
             } else if (new_mode == WAVFileWriter::Mode::single) {
                 ESP_LOGI(TAG, "wav writer mode = single");
-                wav_writer->set_mode(new_mode);
+                wav_writer.set_mode(new_mode);
             } else if (new_mode == WAVFileWriter::Mode::disabled) {
                 ESP_LOGI(TAG, "wav writer mode = disabled");
-                wav_writer->set_mode(new_mode);
+                wav_writer.set_mode(new_mode);
             } else {
                 ESP_LOGE(TAG, "wav writer mode = unknown");
             }
@@ -1114,9 +1105,9 @@ void app_main(void)
         }
 
         // Start a new recording?
-        if (wav_writer != nullptr &&
-            wav_writer->is_file_handle_set() == false &&
-            wav_writer->get_mode() == WAVFileWriter::Mode::continuous &&
+        if (wav_writer &&
+            wav_writer.is_file_handle_set() == false &&
+            wav_writer.get_mode() == WAVFileWriter::Mode::continuous &&
             checkSDCard() == ESP_OK) {
             start_sound_recording(fp);
         }
@@ -1203,15 +1194,13 @@ void app_main(void)
                         file_str += ", ";
                         file_str += result.classification[ix].value;
 
-                        if ((strcmp(result.classification[ix].label, "background") != 0) && 
-                            result.classification[ix].value > AI_RESULT_THRESHOLD)
-                        {
+                        if ((strcmp(result.classification[ix].label, "background") != 0) &&
+                            result.classification[ix].value > AI_RESULT_THRESHOLD) {
                             // Start recording??
-                            if (wav_writer != nullptr &&
-                                wav_writer->is_file_handle_set() == false && 
-                                wav_writer->get_mode() == WAVFileWriter::Mode::single &&
-                                checkSDCard() == ESP_OK)
-                            {   
+                            if (wav_writer &&
+                                wav_writer.is_file_handle_set() == false &&
+                                wav_writer.get_mode() == WAVFileWriter::Mode::single &&
+                                checkSDCard() == ESP_OK) {
                                 start_sound_recording(fp);
                             }
                         }
@@ -1220,46 +1209,41 @@ void app_main(void)
                     file_str += "\n";
                     // Save results to file
                     // TODO: Only save results & wav file if classification value exceeds a threshold?
-                    if (save_ai_results_to_sd == true && checkSDCard() == ESP_OK)
-                    {
+                    if (save_ai_results_to_sd == true && checkSDCard() == ESP_OK) {
                         save_inference_result_SD(ei_results_filename, file_str);
-                    }              
+                    }
 
                 #if EI_CLASSIFIER_HAS_ANOMALY == 1
                     ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
-                #endif // EI_CLASSIFIER_HAS_ANOMALY
+                #endif  // EI_CLASSIFIER_HAS_ANOMALY
 
                 #ifdef AI_CONTINUOUS_INFERENCE
                     print_results = 0;
-                #endif // AI_CONTINUOUS_INFERENCE
-
+                #endif  // AI_CONTINUOUS_INFERENCE
                 }
-        }// end while(ei_running_status == true)
+        }  // end while(ei_running_status == true)
 #else
         // Delay longer if not EI enabled
         delay(300);
 
-#endif // EDGE_IMPULSE_ENABLED
+#endif  // EDGE_IMPULSE_ENABLED
 
         // Don't forget the watchdog
         delay(1);
-
-    } // end while(true)
+    }  // end while(true)
 
     // Should never get here
-    if (input != nullptr){
+    if (input != nullptr) {
         input->stop();
         delete input;
         input = nullptr;
     }
-    
-    if (wav_writer != nullptr){
-        wav_writer->finish();
-        delete wav_writer;
-        wav_writer = nullptr;
+
+    if (wav_writer) {
+        wav_writer.finish();
     }
 
-    if (sd_card != nullptr){
+    if (sd_card != nullptr) {
         delete sd_card;
         sd_card = nullptr;
     }

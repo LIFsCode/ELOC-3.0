@@ -73,9 +73,9 @@ void printStatus(String& buf) {
     session["identifier"]          = gSessionIdentifier;
     JsonObject recordingState = session.createNestedObject("recordingState");
     
-    if (wav_writer != nullptr){
-        recordingState["val"], wav_writer->get_mode_int();
-        recordingState["state"] = wav_writer->get_mode_str();
+    if (wav_writer) {
+        recordingState["val"], wav_writer.get_mode_int();
+        recordingState["state"] = wav_writer.get_mode_str();
     }
     else {
         recordingState["val"] = 99;
@@ -253,17 +253,17 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
     if (!req_mode) {
         ESP_LOGI(TAG, "setRecordMode requested <none>");
         
-        auto wav_write_mode = wav_writer->get_mode();
+        auto wav_write_mode = wav_writer.get_mode();
         /**
          * If no explicit mode is set, recording mode is toggled, no change to AI mode
          * @warning This is debug feature, shouldn't be generally used
          */
         if(wav_write_mode == WAVFileWriter::Mode::disabled){
             new_mode = "recordOn(AI ?)";
-            wav_writer->set_mode(WAVFileWriter::Mode::continuous);
+            wav_writer.set_mode(WAVFileWriter::Mode::continuous);
         } else {
             new_mode = "recordOff(AI ?)";
-            wav_writer->set_mode(WAVFileWriter::Mode::disabled);
+            wav_writer.set_mode(WAVFileWriter::Mode::disabled);
         }
     }
     else {
@@ -273,25 +273,25 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
         if (!strcasecmp(req_mode, "recordOn")) {
             // No change to AI mode
             new_mode = "recordOn";
-            wav_writer->set_mode(WAVFileWriter::Mode::continuous);
+            wav_writer.set_mode(WAVFileWriter::Mode::continuous);
         }
         // Change this string to 'disabled' ?
         else if (!strcasecmp(req_mode, "recordOff")) {
             // No change to AI mode
             new_mode = "recordOff";
-            wav_writer->set_mode(WAVFileWriter::Mode::disabled);
+            wav_writer.set_mode(WAVFileWriter::Mode::disabled);
         }
         else if (!strcasecmp(req_mode, "recordOnEvent")) {
             new_mode = "recordOnEvent";
             new_ai_mode = true;    //<-- Must be on for recording to be triggered
             ai_mode_change = true;
-            wav_writer->set_mode(WAVFileWriter::Mode::single);
+            wav_writer.set_mode(WAVFileWriter::Mode::single);
         }
         else if (!strcasecmp(req_mode, "recordOn_DetectOn")) {
             new_mode = "recordOn_DetectOn";
             new_ai_mode = true;
             ai_mode_change = true;
-            wav_writer->set_mode(WAVFileWriter::Mode::continuous);
+            wav_writer.set_mode(WAVFileWriter::Mode::continuous);
         }
         else if (!strcasecmp(req_mode, "recordOff_DetectOn")) {
             // Set wav_recording mode to disabled
@@ -299,7 +299,7 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
             new_mode = "recordOff_DetectOn";
             new_ai_mode = true;
             ai_mode_change = true;
-            wav_writer->set_mode(WAVFileWriter::Mode::disabled);
+            wav_writer.set_mode(WAVFileWriter::Mode::disabled);
         }
         else if (!strcasecmp(req_mode, "recordOff_DetectOff")) {
             // Set wav_recording mode to disabled
@@ -307,7 +307,7 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
             new_mode = "recordOff_DetectOff";
             new_ai_mode = true;
             ai_mode_change = false;
-            wav_writer->set_mode(WAVFileWriter::Mode::disabled);
+            wav_writer.set_mode(WAVFileWriter::Mode::disabled);
         }
         else {
             char errMsg[64];
@@ -327,7 +327,7 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
     status += "}";
 
     ESP_LOGI(TAG, "setRecordMode now %s", new_mode);
-    ESP_LOGI(TAG, "wav_writer mode = %s", wav_writer->get_mode_str());
+    ESP_LOGI(TAG, "wav_writer mode = %s", wav_writer.get_mode_str());
     if (ai_mode_change){
         ESP_LOGI(TAG, "ai mode = %s", new_ai_mode ? "ON" : "OFF");
     }

@@ -14,7 +14,7 @@ extern TaskHandle_t i2s_TaskHandler;
 
 #ifndef WAV_BUFFER_IN_PSRAM
   // Use static buffers if not storing in PSRAM
-  static const size_t wav_static_buffer_size = (static_cast<int>(6000 * 2/512)) * 512;
+  static const size_t wav_static_buffer_size = (static_cast<int>(5000 * 2/512)) * 512;
   static signed short wav_static_buffers[2][wav_static_buffer_size];
 #endif
 

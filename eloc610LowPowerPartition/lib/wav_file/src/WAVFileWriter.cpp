@@ -29,8 +29,6 @@ WAVFileWriter::WAVFileWriter(int sample_rate, int buffer_time, int ch_count /*=1
   #else
     ESP_LOGI(TAG, "Allocating buffers in RAM");
     buffer_size_in_samples = wav_static_buffer_size;
-    // buffers[0] = (int16_t *)malloc(buffer_size_in_samples * sizeof(int16_t));
-    // buffers[0] = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_INTERNAL);
     buffers[0] = wav_static_buffers[0];
   #endif
 
@@ -41,8 +39,6 @@ WAVFileWriter::WAVFileWriter(int sample_rate, int buffer_time, int ch_count /*=1
   #ifdef WAV_BUFFER_IN_PSRAM
     buffers[1] = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
   #else
-    // buffers[1] = (int16_t *)malloc(buffer_size_in_samples * sizeof(int16_t));
-    // buffers[1] = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_INTERNAL);
     buffers[1] = wav_static_buffers[1];
   #endif
 

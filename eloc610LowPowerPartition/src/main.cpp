@@ -882,8 +882,13 @@ void app_main(void)
     rec_ai_evt_queue = xQueueCreate(10, sizeof(bool));
     xQueueReset(rec_ai_evt_queue);
 
-
     ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
+
+    /**
+     * Get the configuration of the I2S microphone & start it
+     * @warning TODO: Check requirements if the configuration changes after this point? Restart required?
+     */
+    getI2sConfig();
 
     ESP_LOGI(TAG, "Creating Bluetooth  task...");
     if (esp_err_t err = BluetoothServerSetup(false))
@@ -1017,12 +1022,6 @@ void app_main(void)
         testInput();
 
     /**
-     * Get the configuration of the I2S microphone & start it
-     * @warning TODO: Check requirements if the configuration changes after this point? Restart required?
-     */
-    getI2sConfig();
-
-    /**
      * @note Using MicUseTimingFix == true or false doesn't seem to effect ICS-43434 mic
      */
     input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
@@ -1087,34 +1086,28 @@ void app_main(void)
 
     // This might be redundant, set directly in ElocCommands.cpp
     auto new_mode =  WAVFileWriter::Mode::disabled;
-    
-    while (true)
-    {
+
+    while (true) {
         if (xQueueReceive(rec_req_evt_queue, &new_mode, pdMS_TO_TICKS(500))) {
-            if(new_mode == WAVFileWriter::Mode::continuous)
-            {
-                ESP_LOGI(TAG,"wav writer mode = continuous");
+            if (new_mode == WAVFileWriter::Mode::continuous) {
+                ESP_LOGI(TAG, "wav writer mode = continuous");
                 wav_writer->set_mode(new_mode);
-            }
-            else if(new_mode == WAVFileWriter::Mode::single)
-            {
-                ESP_LOGI(TAG,"wav writer mode = single");
+            } else if (new_mode == WAVFileWriter::Mode::single) {
+                ESP_LOGI(TAG, "wav writer mode = single");
                 wav_writer->set_mode(new_mode);
-            }
-            else if(new_mode == WAVFileWriter::Mode::disabled){
-                ESP_LOGI(TAG,"wav writer mode = disabled");
+            } else if (new_mode == WAVFileWriter::Mode::disabled) {
+                ESP_LOGI(TAG, "wav writer mode = disabled");
                 wav_writer->set_mode(new_mode);
-            }
-            else{
-                ESP_LOGE(TAG,"wav writer mode = unknown");
+            } else {
+                ESP_LOGE(TAG, "wav writer mode = unknown");
             }
         }
 
         // TODO: Check this is valid, rebased from master
         if ((loopCnt++ % 10) == 0) {
-            ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC, Temp %d °C", 
+            ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC, Temp %d °C",
             Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC(), ElocSystem::GetInstance().getTemperaure());
-            
+
             // Display memory usage
             ESP_LOGI(TAG, "Min free heap since boot = %d bytes", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
             ESP_LOGI(TAG, "Min free PSRAM since boot = %d bytes", heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
@@ -1122,10 +1115,9 @@ void app_main(void)
 
         // Start a new recording?
         if (wav_writer != nullptr &&
-            wav_writer->is_file_handle_set() == false && 
+            wav_writer->is_file_handle_set() == false &&
             wav_writer->get_mode() == WAVFileWriter::Mode::continuous &&
-            checkSDCard() == ESP_OK)
-        {   
+            checkSDCard() == ESP_OK) {
             start_sound_recording(fp);
         }
 
@@ -1133,47 +1125,43 @@ void app_main(void)
 
         if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);
-        }            
+        }
 
         // Try to restart if not running
-        if (edgeImpulse->get_status() == edgeImpulse->Status::not_running)
-        {       
+        if (edgeImpulse->get_status() == edgeImpulse->Status::not_running) {
                 auto buf_setup_result = false;
 
                 #ifdef AI_CONTINUOUS_INFERENCE
                     buf_setup_result = edgeImpulse->buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
                 #else
                     buf_setup_result = edgeImpulse->buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
-                #endif // AI_CONTINUOUS_INFERENCE
+                #endif  // AI_CONTINUOUS_INFERENCE
 
-            if (buf_setup_result == false)
-            {
+            if (buf_setup_result == false) {
                 ESP_LOGE(TAG, "ERR: inference_stetup failed, restarting...");
                 delay(500);
                 edgeImpulse->set_status(edgeImpulse->Status::not_running);
             }
         }
 
-        if (ai_run_enable == true && 
-            edgeImpulse->get_status() == edgeImpulse->Status::running)
-        {
+        if (ai_run_enable == true &&
+            edgeImpulse->get_status() == edgeImpulse->Status::running) {
             bool m = edgeImpulse->microphone_inference_record();
             // Blocking function - unblocks when buffer is full
-            if (!m)
-            {
+            if (!m) {
                 ESP_LOGE(TAG, "ERR: Failed to record audio...");
                 continue;
             }
 
-            auto startCounter = cpu_hal_get_cycle_count(); 
+            auto startCounter = cpu_hal_get_cycle_count();
 
             ei::signal_t signal;
-            
+
             #ifdef AI_CONTINUOUS_INFERENCE
                 signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
             #else
                 signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
-            #endif // AI_CONTINUOUS_INFERENCE
+            #endif  // AI_CONTINUOUS_INFERENCE
 
             signal.get_data = &microphone_audio_signal_get_data;
             ei_impulse_result_t result = {0};
@@ -1182,10 +1170,10 @@ void app_main(void)
                 EI_IMPULSE_ERROR r = edgeImpulse->run_classifier_continuous(&signal, &result);
             #else
                 EI_IMPULSE_ERROR r = edgeImpulse->run_classifier(&signal, &result);
-            #endif // AI_CONTINUOUS_INFERENCE
+            #endif  // AI_CONTINUOUS_INFERENCE
 
-            ESP_LOGI(TAG, "Cycles taken to run inference = %d", (cpu_hal_get_cycle_count() - startCounter)); 
-           
+            ESP_LOGI(TAG, "Cycles taken to run inference = %d", (cpu_hal_get_cycle_count() - startCounter));
+
             if (r != EI_IMPULSE_OK)
             {
                 ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);

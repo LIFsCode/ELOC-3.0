@@ -23,6 +23,9 @@
  */
 #include <esp_log.h>
 
+#include "ArduinoJson.h"
+#include "WString.h"
+
 #include "Esp.h"
 #include <FS.h>
 #include "SPIFFS.h"
@@ -30,6 +33,7 @@
 #include "utils/ffsutils.h"
 #include "config.h"
 #include "ElocConfig.hpp"
+
 
 static const char* TAG = "CONFIG";
 

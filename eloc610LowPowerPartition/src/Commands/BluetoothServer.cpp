@@ -30,6 +30,9 @@
 #include "driver/gpio.h"
 #include <FS.h>
 
+#include "ArduinoJson.h"
+#include "WString.h"
+
 #include "SPIFFS.h"
 
 #include "BluetoothSerial.h"

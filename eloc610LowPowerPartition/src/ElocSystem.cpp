@@ -28,6 +28,8 @@
 #include <esp_pm.h>
 #include <driver/rtc_io.h>
 
+// arduino includes
+#include "Arduino.h"
 #include "config.h"
 #include "SDCardSDIO.h"
 #include "ElocSystem.hpp"

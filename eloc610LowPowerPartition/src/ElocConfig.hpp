@@ -25,9 +25,8 @@
 #ifndef ELOCCONFIG_HPP_
 #define ELOCCONFIG_HPP_
 
-#define ARDUINOJSON_ENABLE_STD_STREAM 1
-#include "ArduinoJson.h"
 #include "WString.h"
+
 
 /// @brief Holds all the Microphone & recording spedific settings
 typedef struct {

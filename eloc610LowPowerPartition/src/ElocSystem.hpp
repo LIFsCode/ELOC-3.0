@@ -79,6 +79,7 @@ private:
     StatusLED* mBatteryLed;
 
     Status_t mStatus;
+    bool mBuzzerIdle;
 
     struct factoryInfo_t {
         uint16_t hw_gen;
@@ -97,6 +98,15 @@ private:
      *        or if CONFIG_PM_ENABLE is not enabled in sdkconfig
      */
     esp_err_t pm_configure(const void* vconfig);
+
+    // simple wrapper for BuzzerBeep with the ElocSystem specific callback
+    void setBuzzerBeep(unsigned int frequency, unsigned int beeps);
+    void setBuzzerBeep(unsigned int frequency, unsigned int beeps, unsigned int const pauseDuration, unsigned int const sequences);
+
+    static void BuzzerDone() {
+        ElocSystem::GetInstance().setBuzzerIdle();
+    }
+    void setBuzzerIdle();
 public:
     inline static ElocSystem& GetInstance() {
         static ElocSystem System;
@@ -136,6 +146,7 @@ public:
     esp_err_t pm_configure();
 
     esp_err_t handleSystemStatus(bool btEnabled, bool btConnected, int recordMode);
+
 };
 
 

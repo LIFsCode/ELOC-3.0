@@ -270,7 +270,7 @@ void wakeup_task (void *pvParameters)
 
     while (1)
     {
-        TickType_t gpio_evt_wait = gBluetoothEnabled ? 0 : portMAX_DELAY; // do not wait idle if bluetooth is enabled
+        TickType_t gpio_evt_wait = gBluetoothEnabled ? pdMS_TO_TICKS(30) : pdMS_TO_TICKS(100); // do not wait idle if bluetooth is enabled
         if (xQueueReceive(gpio_evt_queue, &gpio_num, gpio_evt_wait))
         {
             ESP_LOGI(TAG, "Knock knock knocking on Heaveans Door...");
@@ -298,37 +298,11 @@ void wakeup_task (void *pvParameters)
             }
         }
         int recordMode = (wav_writer != nullptr) ? wav_writer->get_mode_int() : 0;
-        ElocSystem::GetInstance().handleSystemStatus(gBluetoothEnabled, SerialBT.connected(), recordMode);
+        bool btConnected = gBluetoothEnabled ? SerialBT.connected() : false;
+        ElocSystem::GetInstance().handleSystemStatus(gBluetoothEnabled, btConnected, recordMode);
 
         if (gBluetoothEnabled) {
             wait_for_bt_command();
-            
-
-            loopcounter++;
-            if (loopcounter == 30)
-                loopcounter = 0;
-            vTaskDelay(pdMS_TO_TICKS(30)); // so if we get record, max 10ms off
-
-
-
-            /**************** NOTE: Status LED blinking must be handled in a separate task
-            if (loopcounter==0) {
-            currentvolts= Battery::GetInstance().getVoltage();
-            //currentvolts=0.1;
-            if ((getSystemTimeMS()-timein) > (60000*gMinutesWaitUntilDeepSleep)) doDeepSleep(); // one hour to deep sleep
-            if (currentvolts <= gvOff) doDeepSleep();
-            digitalWrite(STATUS_LED,HIGH);
-
-
-            digitalWrite(BATTERY_LED,LOW);
-            if (currentvolts <= gvLow) digitalWrite(BATTERY_LED,HIGH);
-            if (currentvolts >= gvFull) digitalWrite(BATTERY_LED,HIGH);
-
-            } else {
-            if (!SerialBT.connected()) digitalWrite(STATUS_LED,LOW);
-            if (currentvolts <= gvLow) digitalWrite(BATTERY_LED,LOW);
-            }
-            ****************************************************************************/
         }
 
     }

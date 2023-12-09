@@ -30,6 +30,8 @@
 
 // arduino includes
 #include "Arduino.h"
+#include "EasyBuzzer.h"
+
 #include "config.h"
 #include "SDCardSDIO.h"
 #include "ElocSystem.hpp"
@@ -41,6 +43,8 @@ extern SDCardSDIO *sd_card;
 
 
 static const char *TAG = "ElocSystem";
+
+
 
 class StatusLED
 {
@@ -129,10 +133,8 @@ public:
 };
 
 
-
-
 ElocSystem::ElocSystem():
-    mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mFactoryInfo()
+    mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true), mFactoryInfo()
 {
     ESP_LOGI(TAG, "Reading Factory Info from NVS");
 
@@ -229,8 +231,11 @@ ElocSystem::ElocSystem():
 
         mBatteryLed->setBlinking(true, 500, 500, -1);
         mStatusLed->setBlinking(true, 500, 500, -1);
+
     }
 
+    ESP_LOGI(TAG, "Setup Buzzer");
+    EasyBuzzer.setPin(BUZZER_PIN);
 
 }
 
@@ -253,6 +258,7 @@ esp_err_t ElocSystem::pm_configure(const void* vconfig) {
     // or won't work at all
     gpio_sleep_sel_dis(GPIO_BUTTON);
     gpio_sleep_sel_dis(LIS3DH_INT_PIN);
+    gpio_sleep_sel_dis(BUZZER_PIN);
     // now setup GPIOs as wakeup source. This is required to wake up the recorder in tickless idle
     //BUGME: this seems to be a bug in ESP IDF: https://github.com/espressif/arduino-esp32/issues/7158
     //       gpio_wakeup_enable does not correctly switch to rtc_gpio_wakeup_enable() for RTC GPIOs.
@@ -312,11 +318,15 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected, int r
         if (esp_err_t err = mBatteryLed->update()) {
             ESP_LOGE(TAG, "mBatteryLed->update() failed with %s", esp_err_to_name(err));
         }
+        if (!mBuzzerIdle) {
+            EasyBuzzer.update();
+        }
     }
     else {
         if (status.batteryLow) {
             mStatusLed->setBlinkingPeriodic(50, 100, 5*1000, 3);
             mBatteryLed->setBlinkingPeriodic(50, 100, 5*1000, 3);
+            setBuzzerBeep(98 , 1, 10*1000, 100);
             ESP_LOGW(TAG, "Battery Low detected!");
         }
         else if (!status.sdCardMounted) {
@@ -336,15 +346,36 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected, int r
         else if (status.btEnabled) {
             mStatusLed->setState(true);
             mBatteryLed->setState(false);
+            if (!mStatus.btEnabled) {
+                setBuzzerBeep(261 , 2);
+            }
         }
         else {
             // off else wise: TODO: check if this is intended behavior
             mStatusLed->setState(false);
             mBatteryLed->setState(false);
+            if (mStatus.btEnabled) {
+                setBuzzerBeep(523 , 2);
+            }
         }
     }
 
     mStatus = status;
 
     return ESP_OK;
+}
+
+void ElocSystem::setBuzzerIdle() {
+    mBuzzerIdle = true;
+    EasyBuzzer.stopBeep();
+}
+
+void ElocSystem::setBuzzerBeep(unsigned int frequency, unsigned int beeps) {
+    setBuzzerBeep(frequency, beeps, 0, 1);
+}
+
+void ElocSystem::setBuzzerBeep(unsigned int frequency, unsigned int beeps, unsigned int const pauseDuration, unsigned int const sequences) {
+    mBuzzerIdle = false;
+    //ESP_LOGI(TAG, "Beep: freq: %u, beeps %u, pause: %u, ceq: %u", frequency, beeps, pauseDuration, sequences);
+    return EasyBuzzer.beep(frequency, 100, 250, beeps, pauseDuration, sequences, BuzzerDone);
 }

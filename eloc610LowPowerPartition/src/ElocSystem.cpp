@@ -45,7 +45,6 @@ extern SDCardSDIO *sd_card;
 static const char *TAG = "ElocSystem";
 
 
-
 class StatusLED
 {
 private:
@@ -134,7 +133,8 @@ public:
 
 
 ElocSystem::ElocSystem():
-    mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true), mFactoryInfo()
+    mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true), 
+    mFwUpdateProcessing(false), mFactoryInfo()
 {
     ESP_LOGI(TAG, "Reading Factory Info from NVS");
 
@@ -342,6 +342,7 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected, int r
         else if (status.btConnected) {
             mStatusLed->setState(true);
             mBatteryLed->setState(true);
+            setBuzzerBeep(98 , 1, 10*1000, 5);
         }
         else if (status.btEnabled) {
             mStatusLed->setState(true);
@@ -378,4 +379,30 @@ void ElocSystem::setBuzzerBeep(unsigned int frequency, unsigned int beeps, unsig
     mBuzzerIdle = false;
     //ESP_LOGI(TAG, "Beep: freq: %u, beeps %u, pause: %u, ceq: %u", frequency, beeps, pauseDuration, sequences);
     return EasyBuzzer.beep(frequency, 100, 250, beeps, pauseDuration, sequences, BuzzerDone);
+}
+
+void ElocSystem::notifyFwUpdateError() {
+    for (int i=0;i<20;i++){
+        mStatusLed->setState(true);
+        mBatteryLed->setState(true);
+        vTaskDelay(pdMS_TO_TICKS(40));
+        mStatusLed->setState(false);
+        mBatteryLed->setState(false);
+        vTaskDelay(pdMS_TO_TICKS(40));
+    }  
+    mFwUpdateProcessing = false;
+}
+
+void ElocSystem::notifyFwUpdate() {
+    // Toggle LEDs with the speed 
+    if (mFwUpdateProcessing) {
+        mStatusLed->update();
+        mBatteryLed->update();
+    }
+    else { 
+        // will never be reset, except by notifyFwUpdateError, a successfull update results in a reboot
+        mFwUpdateProcessing = true; 
+        mStatusLed->setBlinking(false, 100, 100, 60*1000);
+        mBatteryLed->setBlinking(false, 100, 100, 60*1000);
+    }
 }

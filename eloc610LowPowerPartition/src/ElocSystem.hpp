@@ -81,6 +81,8 @@ private:
     Status_t mStatus;
     bool mBuzzerIdle;
 
+    bool mFwUpdateProcessing;
+
     struct factoryInfo_t {
         uint16_t hw_gen;
         uint16_t hw_rev;
@@ -147,6 +149,8 @@ public:
 
     esp_err_t handleSystemStatus(bool btEnabled, bool btConnected, int recordMode);
 
+    void notifyFwUpdateError();
+    void notifyFwUpdate();
 };
 
 

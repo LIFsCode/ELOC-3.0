@@ -39,6 +39,7 @@
 #include <sys/time.h>
 
 #include "utils/ffsutils.h"
+#include "ElocSystem.hpp"
 
 static const char *TAG = "UPDATE";
 
@@ -157,6 +158,7 @@ void try_update(const esp_partition_t *update_partition, const char *filename) {
     ESP_LOGI(TAG, "size %lu", data.size);
     data.data = (char *)malloc(BUFFER_SIZE);
     while (data.remaining_size > 0) {
+        ElocSystem::GetInstance().notifyFwUpdate();
         size_t size = data.remaining_size <= BUFFER_SIZE ? data.remaining_size : BUFFER_SIZE;
         fpread(data.data, size, 1, data.size - data.remaining_size, file);
         err = esp_ota_write(update_handle, data.data, size);
@@ -185,15 +187,6 @@ void try_update(const esp_partition_t *update_partition, const char *filename) {
     }
 }
 
-static void LEDflashError() {
-    ESP_LOGI(TAG, "-----fast flash------------");
-    for (int i=0;i<10;i++){
-        gpio_set_level(STATUS_LED, 1);
-        vTaskDelay(pdMS_TO_TICKS(40));
-        gpio_set_level(STATUS_LED, 0);
-        vTaskDelay(pdMS_TO_TICKS(40));
-    }  
-}
 
 bool updateFirmware() {
 
@@ -222,10 +215,11 @@ bool updateFirmware() {
 
     } else {
         ESP_LOGI(TAG, "No update was performed");
-        LEDflashError();
+        ElocSystem::GetInstance().notifyFwUpdateError();
         return false;
     }
 }
+
 
 void checkForFirmwareUpdateFile() {
 
@@ -241,3 +235,6 @@ void checkForFirmwareUpdateFile() {
     }
     return;
 }
+
+
+

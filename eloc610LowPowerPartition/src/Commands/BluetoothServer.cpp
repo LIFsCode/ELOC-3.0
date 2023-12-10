@@ -296,6 +296,7 @@ void wakeup_task (void *pvParameters)
                     ESP_LOGE(TAG, "Failed to enable bluetooth!");
                 }
             }
+            ElocSystem::GetInstance().notifyStatusRefresh();
         }
         int recordMode = (wav_writer != nullptr) ? wav_writer->get_mode_int() : 0;
         bool btConnected = gBluetoothEnabled ? SerialBT.connected() : false;

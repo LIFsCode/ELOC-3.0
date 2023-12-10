@@ -134,6 +134,7 @@ public:
 
 ElocSystem::ElocSystem():
     mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true), 
+    mRefreshStatus(false), mIntruderDetected(false), mIntruderThresholdCnt(INTRUDER_DETECTION_THRSH),
     mFwUpdateProcessing(false), mFactoryInfo()
 {
     ESP_LOGI(TAG, "Reading Factory Info from NVS");
@@ -311,7 +312,8 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected, int r
     status.btConnected = btConnected;
     status.recMode = recordMode;
     status.sdCardMounted = sd_card->isMounted();
-    if (mStatus == status) {
+    status.intruderDetected = mIntruderDetected;
+    if ((mStatus == status) && !mRefreshStatus) {
         if (esp_err_t err = mStatusLed->update()) {
             ESP_LOGE(TAG, "mStatusLed->update() failed with %s", esp_err_to_name(err));
         }
@@ -323,7 +325,14 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected, int r
         }
     }
     else {
-        if (status.batteryLow) {
+        if (mStatus.intruderDetected && !mIntruderDetected) {
+            // release intruder alarm buzzer beeping 
+            setBuzzerIdle();
+        }
+        if (mIntruderDetected) {
+            setBuzzerBeep(494, 50);
+        }
+        else if (status.batteryLow) {
             mStatusLed->setBlinkingPeriodic(50, 100, 5*1000, 3);
             mBatteryLed->setBlinkingPeriodic(50, 100, 5*1000, 3);
             setBuzzerBeep(98 , 1, 10*1000, 100);
@@ -342,7 +351,9 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected, int r
         else if (status.btConnected) {
             mStatusLed->setState(true);
             mBatteryLed->setState(true);
-            setBuzzerBeep(98 , 1, 10*1000, 5);
+            if (!mStatus.btConnected) {
+                setBuzzerBeep(98 , 1, 10*1000, 5);
+            }
         }
         else if (status.btEnabled) {
             mStatusLed->setState(true);
@@ -359,11 +370,28 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected, int r
                 setBuzzerBeep(523 , 2);
             }
         }
-    }
 
+    }
+    mRefreshStatus = false;
     mStatus = status;
 
     return ESP_OK;
+}
+
+void ElocSystem::notifyStatusRefresh() {
+    static uint32_t lastRefreshMs = 0;
+    static uint32_t cntFastUpdates = 0;
+    if ((millis() - lastRefreshMs) <= 2000) {
+        cntFastUpdates++;
+    }
+    else {
+        cntFastUpdates = 0;
+    }
+    if ((cntFastUpdates > mIntruderThresholdCnt) && (mIntruderThresholdCnt != 0)) {
+        mIntruderDetected = true;
+    }
+    lastRefreshMs = millis();
+    mRefreshStatus = true;
 }
 
 void ElocSystem::setBuzzerIdle() {

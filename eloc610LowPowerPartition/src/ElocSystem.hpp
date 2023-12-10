@@ -60,6 +60,7 @@ public:
         int recMode;
         bool sdCardMounted;
         bool batteryLow;
+        bool intruderDetected;
         inline bool operator==(const Status_t& rhs) const
         {
             return ((this->btEnabled == rhs.btEnabled) &&
@@ -80,6 +81,9 @@ private:
 
     Status_t mStatus;
     bool mBuzzerIdle;
+    bool mRefreshStatus;
+    bool mIntruderDetected;
+    uint32_t mIntruderThresholdCnt;
 
     bool mFwUpdateProcessing;
 
@@ -147,6 +151,7 @@ public:
     /// @return ESP_OK on success, error code otherwise
     esp_err_t pm_configure();
 
+    void notifyStatusRefresh();
     esp_err_t handleSystemStatus(bool btEnabled, bool btConnected, int recordMode);
 
     void notifyFwUpdateError();

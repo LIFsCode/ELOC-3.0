@@ -417,11 +417,12 @@ bool createSessionFolder()
     ESP_LOGI(TAG, "Starting session with this config:\n: %s", cfg.c_str());
     fname += "/" + gSessionIdentifier + ".config";
     FILE *f = fopen(fname.c_str(), "w+");
-    if (f == nullptr)
-    {
+
+    if (f == nullptr) {
         ESP_LOGE(TAG, "Failed to open config file for storage %s!", fname.c_str());
         return false;
     }
+
     fprintf(f, "%s", cfg.c_str());
     fclose(f);
     return true;
@@ -609,9 +610,14 @@ void start_sound_recording(FILE *fp) {
      *       hence the need to use 'is_file_handle_set()' getter
      */
 
+    static bool wav_folder_created = false;
 
     // TODO: set this as not recording in WAVFileWriter.cpp::finish()
     // gRecording=RecState::RECORDING;
+
+    if (wav_folder_created == false) {
+        wav_folder_created = createSessionFolder();
+    }
 
     fp = nullptr;
 
@@ -649,17 +655,14 @@ bool inference_result_file_SD_available = false;
  */
 int create_inference_result_file_SD(String f_name)
 {
-
-    if (checkSDCard() != ESP_OK)
-    {
+    if (checkSDCard() != ESP_OK) {
         // Abandon
         return -1;
     }
 
     FILE *fp = fopen(f_name.c_str(), "r");
 
-    if (fp)
-    {
+    if (fp) {
         ESP_LOGI(TAG, "%s exists on SD card", f_name.c_str());
         fclose(fp);
         inference_result_file_SD_available = true;
@@ -669,15 +672,13 @@ int create_inference_result_file_SD(String f_name)
     String file_string;
 
     fp = fopen(f_name.c_str(), "wb");
-    if (!fp)
-    {
+    if (!fp) {
         ESP_LOGE(TAG, "Failed to open file for writing");
         return -1;
     }
 
     // Possible other details to include in file
-    if (0)
-    {
+    if (0) {
         file_string += "EI Project ID, ";
         file_string += EI_CLASSIFIER_PROJECT_ID;
         file_string += "\nEI Project owner, ";
@@ -740,6 +741,7 @@ int save_inference_result_SD(String f_name, String results_string)
 
 void app_main(void)
 {
+
     ESP_LOGI(TAG, "\nSETUP--start\n");
     initArduino();
     ESP_LOGI(TAG, "initArduino done");
@@ -1034,10 +1036,6 @@ void app_main(void)
                 ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
                 delay(5);
             }
-
-            // Populate gSessionIdentifier for wav filename
-            // TODO: Should only be created on first recording
-            createSessionFolder();
 
             // TODO: DEBUG - should be set from Bluetooth config
             wav_writer.set_mode(WAVFileWriter::Mode::disabled);

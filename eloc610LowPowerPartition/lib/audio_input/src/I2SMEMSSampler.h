@@ -6,15 +6,17 @@
 #include "../../../src/project_config.h"
 
 extern TaskHandle_t i2s_TaskHandler;
+extern TaskHandle_t ei_TaskHandler;
+
 class I2SMEMSSampler : public I2SSampler
 {
-private:
+ private:
     i2s_pin_config_t m_i2sPins;
     bool m_fixSPH0645;
-    int  mBitShift = I2S_DEFAULT_BIT_SHIFT;        // TODO: depreciated?? Using I2S_DEFAULT_BIT_SHIFT + I2S_DEFAULT_VOLUME instead from config.h
+    int  mBitShift = I2S_DEFAULT_BIT_SHIFT;  // TODO: depreciated?? Using I2S_DEFAULT_BIT_SHIFT + I2S_DEFAULT_VOLUME instead from config.h
     bool mListenOnly = false;
     WAVFileWriter *writer = nullptr;
-    
+
     /**
      * @brief The volume shift is used to scale the adjust the volume
      */
@@ -23,7 +25,7 @@ private:
     // Set some reasonable values as default
     uint32_t i2s_sampling_rate = I2S_DEFAULT_SAMPLE_RATE;
     uint32_t ei_sampling_freq = I2S_DEFAULT_SAMPLE_RATE;
-    
+
     // Handle scenario where EI_CLASSIFIER_FREQUENCY != I2S sample rate
     // Will skip packing EI buffer at this rate
     // i.e. if I2S sample rate = 16000 Hz & EI_CLASSIFIER_FREQUENCY = 4000Hz

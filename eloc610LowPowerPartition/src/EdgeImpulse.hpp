@@ -4,18 +4,23 @@
  *
  */
 
-#ifndef _EDGE_IMPULSE_H_
-#define _EDGE_IMPULSE_H_
+#ifndef ELOC610LOWPOWERPARTITION_SRC_EDGEIMPULSE_HPP_
+#define ELOC610LOWPOWERPARTITION_SRC_EDGEIMPULSE_HPP_
 
 // If your target is limited in memory remove this macro to save 10K RAM
 // But if you do results in errors: '.... insn does not satisfy its constraints'
 #define EIDSP_QUANTIZE_FILTERBANK 0
 #define I2S_DATA_SCALING_FACTOR 1
 
+#include <functional>  // std::function
 #include "esp_err.h"
 #include "esp_log.h"
-#include "ei_inference.h" // inference_t
+#include "ei_inference.h"  // inference_t
 #include "project_config.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+extern TaskHandle_t ei_TaskHandler;
 
 #ifndef PIO_UNIT_TESTING
 // For unit testing
@@ -23,34 +28,36 @@
 extern I2SMEMSSampler *input;
 #endif
 
-// #include "../include/test_samples.h"
-
 #include "edge-impulse-sdk/dsp/numpy_types.h"
-#include "edge-impulse-sdk/classifier/ei_classifier_types.h" // Need for typedef struct ei_signal_t* signal;
+#include "edge-impulse-sdk/classifier/ei_classifier_types.h"  // Need for typedef struct ei_signal_t* signal;
 
-class EdgeImpulse
-{
-
-public:
+class EdgeImpulse {
+ public:
     /**
      * @brief Note ideal but need access from I2SMEMSSampler
      *        & main.cpp to the buffers in this struct
      */
     inference_t inference;
 
-    enum class Status { not_running = 0, running = 1}; 
+    enum class Status { not_running = 0, running = 1};
 
-private:
-    bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
+ private:
+    bool debug_nn = false;  // Set this to true to see e.g. features generated from the raw signal
     Status status = Status::not_running;
 
-public:
+    /**
+     * @brief This callback allows the classifier to be run from main.cpp
+     *        This is required due to namespace issues, static implementations etc..
+     */ 
+    std::function<void()> callback;
+
+ public:
     /**
      * @brief Construct a new Edge Impulse object
      *
      * @param i2s_sample_rate Sample rate of I2S microphone
      */
-    EdgeImpulse(int i2s_sample_rate);
+    explicit EdgeImpulse(int i2s_sample_rate);
 
     /**
      * @brief Output to console the inferencing settings
@@ -111,8 +118,7 @@ public:
      * @return true running
      * @return false not running
      */
-    enum Status get_status() const
-    {
+    enum Status get_status() const {
         return status;
     }
 
@@ -121,8 +127,7 @@ public:
      * 
      * @param newStatus true or false
      */
-    void set_status(enum Status newStatus)
-    {
+    void set_status(enum Status newStatus) {
         status = newStatus;
     }
 
@@ -131,8 +136,7 @@ public:
      * @deprecated ??
      * @return inference_t& 
      */
-    inference_t &getInference()
-    {
+    inference_t &getInference() {
         return inference;
     }
 
@@ -159,6 +163,24 @@ public:
      * @return EI_IMPULSE_ERROR 
      */
     EI_IMPULSE_ERROR run_classifier(ei::signal_t *signal, ei_impulse_result_t *result);
+
+    /**
+     * @brief Start a continuous inferencing thread 
+     */
+    void ei_thread();
+
+    /**
+     * @brief Wrapper for ei_thread()
+     * @param _this 
+     */
+    static void start_ei_thread_wrapper(void *_this);
+
+    /**
+     * @brief Start a continuous inferencing task
+     * 
+     * @return int 0 on success
+     */
+    int start_ei_thread(std::function<void()> callback);
 };
 
-#endif // _EDGE_IMPULSE_H_
+#endif  //  ELOC610LOWPOWERPARTITION_SRC_EDGEIMPULSE_HPP_

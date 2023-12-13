@@ -191,3 +191,43 @@ EI_IMPULSE_ERROR EdgeImpulse::run_classifier(signal_t *signal, ei_impulse_result
     // calling run_classifier_continuous from ei_run_classifier.h
     return ::run_classifier(signal, result, this->debug_nn);
 }
+
+void EdgeImpulse::ei_thread() {
+  ESP_LOGV(TAG, "Func: %s", __func__);
+
+  while (status == Status::running) {
+    if (xTaskNotifyWait(
+                          0 /* ulBitsToClearOnEntry */,
+                          0 /* ulBitsToClearOnExit */,
+                          NULL /* pulNotificationValue */,
+                          portMAX_DELAY /* xTicksToWait*/) == pdTRUE) {
+      if (inference.buf_ready == 1) {
+        ESP_LOGI(TAG, "ei_thread...");
+
+        // Run classifier from main.cpp
+        callback();
+      }
+    }  // if (xTaskNotifyWait())
+  }
+
+  vTaskDelete(NULL);
+}
+
+void EdgeImpulse::start_ei_thread_wrapper(void *_this) {
+  reinterpret_cast<EdgeImpulse *>(_this)->ei_thread();
+}
+
+int EdgeImpulse::start_ei_thread(std::function<void()> _callback) {
+  ESP_LOGV(TAG, "Func: %s", __func__);
+
+  this->callback = _callback;
+
+  int ret = xTaskCreate(this->start_ei_thread_wrapper, "ei_thread", 1024 * 4, this, 8, &ei_TaskHandler);
+
+  if (ret != pdPASS) {
+    ESP_LOGE(TAG, "Failed to create ei task");
+    return -1;
+  }
+
+  return 0;
+}

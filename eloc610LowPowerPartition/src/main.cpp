@@ -20,7 +20,6 @@
 #include <FFat.h>
 #include <ff.h>
 #include "WAVFileWriter.h"
-//#include "WAVFileReader.h"
 #include "config.h"
 #include <string.h>
 
@@ -55,9 +54,7 @@
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
 
-
-// TODO: Remove this..
-// #define EDGE_IMPULSE_ENABLED
+static const char *TAG = "main";
 
 #ifdef EDGE_IMPULSE_ENABLED
 
@@ -73,9 +70,15 @@
        return edgeImpulse->microphone_audio_signal_get_data(offset, length, out_ptr);
     }
 
-#endif
+    /**
+     * @brief This callback allows a thread created in EdgeImpulse to 
+     *        run the inference. Required due to namespace issues, static implementations etc.. 
+     */
+    void ei_callback_func() {
+        ESP_LOGI(TAG, "ei_callback_func");
+    }
 
-static const char *TAG = "main";
+#endif
 
 bool gMountedSDCard = false;
 
@@ -120,7 +123,8 @@ I2SMEMSSampler *input = nullptr;
 WAVFileWriter wav_writer;
 QueueHandle_t rec_req_evt_queue = nullptr;  // wav recording queue
 QueueHandle_t rec_ai_evt_queue = nullptr;   // AI inference queue
-TaskHandle_t i2s_TaskHandler = nullptr;     // Task handler from I2S to wav writer & AI inference
+TaskHandle_t i2s_TaskHandler = nullptr;     // Task handler from I2S to wav writer
+TaskHandle_t ei_TaskHandler = nullptr;      // Task handler from I2S to AI inference
 
 void writeSettings(String settings);
 void doDeepSleep();
@@ -739,9 +743,7 @@ int save_inference_result_SD(String f_name, String results_string)
 
 #endif
 
-void app_main(void)
-{
-
+void app_main(void) {
     ESP_LOGI(TAG, "\nSETUP--start\n");
     initArduino();
     ESP_LOGI(TAG, "initArduino done");
@@ -834,15 +836,13 @@ void app_main(void)
     ESP_LOGI(TAG, "Setting up Battery...");
     Battery::GetInstance();
 
-    if (!SPIFFS.begin(true, "/spiffs"))
-    {
+    if (!SPIFFS.begin(true, "/spiffs")) {
         ESP_LOGI(TAG, "An Error has occurred while mounting SPIFFS");
         // return;
     }
     mountSDCard();
 
-    if (0)
-    {
+    if (0) {
         auto psram_size = esp_spiram_get_size();
         if (psram_size == 0)
             ESP_LOGW(TAG, "Error: SPI RAM (PSRAM) Not found");
@@ -946,7 +946,6 @@ void app_main(void)
         auto skip_current = ei_skip_rate;   // Make sure to fill first sample, then start skipping if needed
 
         for (auto i = 0; i < test_array_size; i++) {
-
             ESP_LOGI(TAG, "Running test category: %s", test_array_categories[i]);
 
             for (auto test_sample_count = 0, inference_buffer_count = 0; (test_sample_count < TEST_SAMPLE_LENGTH) &&
@@ -1057,6 +1056,7 @@ void app_main(void)
 
             input->register_ei_inference(&edgeImpulse->getInference(), EI_CLASSIFIER_FREQUENCY);
             edgeImpulse->set_status(edgeImpulse->Status::running);
+            edgeImpulse->start_ei_thread(ei_callback_func);
         #endif
 
         input->start_read_task(sample_buffer_size/ sizeof(signed short));
@@ -1092,14 +1092,15 @@ void app_main(void)
             }
         }
 
-        // TODO: Check this is valid, rebased from master
         if ((loopCnt++ % 10) == 0) {
             ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC, Temp %d °C",
             Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC(), ElocSystem::GetInstance().getTemperaure());
 
             // Display memory usage
-            ESP_LOGI(TAG, "Min free heap since boot = %d bytes", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
-            ESP_LOGI(TAG, "Min free PSRAM since boot = %d bytes", heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
+            if (0) {
+                ESP_LOGI(TAG, "Min free heap since boot = %d bytes", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
+                ESP_LOGI(TAG, "Min free PSRAM since boot = %d bytes", heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
+            }
         }
 
         // Start a new recording?

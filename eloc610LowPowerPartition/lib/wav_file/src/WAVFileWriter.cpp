@@ -172,12 +172,13 @@ void WAVFileWriter::start_write_thread()
           this->write();
         }
 
-        // Limit output to 1 log per second
-        auto secs_written = m_file_size / (sizeof(int16_t) * m_sample_rate);
+        // Recalculate every time to avoid rounding errors
+        recording_time_file_sec = m_file_size / (sizeof(int16_t) * m_sample_rate);
 
-        if (secs_written > old_secs_written) {
-          ESP_LOGI(TAG, "WAV file size bytes: %d, secs: %d", m_file_size, secs_written);
-          old_secs_written = secs_written;
+        // Limit output to 1 log per second
+        if (recording_time_file_sec > old_secs_written) {
+          ESP_LOGI(TAG, "WAV file size bytes: %d, secs: %llu", m_file_size, recording_time_file_sec);
+          old_secs_written = recording_time_file_sec;
         }
 
         /**
@@ -187,6 +188,9 @@ void WAVFileWriter::start_write_thread()
         if ((m_file_size >= (m_sample_rate * secondsPerFile * sizeof(int16_t)) || mode == Mode::disabled)) {
           // Won't be saving to this file anymore..
           enable_wav_file_write = false;
+
+          recording_time_total_sec += recording_time_file_sec;
+
           this->finish();
           old_secs_written = 0;
         }
@@ -210,6 +214,7 @@ bool WAVFileWriter::finish()
   fclose(m_fp);
 
   m_file_size = 0;
+  recording_time_file_sec = 0;
   m_fp = nullptr;
 
   // Don't swap buffers?? Could be filling
@@ -226,8 +231,10 @@ void WAVFileWriter::setSample_rate(int sample_rate)
 void WAVFileWriter::setChannelCount(int channel_count)
 {
   m_header.num_channels = channel_count;
-  m_header.byte_rate = m_header.sample_rate * 2 * channel_count;        // Number of bytes per second. sample_rate * num_channels * Bytes Per Sample
-  m_header.sample_alignment = channel_count * (m_header.bit_depth / 8); // num_channels * Bytes Per Sample
+  // Number of bytes per second = sample_rate * num_channels * Bytes Per Sample
+  m_header.byte_rate = m_header.sample_rate * 2 * channel_count;
+  //                           num_channels * Bytes Per Sample
+  m_header.sample_alignment = channel_count * (m_header.bit_depth / 8);
 }
 
 void WAVFileWriter::start_wav_writer_wrapper(void *_this)
@@ -239,8 +246,7 @@ int WAVFileWriter::start_wav_write_task(int secondsPerFile)
 {
   ESP_LOGV(TAG, "Func: %s, secondsPerFile = %d", __func__, secondsPerFile);
 
-  if (secondsPerFile <= 0)
-  {
+  if (secondsPerFile <= 0) {
     ESP_LOGE(TAG, "secondsPerFile must be > 0");
     return -1;
   }
@@ -249,8 +255,7 @@ int WAVFileWriter::start_wav_write_task(int secondsPerFile)
 
   int ret = xTaskCreate(this->start_wav_writer_wrapper, "wav_file_writer", 1024 * 4, this, 8, &i2s_TaskHandler);
 
-  if (ret != pdPASS)
-  {
+  if (ret != pdPASS) {
     ESP_LOGE(TAG, "Failed to create wav file writer task");
     return -1;
   }

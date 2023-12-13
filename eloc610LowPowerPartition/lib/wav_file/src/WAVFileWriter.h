@@ -44,6 +44,18 @@ class WAVFileWriter
   const int mode_int[3] = {0, 1, 2};
 
   /**
+   * @brief Recording time of current file
+   * @note uint64_t time in secs
+   */
+  uint64_t recording_time_file_sec = 0;
+
+  /**
+   * @brief Total recording time since boot
+   * @return uint64_t time in secs
+   */
+  uint64_t recording_time_total_sec = 0;
+
+  /**
    * @deprecated ??
    */
   void setSample_rate(int sample_rate);
@@ -60,7 +72,6 @@ class WAVFileWriter
   void start_write_thread();
 
  public:
-
   /**
    * Use a double buffer system
    * Active buffer -> fill with data
@@ -144,6 +155,18 @@ class WAVFileWriter
    * @param value enum Mode
    */
   void set_mode(enum Mode value) { mode = value; }
+
+  /**
+   * @brief Get the recording time file sec object
+   * 
+   */
+  uint64_t get_recording_time_file_sec() { return recording_time_file_sec; }
+
+  /**
+   * @brief Get the recording time total sec object
+   * 
+   */
+  uint64_t get_recording_time_total_sec() { return recording_time_total_sec; }
 
   /**
    * @brief Destroy the WAVFileWriter object

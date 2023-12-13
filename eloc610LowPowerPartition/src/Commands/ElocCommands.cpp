@@ -252,64 +252,44 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
 
     if (!req_mode) {
         ESP_LOGI(TAG, "setRecordMode requested <none>");
-        
+
         auto wav_write_mode = wav_writer.get_mode();
         /**
          * If no explicit mode is set, recording mode is toggled, no change to AI mode
          * @warning This is debug feature, shouldn't be generally used
          */
-        if(wav_write_mode == WAVFileWriter::Mode::disabled){
+        if (wav_write_mode == WAVFileWriter::Mode::disabled) {
             new_mode = "recordOn(AI ?)";
             wav_writer.set_mode(WAVFileWriter::Mode::continuous);
         } else {
             new_mode = "recordOff(AI ?)";
             wav_writer.set_mode(WAVFileWriter::Mode::disabled);
         }
-    }
-    else {
-        // Change this string to 'continuous' ?
+    } else {
         ESP_LOGI(TAG, "setRecordMode requested %s", req_mode);
+        ai_mode_change = true;
 
-        if (!strcasecmp(req_mode, "recordOn")) {
-            // No change to AI mode
-            new_mode = "recordOn";
+        if (!strcasecmp(req_mode, "recordOn_DetectOFF")) {
+            new_mode = "recordOn_DetectOFF";
+            new_ai_mode = false;
             wav_writer.set_mode(WAVFileWriter::Mode::continuous);
-        }
-        // Change this string to 'disabled' ?
-        else if (!strcasecmp(req_mode, "recordOff")) {
-            // No change to AI mode
-            new_mode = "recordOff";
-            wav_writer.set_mode(WAVFileWriter::Mode::disabled);
-        }
-        else if (!strcasecmp(req_mode, "recordOnEvent")) {
-            new_mode = "recordOnEvent";
-            new_ai_mode = true;    //<-- Must be on for recording to be triggered
-            ai_mode_change = true;
-            wav_writer.set_mode(WAVFileWriter::Mode::single);
-        }
-        else if (!strcasecmp(req_mode, "recordOn_DetectOn")) {
+        } else if (!strcasecmp(req_mode, "recordOn_DetectOn")) {
             new_mode = "recordOn_DetectOn";
             new_ai_mode = true;
-            ai_mode_change = true;
             wav_writer.set_mode(WAVFileWriter::Mode::continuous);
-        }
-        else if (!strcasecmp(req_mode, "recordOff_DetectOn")) {
-            // Set wav_recording mode to disabled
-            // Change to AI mode to ON
+        } else if (!strcasecmp(req_mode, "recordOff_DetectOn")) {
             new_mode = "recordOff_DetectOn";
             new_ai_mode = true;
-            ai_mode_change = true;
             wav_writer.set_mode(WAVFileWriter::Mode::disabled);
-        }
-        else if (!strcasecmp(req_mode, "recordOff_DetectOff")) {
-            // Set wav_recording mode to disabled
-            // Change to AI mode to Off
+        } else if (!strcasecmp(req_mode, "recordOff_DetectOff")) {
             new_mode = "recordOff_DetectOff";
-            new_ai_mode = true;
-            ai_mode_change = false;
+            new_ai_mode = false;
             wav_writer.set_mode(WAVFileWriter::Mode::disabled);
-        }
-        else {
+        } else if (!strcasecmp(req_mode, "recordOnEvent")) {
+            new_mode = "recordOnEvent";
+            new_ai_mode = true;
+            wav_writer.set_mode(WAVFileWriter::Mode::single);
+        } else {
             char errMsg[64];
             snprintf(errMsg, sizeof(errMsg), "Invalid mode %s", req_mode);
             ESP_LOGE(TAG, "%s", errMsg);
@@ -317,18 +297,18 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
         }
     }
 
-    if (ai_mode_change){
+    if (ai_mode_change) {
         xQueueSend(rec_ai_evt_queue, &new_ai_mode, (TickType_t)0);
     }
 
-    String& status = resp.getPayload(); 
+    String& status = resp.getPayload();
     status += "{\"recordingState\" : ";
     status += new_mode;
     status += "}";
 
     ESP_LOGI(TAG, "setRecordMode now %s", new_mode);
     ESP_LOGI(TAG, "wav_writer mode = %s", wav_writer.get_mode_str());
-    if (ai_mode_change){
+    if (ai_mode_change) {
         ESP_LOGI(TAG, "ai mode = %s", new_ai_mode ? "ON" : "OFF");
     }
 
@@ -344,10 +324,11 @@ bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     success &= cmdCallback.addCmd("setTime", &cmd_SetTime, "Set the current Time. Time format is given as JSON, e.g. setTime#time={\"seconds\":1351824120,\"ms\":42,\"timezone\":6,\"type\":\"G\"}");
     success &= cmdCallback.addCmd("setRecordMode", &cmd_SetRecordMode, "Enable/disable recording. If used without arguments, current mode is toggled(on/off). Otherwise set recording to specified mode, e.g. setRecordingmode#mode=recordOff_DetectOn");
     success &= cmdCallback.addCmd("setLogPersistent", &cmd_SetLogPersistent, "Configure the logging messages to be stored on a rotating log file on SD carde.g. setLogPersitent#cfg={\"logToSdCard\":\"true\",\"filename\":\"/sdcard/log/eloc.log\",\"maxFiles\":6,\"maxFileSize\":1024}");
+
     if (!success) {
         ESP_LOGE(TAG, "Failed to add all BT commands!");
     }
     return success;
 }
 
-} // namespace BtCommands
+}  // namespace BtCommands

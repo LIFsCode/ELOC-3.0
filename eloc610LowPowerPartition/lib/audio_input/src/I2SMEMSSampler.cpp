@@ -267,7 +267,7 @@ int I2SMEMSSampler::read()
                     // Note: Trying to write to SD card here causes poor performance
 
                     // Wake up the write thread
-                    if (i2s_TaskHandler != NULL)
+                    if (writer->get_enable_wav_file_write() == true && i2s_TaskHandler != NULL)
                         xTaskNotify(i2s_TaskHandler, (0), eNoAction);
                 }
             }

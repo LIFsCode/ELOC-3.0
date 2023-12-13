@@ -36,7 +36,7 @@ class WAVFileWriter
   FILE *m_fp = nullptr;               // pointer to wav file
   wav_header_t m_header;              // struct of wav header
   int m_sample_rate = 16000;          // I2S sample rate, reasonable default
-  bool enable_wav_file_write = true;  // Continue to write to wav file while true
+  bool enable_wav_file_write = true;  // Write to wav file while true
   int secondsPerFile = 60;            // Seconds per file to write
   Mode mode = Mode::disabled;         // Mode of operation
 
@@ -175,6 +175,14 @@ class WAVFileWriter
    * @param value bool value
   */
   void set_enable_wav_file_write(bool value) {enable_wav_file_write = value;}
+
+  /**
+   * @brief Get the enable wav file write object
+   * 
+   * @return true 
+   * @return false not saving the file anymore 
+   */
+  bool get_enable_wav_file_write() {return enable_wav_file_write;}
 
   /**
    * @brief Check if file ready to save

@@ -225,7 +225,7 @@ int EdgeImpulse::start_ei_thread(std::function<void()> _callback) {
   int ret = xTaskCreate(this->start_ei_thread_wrapper, "ei_thread", 1024 * 4, this, 8, &ei_TaskHandler);
 
   if (ret != pdPASS) {
-    ESP_LOGE(TAG, "Failed to create ei task");
+    ESP_LOGE(TAG, "Failed to create ei_thread");
     return -1;
   }
 

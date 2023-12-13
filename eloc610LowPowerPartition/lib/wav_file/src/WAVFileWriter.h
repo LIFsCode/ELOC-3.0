@@ -32,7 +32,7 @@ class WAVFileWriter
   explicit operator bool() const {return true; }
 
  private:
-  u_int32_t m_file_size;              // Size of wav file in bytes
+  uint32_t m_file_size;              // Size of wav file in bytes
   FILE *m_fp = nullptr;               // pointer to wav file
   wav_header_t m_header;              // struct of wav header
   int m_sample_rate = 16000;          // I2S sample rate, reasonable default
@@ -45,15 +45,15 @@ class WAVFileWriter
 
   /**
    * @brief Recording time of current file
-   * @note uint64_t time in secs
+   * @note uint32_t time in secs
    */
-  uint64_t recording_time_file_sec = 0;
+  uint32_t recording_time_file_sec = 0;
 
   /**
    * @brief Total recording time since boot
-   * @return uint64_t time in secs
+   * @return uint32_t time in secs
    */
-  uint64_t recording_time_total_sec = 0;
+  uint32_t recording_time_total_sec = 0;
 
   /**
    * @deprecated ??
@@ -160,13 +160,13 @@ class WAVFileWriter
    * @brief Get the recording time file sec object
    * 
    */
-  uint64_t get_recording_time_file_sec() { return recording_time_file_sec; }
+  uint32_t get_recording_time_file_sec() { return recording_time_file_sec; }
 
   /**
    * @brief Get the recording time total sec object
    * 
    */
-  uint64_t get_recording_time_total_sec() { return recording_time_total_sec; }
+  uint32_t get_recording_time_total_sec() { return recording_time_total_sec; }
 
   /**
    * @brief Destroy the WAVFileWriter object

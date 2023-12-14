@@ -118,12 +118,15 @@ void printStatus(String& buf) {
     RecState recState = calcRecordingState();
     addEnum(recordingState, recState);
 
+
+    session["recordingTime[h]"]    = (float)wav_writer.get_recording_time_total_sec() / 1000 / 1000 / 60 / 60;
     JsonObject ai = session.createNestedObject("ai");
     ai["state"]                   = ai_run_enable;
     JsonObject device = doc.createNestedObject("device");
     device["firmware"]                   = gFirmwareVersion;
     device["Uptime[h]"]                  = (float)esp_timer_get_time() / 1000 / 1000 / 60 / 60;
-    device["totalRecordingTime[h]"]      = ((float)gTotalRecordTimeSinceReboot + gSessionRecordTime) / 1000 / 1000 / 60 / 60;
+    device["totalRecordingTime[h]"]      = ((float)wav_writer.get_recording_time_total_sec() + 
+                                            (float)wav_writer.get_recording_time_file_sec()) / 1000 / 1000 / 60 / 60;
 
     float sdCardSizeGB = 0;
     float sdCardFreeSpaceGB = 0;

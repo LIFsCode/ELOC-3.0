@@ -50,8 +50,50 @@
 extern ESP32Time timeObject;
 extern SDCardSDIO *sd_card;
 
+#define ENUM_MACRO(name, v0, v1, v2, v3, v4, v5)\
+    enum class name { v0 = -1, v1=0, v2, v3, v4, v5};\
+    constexpr const char *name##Strings[] = {  #v0, #v1, #v2, #v3, #v4, #v5}; \
+    constexpr const char *toString(name value) {  return name##Strings[static_cast<int>(value)]; }
+
+ENUM_MACRO (RecState, recInvalid, recordOff_detectOff, recordOn_detectOff, recordOn_detectOn, recordOff_detectOn, recordOnEvent);
+
+
+RecState calcRecordingState() {
+    RecState recState = RecState::recInvalid;
+
+    WAVFileWriter::Mode recMode = wav_writer.get_mode();
+    switch (recMode) {
+        case WAVFileWriter::Mode::disabled:
+            if (ai_run_enable) {
+                recState = RecState::recordOff_detectOn;
+            }
+            else {
+                recState = RecState::recordOff_detectOff;
+            }
+            break;
+        case WAVFileWriter::Mode::continuous:
+            if (ai_run_enable) {
+                recState = RecState::recordOn_detectOn;
+            }
+            else {
+                recState = RecState::recordOn_detectOff;
+            }
+            break;
+        case WAVFileWriter::Mode::single:
+            if (ai_run_enable) {
+                recState = RecState::recordOnEvent;
+            }
+            else {
+                recState = RecState::recInvalid;
+            }
+            break;
+    }
+    return recState;
+}
+
 namespace BtCommands {
 static const char* TAG = "BtCmds";
+
 
 //TODO: this can be moved to a shared header if it is to be used in other places for enum to JSON conversion
 template <typename T>
@@ -73,15 +115,9 @@ void printStatus(String& buf) {
     session["identifier"]          = gSessionIdentifier;
     JsonObject recordingState = session.createNestedObject("recordingState");
     
-    if (wav_writer) {
-        recordingState["val"], wav_writer.get_mode_int();
-        recordingState["state"] = wav_writer.get_mode_str();
-    }
-    else {
-        recordingState["val"] = 99;
-        recordingState["state"] = "unknown";
-    }
-    session["recordingTime[h]"]    = (float)gSessionRecordTime / 1000 / 1000 / 60 / 60;
+    RecState recState = calcRecordingState();
+    addEnum(recordingState, recState);
+
     JsonObject ai = session.createNestedObject("ai");
     ai["state"]                   = ai_run_enable;
     JsonObject device = doc.createNestedObject("device");

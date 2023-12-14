@@ -31,12 +31,6 @@
 
 //TODO: All these variables are shared across multiple tasks and must be guarded with mutexes
 
-#define ENUM_MACRO(name, v1, v2)\
-    enum class name { v1, v2};\
-    constexpr const char *name##Strings[] = { #v1, #v2}; \
-    constexpr const char *toString(name value) {  return name##Strings[static_cast<int>(value)]; }
-
-ENUM_MACRO (RecState, IDLE, RECORDING);
 
 
 /* Recording specific status indicators */

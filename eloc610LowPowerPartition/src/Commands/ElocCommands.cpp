@@ -285,7 +285,7 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
     const char* req_mode = cmdParser->getValueFromKey("mode");
     // rec_req_t rec_req;
 
-    const char* new_mode = "";
+    RecState new_mode = RecState::recInvalid;
     auto new_ai_mode = true;
     auto ai_mode_change = false;
 
@@ -298,10 +298,10 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
          * @warning This is debug feature, shouldn't be generally used
          */
         if (wav_write_mode == WAVFileWriter::Mode::disabled) {
-            new_mode = "recordOn(AI ?)";
+            new_mode = ai_run_enable ? RecState::recordOn_detectOn : RecState::recordOn_detectOff;
             wav_writer.set_mode(WAVFileWriter::Mode::continuous);
         } else {
-            new_mode = "recordOff(AI ?)";
+            new_mode = ai_run_enable ? RecState::recordOff_detectOn : RecState::recordOff_detectOff;
             wav_writer.set_mode(WAVFileWriter::Mode::disabled);
         }
     } else {
@@ -309,23 +309,23 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
         ai_mode_change = true;
 
         if (!strcasecmp(req_mode, "recordOn_DetectOFF")) {
-            new_mode = "recordOn_DetectOFF";
+            new_mode = RecState::recordOn_detectOff;
             new_ai_mode = false;
             wav_writer.set_mode(WAVFileWriter::Mode::continuous);
         } else if (!strcasecmp(req_mode, "recordOn_DetectOn")) {
-            new_mode = "recordOn_DetectOn";
+            new_mode = RecState::recordOn_detectOn;
             new_ai_mode = true;
             wav_writer.set_mode(WAVFileWriter::Mode::continuous);
         } else if (!strcasecmp(req_mode, "recordOff_DetectOn")) {
-            new_mode = "recordOff_DetectOn";
+            new_mode = RecState::recordOff_detectOn;
             new_ai_mode = true;
             wav_writer.set_mode(WAVFileWriter::Mode::disabled);
         } else if (!strcasecmp(req_mode, "recordOff_DetectOff")) {
-            new_mode = "recordOff_DetectOff";
+            new_mode = RecState::recordOff_detectOff;
             new_ai_mode = false;
             wav_writer.set_mode(WAVFileWriter::Mode::disabled);
         } else if (!strcasecmp(req_mode, "recordOnEvent")) {
-            new_mode = "recordOnEvent";
+            new_mode = RecState::recordOnEvent;
             new_ai_mode = true;
             wav_writer.set_mode(WAVFileWriter::Mode::single);
         } else {
@@ -340,12 +340,17 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
         xQueueSend(rec_ai_evt_queue, &new_ai_mode, (TickType_t)0);
     }
 
-    String& status = resp.getPayload();
-    status += "{\"recordingState\" : ";
-    status += new_mode;
-    status += "}";
+    StaticJsonDocument<512> doc;
+    JsonObject recordingState = doc.createNestedObject("recordingState");
+    
+    addEnum(recordingState, new_mode);
 
-    ESP_LOGI(TAG, "setRecordMode now %s", new_mode);
+    String& status = resp.getPayload();
+    if (serializeJsonPretty(doc, status) == 0) {
+        ESP_LOGE(TAG, "Failed serialize JSON config!");
+    }
+
+    ESP_LOGI(TAG, "setRecordMode now %s(%d)", toString(new_mode), static_cast<int>(new_mode));
     ESP_LOGI(TAG, "wav_writer mode = %s", wav_writer.get_mode_str());
     if (ai_mode_change) {
         ESP_LOGI(TAG, "ai mode = %s", new_ai_mode ? "ON" : "OFF");

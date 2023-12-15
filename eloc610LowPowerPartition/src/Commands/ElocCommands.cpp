@@ -51,7 +51,7 @@ extern ESP32Time timeObject;
 extern SDCardSDIO *sd_card;
 
 #define ENUM_MACRO(name, v0, v1, v2, v3, v4, v5)\
-    enum class name { v0 = -1, v1=0, v2, v3, v4, v5};\
+    enum class name { v0, v1, v2, v3, v4, v5};\
     constexpr const char *name##Strings[] = {  #v0, #v1, #v2, #v3, #v4, #v5}; \
     constexpr const char *toString(name value) {  return name##Strings[static_cast<int>(value)]; }
 
@@ -62,6 +62,7 @@ RecState calcRecordingState() {
     RecState recState = RecState::recInvalid;
 
     WAVFileWriter::Mode recMode = wav_writer.get_mode();
+    ESP_LOGI("COMMANDS", "WavWriterMode = %s(%d), AI = %s", wav_writer.get_mode_str(), wav_writer.get_mode_int(), ai_run_enable ? "ON" : "OFF");
     switch (recMode) {
         case WAVFileWriter::Mode::disabled:
             if (ai_run_enable) {

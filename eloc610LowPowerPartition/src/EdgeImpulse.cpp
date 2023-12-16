@@ -149,24 +149,17 @@ void EdgeImpulse::free_buffers(void)
     inference.buf_count = 0;
     inference.buf_ready = 0;
 
-    if (inference.buffers[0] != NULL)
-    {
+    if (inference.buffers[0] != NULL) {
         ei_free(inference.buffers[0]);
-    }
-    else
-    {
+    } else {
         ESP_LOGE(TAG, "inference.buffers[0] is already NULL");
     }
 
-    if (inference.buffers[1] != NULL)
-    {
+    if (inference.buffers[1] != NULL) {
         ei_free(inference.buffers[1]);
-    }
-    else
-    {
+    } else {
         ESP_LOGE(TAG, "inference.buffers[0] is already NULL");
     }
-
 }
 
 void EdgeImpulse::run_classifier_init()
@@ -202,8 +195,6 @@ void EdgeImpulse::ei_thread() {
                           NULL /* pulNotificationValue */,
                           portMAX_DELAY /* xTicksToWait*/) == pdTRUE) {
       if (inference.buf_ready == 1) {
-        ESP_LOGI(TAG, "ei_thread...");
-
         // Run classifier from main.cpp
         callback();
       }
@@ -222,7 +213,7 @@ int EdgeImpulse::start_ei_thread(std::function<void()> _callback) {
 
   this->callback = _callback;
 
-  int ret = xTaskCreate(this->start_ei_thread_wrapper, "ei_thread", 1024 * 4, this, 8, &ei_TaskHandler);
+  int ret = xTaskCreate(this->start_ei_thread_wrapper, "ei_thread", 1024 * 4, this, 7, &ei_TaskHandler);
 
   if (ret != pdPASS) {
     ESP_LOGE(TAG, "Failed to create ei_thread");

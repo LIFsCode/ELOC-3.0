@@ -293,7 +293,10 @@ int I2SMEMSSampler::read()
                     }
 
                     inference->buf_ready = 1;
+                    if (ei_TaskHandler != NULL)
+                        xTaskNotify(ei_TaskHandler, (0), eNoAction);
                     }
+
                 } else {
                     ESP_LOGV(TAG, "Not saving sample, skip_current = %d", skip_current);
                     skip_current++;

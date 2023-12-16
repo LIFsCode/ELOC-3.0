@@ -66,10 +66,6 @@ static const char *TAG = "main";
 
     String ei_results_filename;
 
-    // wav file pointer
-    // TODO: Move to wav_writer class
-    FILE *fp = nullptr;
-
     // BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers
     //       but all EdgeImpulse stuff got encapsulated within a class, which does not match
     int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
@@ -79,6 +75,9 @@ static const char *TAG = "main";
 #endif
 
 bool gMountedSDCard = false;
+// wav file pointer
+// TODO: Move to wav_writer class??
+FILE *fp = nullptr;
 
 /**
  * @brief Should inference be run on sound samples? 
@@ -745,7 +744,7 @@ int save_inference_result_SD(String f_name, String results_string)
  *        run the inference. Required due to namespace issues, static implementations etc.. 
  */
 void ei_callback_func() {
-    ESP_LOGI(TAG, "ei_callback_func");
+    ESP_LOGV(TAG, "Func: %s", __func__);
 
     if (ai_run_enable == true &&
         edgeImpulse->get_status() == edgeImpulse->Status::running) {
@@ -753,6 +752,7 @@ void ei_callback_func() {
         // Blocking function - unblocks when buffer is full
         if (!m) {
             ESP_LOGE(TAG, "ERR: Failed to record audio...");
+            // Give up on this inference, come back next time
             return;
         }
 
@@ -777,10 +777,9 @@ void ei_callback_func() {
 
         ESP_LOGI(TAG, "Cycles taken to run inference = %d", (cpu_hal_get_cycle_count() - startCounter));
 
-        if (r != EI_IMPULSE_OK)
-        {
+        if (r != EI_IMPULSE_OK) {
             ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
-            edgeImpulse->set_status(edgeImpulse->Status::not_running);
+            // Give up on this inference, come back next time
             return;
         }
 

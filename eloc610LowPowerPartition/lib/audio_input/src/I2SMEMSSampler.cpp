@@ -320,7 +320,6 @@ int I2SMEMSSampler::read()
                 }
             #endif
         }
-
     }
 
     if (0) {
@@ -416,6 +415,9 @@ void I2SMEMSSampler::start_read_thread_wrapper(void * _this) {
 }
 
 int I2SMEMSSampler::start_read_task(int i2s_samples_to_read) {
+
+  enable_read = true;
+
   // logical right shift divides a number by 2, throwing out any remainders
   // Need to divide by 2 because reading bytes into a int16_t buffer
   this->i2s_samples_to_read = i2s_samples_to_read;
@@ -423,7 +425,15 @@ int I2SMEMSSampler::start_read_task(int i2s_samples_to_read) {
   // Stack 1024 * X - experimentally determined
   int ret = xTaskCreate(this->start_read_thread_wrapper, "I2S read", 1024 * 4, this, 10, NULL);
 
+  if (ret != pdPASS) {
+    ESP_LOGE(TAG, "xTaskCreate failed for task I2S read: %d", ret);
+  }
+
   return ret;
+}
+
+void I2SMEMSSampler::stop_read_task() {
+    enable_read = false;
 }
 
 I2SMEMSSampler::~I2SMEMSSampler() {

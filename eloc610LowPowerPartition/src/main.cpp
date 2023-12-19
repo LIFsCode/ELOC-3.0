@@ -82,8 +82,9 @@ FILE *fp = nullptr;
 /**
  * @brief Should inference be run on sound samples? 
  * @todo Set from Bluetooth / config file
+ * @note Default is to be idle at startup
  */
-bool ai_run_enable = true;
+bool ai_run_enable = false;
 
 /**
  * @brief The size of the buffer for I2SMEMSampler to store the sound samples
@@ -613,9 +614,6 @@ void start_sound_recording(FILE *fp) {
 
     static bool wav_folder_created = false;
 
-    // TODO: set this as not recording in WAVFileWriter.cpp::finish()
-    // gRecording=RecState::RECORDING;
-
     if (wav_folder_created == false) {
         wav_folder_created = createSessionFolder();
     }
@@ -1126,14 +1124,10 @@ void app_main(void) {
                 ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
                 delay(5);
             }
-
-            // TODO: DEBUG - should be set from Bluetooth config
-            wav_writer.set_mode(WAVFileWriter::Mode::disabled);
-
         } else {
             ESP_LOGE(TAG, "SD card not mounted, cannot create WAVFileWriter");
             if (wav_writer)
-                wav_writer.set_mode(WAVFileWriter::Mode::disabled);
+                wav_writer.set_mode(WAVFileWriter::Mode::disabled);  // Default is disabled anyway
             #ifdef EDGE_IMPULSE_ENABLED
                 save_ai_results_to_sd = false;
             #endif
@@ -1149,8 +1143,6 @@ void app_main(void) {
             edgeImpulse->set_status(edgeImpulse->Status::running);
             edgeImpulse->start_ei_thread(ei_callback_func);
         #endif
-
-        input->start_read_task(sample_buffer_size/ sizeof(signed short));
     }
 
     auto loopCnt = 0;
@@ -1196,6 +1188,18 @@ void app_main(void) {
             wav_writer.get_mode() == WAVFileWriter::Mode::continuous &&
             checkSDCard() == ESP_OK) {
             start_sound_recording(fp);
+        }
+
+        // Only run I2SMemSampler task if running & not required
+        if (input->get_task_enable() == true &&
+            wav_writer.get_mode() == WAVFileWriter::Mode::disabled &&
+            ai_run_enable == false) {
+            input->stop_read_task();
+        } else if (input->get_task_enable() == false &&
+                   (wav_writer.get_mode() == WAVFileWriter::Mode::continuous ||
+                    wav_writer.get_mode() == WAVFileWriter::Mode::single ||
+                    ai_run_enable == true)) {
+            input->start_read_task(sample_buffer_size/ sizeof(signed short));
         }
 
 #ifdef EDGE_IMPULSE_ENABLED

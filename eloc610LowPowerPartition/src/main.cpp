@@ -187,8 +187,14 @@ void testInput()
         i2s_mic_Config.sample_rate = i;
         i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL;
 
-        input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-        input->start();
+        input = new I2SMEMSSampler(
+            I2S_NUM_0, i2s_mic_pins,
+            i2s_mic_Config,
+            getMicInfo().MicBitShift,
+            getConfig().listenOnly,
+            getMicInfo().MicUseTimingFix,
+            (sample_buffer_size/ sizeof(signed short)));
+        input->install_and_start();
         delay(100);
         ESP_LOGI(TAG, "Clockrate: %f", i2s_get_clk(I2S_NUM_0));
         input->stop();
@@ -1101,17 +1107,24 @@ void app_main(void) {
     /**
      * @note Using MicUseTimingFix == true or false doesn't seem to effect ICS-43434 mic
      */
-    input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,
-                               getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+    input = new I2SMEMSSampler(I2S_DEFAULT_PORT,
+                               i2s_mic_pins,
+                               i2s_mic_Config,
+                               getMicInfo().MicBitShift,
+                               getConfig().listenOnly,
+                               getMicInfo().MicUseTimingFix,
+                               (sample_buffer_size/ sizeof(signed short)));
 
     if (input == nullptr) {
         ESP_LOGE(TAG, "Failed to create I2SMEMSSampler");
         return;
     } else {
-        input->start();
-
+        // Can't install without starting?
+        input->install_and_start();
+        delay(100);
         // Zero DMA buffer, prevents popping sound on start
         input->zero_dma_buffer(I2S_DEFAULT_PORT);
+        input->stop();
 
         if (checkSDCard() == ESP_OK) {
             // create a new wave file wav_writer & make sure sample rate is up to date
@@ -1190,16 +1203,21 @@ void app_main(void) {
             start_sound_recording(fp);
         }
 
-        // Only run I2SMemSampler task if running & not required
+        /**
+         * Disable I2SMEMSSampler thread if:
+         * 1. Wav writing disabled &
+         * 2. Not in the middle of writing a wav file &
+         * 3. Not running inference
+         */
         if (input->get_task_enable() == true &&
             wav_writer.get_mode() == WAVFileWriter::Mode::disabled &&
+            wav_writer.is_file_handle_set() == false &&
             ai_run_enable == false) {
             input->stop_read_task();
         } else if (input->get_task_enable() == false &&
-                   (wav_writer.get_mode() == WAVFileWriter::Mode::continuous ||
-                    wav_writer.get_mode() == WAVFileWriter::Mode::single ||
+                   (wav_writer.is_file_handle_set() == true ||
                     ai_run_enable == true)) {
-            input->start_read_task(sample_buffer_size/ sizeof(signed short));
+            input->start_read_task();
         }
 
 #ifdef EDGE_IMPULSE_ENABLED

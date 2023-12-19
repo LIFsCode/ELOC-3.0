@@ -38,7 +38,12 @@ class WAVFileWriter
   int m_sample_rate = 16000;          // I2S sample rate, reasonable default
   bool enable_wav_file_write = true;  // Write to wav file while true
   int secondsPerFile = 60;            // Seconds per file to write
-  Mode mode = Mode::disabled;         // Mode of operation
+
+  /**
+   * @brief Mode of operation
+   * @note Default is to be idle/ disabled at startup
+   */
+  Mode mode = Mode::disabled;
 
   const char *mode_str[3] = {"disabled", "single", "continuous"};
   const int mode_int[3] = {0, 1, 2};

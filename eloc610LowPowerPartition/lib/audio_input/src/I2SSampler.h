@@ -8,22 +8,19 @@
  **/
 class I2SSampler
 {
-protected:
+ protected:
     i2s_port_t m_i2sPort = I2S_NUM_0;
     i2s_config_t m_i2s_config;
     virtual bool configureI2S() = 0;
-    
+
     /**
      * @brief Un-configure I2S port
     */
-    virtual void unConfigureI2S(){};
-    
-    
-    virtual void processI2SData(void *samples, size_t count){
-        // nothing to do for the default case
-    };
+    virtual void unConfigureI2S() {}
 
-public:
+    virtual void processI2SData(void *samples, size_t count) {}
+
+ public:
     I2SSampler(i2s_port_t i2sPort, const i2s_config_t &i2sConfig);
 
     /**
@@ -33,23 +30,43 @@ public:
     virtual bool zero_dma_buffer(i2s_port_t i2sPort) = 0;
 
     /**
-     * @brief Install the I2S port
-     * TODO: This really should be renamed install, not start
+     * @brief Install and start the I2S port
      * @return true on success
     */
-    bool start();
+    virtual bool install_and_start();
 
-    virtual int read() = 0;
-    
     /**
-     * @brief Uninstall the I2S port
-     * TODO: This really should be renamed uninstall, not stop
+     * @brief Read I2S samples from DMA buffer
      * 
+     * @return int 
      */
-    void stop();
-    
-    int sample_rate()
-    {
+    virtual int read() = 0;
+
+    /**
+     * @brief Start the I2S
+     * 
+     * @return true success
+     * @return false failure
+     */
+    virtual bool start();
+
+    /**
+     * @brief Stop the I2S
+     * 
+     * @return true success
+     * @return false failure
+     */
+    virtual bool stop();
+
+    int sample_rate() {
         return m_i2s_config.sample_rate;
     }
+
+    /**
+     * @brief Uninstall the I2S port
+     * 
+     * @return true success
+     * @return false failure
+     */
+    virtual bool uninstall();
 };

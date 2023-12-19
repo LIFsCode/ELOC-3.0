@@ -115,7 +115,20 @@ class I2SMEMSSampler : public I2SSampler
     virtual bool register_ei_inference(inference_t *ext_inference, int ext_ei_sampling_freq);
 
     /**
-     * 
+     * @brief Start the I2SMEMSSampler read task
     */
     virtual int start_read_task(int i2s_bytes_to_read);
+
+    /**
+     * @brief Stop the I2SMEMSSampler read task
+    */
+    virtual void stop_read_task();
+
+    /**
+     * @brief Check if read task is enabled?
+     * 
+     * @return true 
+     * @return false 
+     */
+    virtual bool get_task_enable() {return enable_read;}
 };

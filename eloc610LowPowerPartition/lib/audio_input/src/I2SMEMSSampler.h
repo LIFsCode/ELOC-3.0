@@ -17,6 +17,8 @@ class I2SMEMSSampler : public I2SSampler
     bool mListenOnly = false;
     WAVFileWriter *writer = nullptr;
 
+    int32_t *raw_samples = nullptr;
+
     /**
      * @brief The volume shift is used to scale the adjust the volume
      */
@@ -64,12 +66,13 @@ class I2SMEMSSampler : public I2SSampler
 
  public:
     I2SMEMSSampler(
-        i2s_port_t i2s_port,
-        i2s_pin_config_t &i2s_pins,
-        i2s_config_t i2s_config,
-        int  bitShift = I2S_DEFAULT_BIT_SHIFT,     // TODO: depreciated?? Using I2S_DEFAULT_BIT_SHIFT + I2S_DEFAULT_VOLUME instead from config.h
-        bool listenOnly = false,
-        bool fixSPH0645 = false);
+                i2s_port_t i2s_port,
+                i2s_pin_config_t &i2s_pins,
+                i2s_config_t i2s_config,
+                int  bitShift = I2S_DEFAULT_BIT_SHIFT, // TODO: depreciated?? Using I2S_DEFAULT_BIT_SHIFT + I2S_DEFAULT_VOLUME instead from config.h
+                bool listenOnly = false,
+                bool fixSPH0645 = false,
+                int i2s_samples_to_read = UINT32_MAX);
 
     virtual ~I2SMEMSSampler();
 
@@ -117,7 +120,7 @@ class I2SMEMSSampler : public I2SSampler
     /**
      * @brief Start the I2SMEMSSampler read task
     */
-    virtual int start_read_task(int i2s_bytes_to_read);
+    virtual int start_read_task();
 
     /**
      * @brief Stop the I2SMEMSSampler read task

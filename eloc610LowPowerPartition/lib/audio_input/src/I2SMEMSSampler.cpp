@@ -5,18 +5,18 @@
 
 static const char *TAG = "I2SMEMSSampler";
 
-I2SMEMSSampler::I2SMEMSSampler (
+I2SMEMSSampler::I2SMEMSSampler(
     i2s_port_t i2s_port,
     i2s_pin_config_t &i2s_pins,
     i2s_config_t i2s_config,
     int bitShift,
     bool listenOnly,
-    bool fixSPH0645) :  I2SSampler(i2s_port, i2s_config),
-                        mBitShift(bitShift),
-                        mListenOnly(listenOnly)
-{
+    bool fixSPH0645, int _i2s_samples_to_read) :  I2SSampler(i2s_port, i2s_config),
+                                                            mBitShift(bitShift),
+                                                            mListenOnly(listenOnly) {
     m_i2sPins = i2s_pins;
     m_fixSPH0645 = fixSPH0645;
+    i2s_samples_to_read = _i2s_samples_to_read;
 
     i2s_sampling_rate = i2s_config.sample_rate;
 
@@ -29,6 +29,7 @@ I2SMEMSSampler::I2SMEMSSampler (
         ESP_LOGI(TAG, "mBitShift = %d", mBitShift);
         ESP_LOGI(TAG, "mListenOnly = %d", mListenOnly);
         ESP_LOGI(TAG, "m_fixSPH0645 = %d", m_fixSPH0645);
+        ESP_LOGI(TAG, "i2s_samples_to_read = %d", i2s_samples_to_read);
     }
 }
 
@@ -44,6 +45,20 @@ bool I2SMEMSSampler::configureI2S() {
 
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Func: %s, error i2s_set_pin", __func__);
+    }
+
+    // Allocate a buffer of BYTES sufficient for sample size
+    #ifdef I2S_BUFFER_IN_PSRAM
+        raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * i2s_samples_to_read), MALLOC_CAP_SPIRAM);
+    #else
+        // Use MALLOC_CAP_DMA to allocate in DMA-able memory
+        // MALLOC_CAP_32BIT to allocate in 32-bit aligned memory
+        raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * i2s_samples_to_read), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    #endif
+
+    if (raw_samples == NULL) {
+        ESP_LOGE(TAG, "Could not allocate memory for samples of size %d", i2s_samples_to_read);
+        return 0;
     }
 
     return ret;
@@ -81,7 +96,6 @@ bool I2SMEMSSampler::deregister_wavFileWriter() {
 }
 
 bool I2SMEMSSampler::register_ei_inference(inference_t *ext_inference, int ext_ei_sampling_freq) {
-
     ESP_LOGV(TAG, "Func: %s", __func__);
 
     inference = ext_inference;
@@ -96,6 +110,11 @@ bool I2SMEMSSampler::register_ei_inference(inference_t *ext_inference, int ext_e
 int I2SMEMSSampler::read()
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
+
+    if (raw_samples == nullptr) {
+        ESP_LOGE(TAG, "raw_samples == NULL");
+        return 0;
+    }
 
     #ifdef ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
         // Automatic gain defintions
@@ -133,21 +152,6 @@ int I2SMEMSSampler::read()
         // Used to notification to serial monitor when volume is changed
         bool volume_change = false;
     #endif
-
-    // Allocate a buffer of BYTES sufficient for sample size
-
-    #ifdef I2S_BUFFER_IN_PSRAM
-        int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * i2s_samples_to_read), MALLOC_CAP_SPIRAM);
-    #else
-        // Use MALLOC_CAP_DMA to allocate in DMA-able memory
-        // MALLOC_CAP_32BIT to allocate in 32-bit aligned memory
-        int32_t *raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * i2s_samples_to_read), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    #endif
-
-    if (raw_samples == NULL) {
-        ESP_LOGE(TAG, "Could not allocate memory for samples");
-        return 0;
-    }
 
     size_t bytes_read = 0;
 
@@ -385,13 +389,6 @@ int I2SMEMSSampler::read()
     if (volume_change == true) {
         ESP_LOGI(TAG, "volume_shift = %d", volume_shift);
     }
-
-    #endif
-
-    #ifdef I2S_BUFFER_IN_PSRAM
-        heap_caps_free(raw_samples);
-    #else
-        free(raw_samples);
     #endif
 
     return samples_read;
@@ -408,19 +405,17 @@ void I2SMEMSSampler::start_read_thread()
     }
 
     vTaskDelete(NULL);
+    this->stop();
 }
 
 void I2SMEMSSampler::start_read_thread_wrapper(void * _this) {
-  ((I2SMEMSSampler*)_this)->start_read_thread();
+  reinterpret_cast<I2SMEMSSampler*>(_this)->start_read_thread();
 }
 
-int I2SMEMSSampler::start_read_task(int i2s_samples_to_read) {
-
+int I2SMEMSSampler::start_read_task() {
   enable_read = true;
-
-  // logical right shift divides a number by 2, throwing out any remainders
-  // Need to divide by 2 because reading bytes into a int16_t buffer
-  this->i2s_samples_to_read = i2s_samples_to_read;
+  this->start();
+  zero_dma_buffer(m_i2sPort);
 
   // Stack 1024 * X - experimentally determined
   int ret = xTaskCreate(this->start_read_thread_wrapper, "I2S read", 1024 * 4, this, 10, NULL);
@@ -437,4 +432,14 @@ void I2SMEMSSampler::stop_read_task() {
 }
 
 I2SMEMSSampler::~I2SMEMSSampler() {
+    ESP_LOGV(TAG, "Func: %s", __func__);
+
+    if (raw_samples != nullptr) {
+        #ifdef I2S_BUFFER_IN_PSRAM
+            heap_caps_free(raw_samples);
+        #else
+            free(raw_samples);
+        #endif
+    }
+
 }

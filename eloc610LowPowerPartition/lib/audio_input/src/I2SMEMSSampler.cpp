@@ -53,7 +53,8 @@ bool I2SMEMSSampler::configureI2S() {
     #else
         // Use MALLOC_CAP_DMA to allocate in DMA-able memory
         // MALLOC_CAP_32BIT to allocate in 32-bit aligned memory
-        raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * i2s_samples_to_read), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+        raw_samples = (int32_t *)heap_caps_malloc((sizeof(int32_t) * i2s_samples_to_read),
+                        MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL | MALLOC_CAP_32BIT);
     #endif
 
     if (raw_samples == NULL) {
@@ -394,8 +395,7 @@ int I2SMEMSSampler::read()
     return samples_read;
 }
 
-void I2SMEMSSampler::start_read_thread()
-{
+void I2SMEMSSampler::start_read_thread() {
     while (enable_read) {
         auto samples_read = this->read();
 
@@ -404,8 +404,11 @@ void I2SMEMSSampler::start_read_thread()
         }
     }
 
-    vTaskDelete(NULL);
+    ESP_LOGI(TAG, "i2s_read thread stopped");
+
     this->stop();
+
+    vTaskDelete(NULL);
 }
 
 void I2SMEMSSampler::start_read_thread_wrapper(void * _this) {
@@ -418,7 +421,7 @@ int I2SMEMSSampler::start_read_task() {
   zero_dma_buffer(m_i2sPort);
 
   // Stack 1024 * X - experimentally determined
-  int ret = xTaskCreate(this->start_read_thread_wrapper, "I2S read", 1024 * 4, this, 10, NULL);
+  int ret = xTaskCreate(this->start_read_thread_wrapper, "i2s_read", 1024 * 4, this, 10, NULL);
 
   if (ret != pdPASS) {
     ESP_LOGE(TAG, "xTaskCreate failed for task I2S read: %d", ret);

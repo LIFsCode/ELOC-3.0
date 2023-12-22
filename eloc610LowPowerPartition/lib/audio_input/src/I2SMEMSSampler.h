@@ -69,10 +69,9 @@ class I2SMEMSSampler : public I2SSampler
                 i2s_port_t i2s_port,
                 i2s_pin_config_t &i2s_pins,
                 i2s_config_t i2s_config,
-                int  bitShift = I2S_DEFAULT_BIT_SHIFT, // TODO: depreciated?? Using I2S_DEFAULT_BIT_SHIFT + I2S_DEFAULT_VOLUME instead from config.h
+                int  bitShift = I2S_DEFAULT_BIT_SHIFT,     // TODO: depreciated?? Using I2S_DEFAULT_BIT_SHIFT + I2S_DEFAULT_VOLUME instead from config.h
                 bool listenOnly = false,
-                bool fixSPH0645 = false,
-                int i2s_samples_to_read = UINT32_MAX);
+                bool fixSPH0645 = false);
 
     virtual ~I2SMEMSSampler();
 
@@ -87,9 +86,9 @@ class I2SMEMSSampler : public I2SSampler
      * @brief Zero the appropiate TX DMA buffer for the I2S port
      * @note This is required to prevent a pop at the start of the audio
      * @note This is only required for TX (i.e. recording)
-     * @return true on success
+     * @return esp_err_t
     */
-    bool zero_dma_buffer(i2s_port_t i2sPort) override;
+    esp_err_t zero_dma_buffer(i2s_port_t i2sPort) override;
 
     /**
      * @brief Register an external WAVFileWriter
@@ -118,20 +117,7 @@ class I2SMEMSSampler : public I2SSampler
     virtual bool register_ei_inference(inference_t *ext_inference, int ext_ei_sampling_freq);
 
     /**
-     * @brief Start the I2SMEMSSampler read task
+     *
     */
-    virtual int start_read_task();
-
-    /**
-     * @brief Stop the I2SMEMSSampler read task
-    */
-    virtual void stop_read_task();
-
-    /**
-     * @brief Check if read task is enabled?
-     * 
-     * @return true 
-     * @return false 
-     */
-    virtual bool get_task_enable() {return enable_read;}
+    virtual int start_read_task(int i2s_bytes_to_read);
 };

@@ -182,27 +182,19 @@ void testInput()
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
-    for (uint32_t i = 1000; i < 34000; i = i + 2000)
-    {
+    for (uint32_t i = 1000; i < 34000; i = i + 2000) {
         i2s_mic_Config.sample_rate = i;
         i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL;
 
-        input = new I2SMEMSSampler(
-            I2S_NUM_0, i2s_mic_pins,
-            i2s_mic_Config,
-            getMicInfo().MicBitShift,
-            getConfig().listenOnly,
-            getMicInfo().MicUseTimingFix,
-            (sample_buffer_size/ sizeof(signed short)));
+        input = new I2SMEMSSampler(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
         input->install_and_start();
         delay(100);
         ESP_LOGI(TAG, "Clockrate: %f", i2s_get_clk(I2S_NUM_0));
-        input->stop();
+        input->uninstall();
         delay(100);
     }
 
-    delete input;
-    input = nullptr;
+        input = nullptr;
     delay(100);
 }
 
@@ -1107,28 +1099,22 @@ void app_main(void) {
     /**
      * @note Using MicUseTimingFix == true or false doesn't seem to effect ICS-43434 mic
      */
-    input = new I2SMEMSSampler(I2S_DEFAULT_PORT,
-                               i2s_mic_pins,
-                               i2s_mic_Config,
-                               getMicInfo().MicBitShift,
-                               getConfig().listenOnly,
-                               getMicInfo().MicUseTimingFix,
-                               (sample_buffer_size/ sizeof(signed short)));
+    input = new I2SMEMSSampler(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,
+                               getConfig().listenOnly, getMicInfo().MicUseTimingFix);
 
     if (input == nullptr) {
         ESP_LOGE(TAG, "Failed to create I2SMEMSSampler");
         return;
     } else {
-        // Can't install without starting?
-        input->install_and_start();
-        delay(100);
+        // Don't start I2S unless required
+        // input->install_and_start();
+        
         // Zero DMA buffer, prevents popping sound on start
-        input->zero_dma_buffer(I2S_DEFAULT_PORT);
-        input->stop();
-
+        // input->zero_dma_buffer(I2S_DEFAULT_PORT);
+        
         if (checkSDCard() == ESP_OK) {
             // create a new wave file wav_writer & make sure sample rate is up to date
-            if (wav_writer.initialize((int32_t)(i2s_get_clk(I2S_DEFAULT_PORT)), 2, NUMBER_OF_CHANNELS) != true) {
+            if (wav_writer.initialize(i2s_mic_Config.sample_rate, 2, NUMBER_OF_CHANNELS) != true) {
                 ESP_LOGE(TAG, "Failed to initialize WAVFileWriter");
             }
 
@@ -1195,6 +1181,18 @@ void app_main(void) {
             }
         }
 
+        // Need to start I2S?
+        // Note: Once started continues to run..
+        if ((wav_writer.get_mode() != WAVFileWriter::Mode::disabled || ai_run_enable != false) &&
+            input->is_i2s_installed_and_started() == false) {
+            // Keep trying until successful
+            if (input->install_and_start() == ESP_OK) {
+                delay(300);
+                input->zero_dma_buffer(I2S_DEFAULT_PORT);
+                input->start_read_task(sample_buffer_size/ sizeof(signed short));
+            }
+        }
+
         // Start a new recording?
         if (wav_writer &&
             wav_writer.is_file_handle_set() == false &&
@@ -1203,24 +1201,7 @@ void app_main(void) {
             start_sound_recording(fp);
         }
 
-        /**
-         * Disable I2SMEMSSampler thread if:
-         * 1. Wav writing disabled &
-         * 2. Not in the middle of writing a wav file &
-         * 3. Not running inference
-         */
-        if (input->get_task_enable() == true &&
-            wav_writer.get_mode() == WAVFileWriter::Mode::disabled &&
-            wav_writer.is_file_handle_set() == false &&
-            ai_run_enable == false) {
-            input->stop_read_task();
-        } else if (input->get_task_enable() == false &&
-                   (wav_writer.is_file_handle_set() == true ||
-                    ai_run_enable == true)) {
-            input->start_read_task();
-        }
-
-#ifdef EDGE_IMPULSE_ENABLED
+        #ifdef EDGE_IMPULSE_ENABLED
 
         if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);
@@ -1254,7 +1235,7 @@ void app_main(void) {
 
     // Should never get here
     if (input != nullptr) {
-        input->stop();
+        input->uninstall();
         delete input;
         input = nullptr;
     }

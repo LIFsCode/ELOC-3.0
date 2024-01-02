@@ -155,7 +155,14 @@ void bt_sendResponse(const CmdResponse& cmdResponse) {
         SerialBT.print("\", \"cmd\" : \"");
         SerialBT.print(cmdResponse.getReturnValue().Cmd);
         SerialBT.print("\", \"payload\" : ");
-        SerialBT.print(cmdResponse.getReturnValue().Payload);
+
+        String payload = cmdResponse.getReturnValue().Payload;
+        if (payload.length() <= 0) {
+            // Use empty string format for JSON
+            payload = "\"\"";
+        }
+        SerialBT.print(payload);
+        
         SerialBT.println("}");
         SerialBT.print(BT_RESP_TERMINATION);
     }

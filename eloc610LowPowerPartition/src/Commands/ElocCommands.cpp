@@ -46,7 +46,6 @@
 /********** BUGME: encapsulate ELOC status and make it threadsafe!!!*/ 
 //BUGME: global status
 extern ESP32Time timeObject;
-extern SDCardSDIO *sd_card;
 
 namespace BtCommands {
 static const char* TAG = "BtCmds";
@@ -90,9 +89,9 @@ void printStatus(String& buf) {
     float sdCardSizeGB = 0;
     float sdCardFreeSpaceGB = 0;
   
-    if (sd_card && sd_card->isMounted()) {
-        sdCardSizeGB = sd_card->getCapacityMB()/1024;
-        sdCardFreeSpaceGB = sd_card->freeSpaceGB();
+    if (ElocSystem::GetInstance().isSDCardMounted()) {
+        sdCardSizeGB = ElocSystem::GetInstance().getSdCard().getCapacityMB()/1024;
+        sdCardFreeSpaceGB = ElocSystem::GetInstance().getSdCard().freeSpaceGB();
 
     }
     device["SdCardSize[GB]"]             = round(sdCardSizeGB,2);

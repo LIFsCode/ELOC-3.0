@@ -26,6 +26,7 @@
 
 #include <esp_err.h>
 
+#include "SDCardSDIO.h"
 #include "CPPI2C/cppi2c.h"
 #include "ELOC_IOEXP.hpp"
 #include "lis3dh.h"
@@ -73,6 +74,7 @@ public:
 private:
     /* data */
     ElocSystem();
+    SDCardSDIO* mSdCard;
     CPPI2C::I2c* mI2CInstance;
     ELOC_IOEXP* mIOExpInstance;
     LIS3DH* mLis3DH;
@@ -156,6 +158,14 @@ public:
 
     void notifyFwUpdateError();
     void notifyFwUpdate();
+
+    bool mountSDCard();
+    esp_err_t checkSDCard(); 
+    bool isSDCardMounted();
+    inline const SDCardSDIO& getSdCard() {
+        assert(mSdCard != NULL);
+        return *mSdCard;
+    }
 };
 
 

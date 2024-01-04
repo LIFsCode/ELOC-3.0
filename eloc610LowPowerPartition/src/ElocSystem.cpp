@@ -22,6 +22,7 @@
  */
 
 #include <vector>
+#include <sys/stat.h>
 #include <esp_log.h>
 #include <nvs_flash.h>
 #include <nvs.h>
@@ -32,6 +33,8 @@
 #include "Arduino.h"
 #include "EasyBuzzer.h"
 
+#include "utils/ffsutils.h"
+
 #include "config.h"
 #include "SDCardSDIO.h"
 #include "ElocSystem.hpp"
@@ -39,8 +42,6 @@
 #include "Battery.hpp"
 
 //TODO move sd card into ELOC system
-extern SDCardSDIO *sd_card;
-
 
 static const char *TAG = "ElocSystem";
 
@@ -133,7 +134,7 @@ public:
 
 
 ElocSystem::ElocSystem():
-    mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true), 
+    mSdCard(NULL), mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true), 
     mRefreshStatus(false), mIntruderDetected(false), 
     mFwUpdateProcessing(false), mFactoryInfo()
 {
@@ -242,6 +243,11 @@ ElocSystem::ElocSystem():
 
 ElocSystem::~ElocSystem()
 {
+    if (mBatteryLed) delete mBatteryLed;
+    if (mStatusLed) delete mStatusLed;
+    if (mLis3DH) delete mLis3DH;
+    if (mIOExpInstance) delete mIOExpInstance;
+    if (mSdCard) delete mSdCard;
 }
 
 uint16_t ElocSystem::getTemperaure() {
@@ -311,7 +317,7 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected, int r
     status.btEnabled = btEnabled;
     status.btConnected = btConnected;
     status.recMode = recordMode;
-    status.sdCardMounted = sd_card->isMounted();
+    status.sdCardMounted = isSDCardMounted();
     status.intruderDetected = mIntruderDetected;
     if ((mStatus == status) && !mRefreshStatus) {
         if (esp_err_t err = mStatusLed->update()) {
@@ -440,4 +446,50 @@ void ElocSystem::notifyFwUpdate() {
         mStatusLed->setBlinking(false, 100, 100, 60*1000);
         mBatteryLed->setBlinking(false, 100, 100, 60*1000);
     }
+}
+
+
+bool ElocSystem::mountSDCard() {
+
+    ESP_LOGI(TAG, "TRYING to mount SDCArd, SDIO ");
+    mSdCard = new SDCardSDIO("/sdcard");
+    if (mSdCard->isMounted()) {
+        ESP_LOGI(TAG, "SD card mounted ");
+        const char* ELOC_FOLDER = "/sdcard/eloc";
+        if (!ffsutil::folderExists(ELOC_FOLDER)) {
+            ESP_LOGI(TAG, "%s does not exist, creating empty folder", ELOC_FOLDER);
+            mkdir(ELOC_FOLDER, 0777);
+        }
+        float freeSpace = mSdCard->freeSpaceGB();
+        float totalSpace = mSdCard->getCapacityMB()/1024;
+        ESP_LOGI(TAG, "SD card %f / %f GB free", freeSpace, totalSpace);
+    }
+    return mSdCard->isMounted();
+}
+
+esp_err_t ElocSystem::checkSDCard() {
+
+    if (!isSDCardMounted()) {
+        // in case SD card is not yet mounted, mout it now, e.g. not inserted durint boot
+        if (!mountSDCard()) {
+            return ESP_ERR_NOT_FOUND;
+        }
+    }
+    // getupdated free space
+    float freeSpaceGB = mSdCard->freeSpaceGB();
+    if ((freeSpaceGB > 0.0) && (freeSpaceGB < 0.5)) {
+        //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
+        //  btwrite("SD Card full. Cannot record");
+        //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
+        ESP_LOGE(TAG, "SD card is full, Free space %.3f GB", freeSpaceGB);
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+bool ElocSystem::isSDCardMounted() {
+    if (mSdCard) {
+        return mSdCard->isMounted();
+    }
+    return false;
 }

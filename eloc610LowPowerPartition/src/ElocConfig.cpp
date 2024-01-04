@@ -33,6 +33,7 @@
 #include "utils/ffsutils.h"
 #include "config.h"
 #include "ElocConfig.hpp"
+#include "ElocSystem.hpp"
 
 
 static const char* TAG = "CONFIG";
@@ -106,8 +107,6 @@ const elocDeviceInfo_T& getDeviceInfo() {
 /**************************************************************************************************/
 
 /*************************** Global settings via config file **************************************/
-//BUGME: handle this through file system
-extern bool gMountedSDCard;
 
 
 void loadDevideInfo(const JsonObject& device) {
@@ -194,7 +193,7 @@ bool readConfigFile(const char* filename) {
 }
 
 void readConfig() {
-    if (gMountedSDCard && ffsutil::fileExist(CFG_FILE_SD)) {
+    if (ElocSystem::GetInstance().isSDCardMounted() && ffsutil::fileExist(CFG_FILE_SD)) {
         ESP_LOGI(TAG, "Using test config from sd-card: %s", CFG_FILE_SD);
         readConfigFile(CFG_FILE_SD);
     }
@@ -287,7 +286,7 @@ bool writeConfigFile(const char* filename) {
 
 bool writeConfig() {
 
-    if (gMountedSDCard) {
+    if (ElocSystem::GetInstance().isSDCardMounted()) {
         if (!writeConfigFile("/sdcard/elocConfig.config.bak")) {
             ESP_LOGE(TAG, "Failed to write config backup to sdcard!");
         }

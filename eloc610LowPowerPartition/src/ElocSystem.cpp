@@ -357,7 +357,7 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
             mStatusLed->setState(true);
             mBatteryLed->setState(true);
             if (!mStatus.btConnected) {
-                setBuzzerBeep(98 , 1, 10*1000, 5);
+                setBuzzerBeep(98 , 1);
             }
         }
         else if (status.btEnabled) {

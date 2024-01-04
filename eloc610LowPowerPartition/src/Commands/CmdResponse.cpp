@@ -48,6 +48,10 @@ void CmdResponse::setError(esp_err_t errCode, const char* errMsg)
 {
     mReturnValue.ErrCode = errCode;
     mReturnValue.ErrMsg = errMsg;
+    if (mReturnValue.Payload.length() <= 0) {
+        // initialize payload with an empty JSON string to make sure syntax is correct
+        mReturnValue.Payload = "\"\""; 
+    }
 };
 void CmdResponse::setResultSuccess(const String &payload)
 {
@@ -55,7 +59,7 @@ void CmdResponse::setResultSuccess(const String &payload)
     this->setResult(static_cast<esp_err_t>(ESP_OK));
 }
 
-void CmdResponse::setResultSuccess (const char* payload /*= ""*/) 
+void CmdResponse::setResultSuccess (const char* payload /*= "\"\""*/) 
 {
     mReturnValue.Payload = payload;
     this->setResult(static_cast<esp_err_t>(ESP_OK));

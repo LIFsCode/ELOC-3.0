@@ -55,7 +55,7 @@ public:
         return mReturnValue;
     }
     void setResultSuccess (const String& payload);
-    void setResultSuccess (const char* payload = "");
+    void setResultSuccess (const char* payload = "\"\"");
     String& getPayload() {
         return mReturnValue.Payload;
     }

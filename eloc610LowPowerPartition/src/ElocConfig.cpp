@@ -80,6 +80,11 @@ static const elocConfig_T C_ElocConfig_Default {
         .filename = "/sdcard/log/eloc.log",
         .maxFiles = 10,
         .maxFileSize = 5*1024,
+    },
+    .IntruderConfig = {
+        .detectEnable = false,
+        .thresholdCnt = INTRUDER_DETECTION_THRSH,
+        .detectWindowMS = 2000,
     }
 };
 elocConfig_T gElocConfig = C_ElocConfig_Default;
@@ -112,19 +117,26 @@ void loadDevideInfo(const JsonObject& device) {
     gElocDeviceInfo.nodeName         = device["nodeName"]         | C_ElocDeviceInfo_Default.nodeName;
 }
 void loadConfig(const JsonObject& config) {
-    gElocConfig.secondsPerFile              = config["secondsPerFile"]              | C_ElocConfig_Default.secondsPerFile;             
-    gElocConfig.listenOnly                  = /* TODO: unusedconfig["listenOnly"] |*/ C_ElocConfig_Default.listenOnly;            
-    gElocConfig.cpuMaxFrequencyMHZ          = config["cpuMaxFrequencyMHZ"]          | C_ElocConfig_Default.cpuMaxFrequencyMHZ;    
-    gElocConfig.cpuMinFrequencyMHZ          = config["cpuMinFrequencyMHZ"]          | C_ElocConfig_Default.cpuMinFrequencyMHZ;    
-    gElocConfig.cpuEnableLightSleep         = config["cpuEnableLightSleep"]         | C_ElocConfig_Default.cpuEnableLightSleep;   
-    gElocConfig.bluetoothEnableAtStart      = config["bluetoothEnableAtStart"]      | C_ElocConfig_Default.bluetoothEnableAtStart;  
-    gElocConfig.bluetoothEnableOnTapping    = config["bluetoothEnableOnTapping"]    | C_ElocConfig_Default.bluetoothEnableOnTapping; 
-    gElocConfig.bluetoothEnableDuringRecord = config["bluetoothEnableDuringRecord"] | C_ElocConfig_Default.bluetoothEnableDuringRecord;
-    gElocConfig.bluetoothOffTimeoutSeconds  = config["bluetoothOffTimeoutSeconds"]  | C_ElocConfig_Default.bluetoothOffTimeoutSeconds;
-    gElocConfig.logConfig.logToSdCard       = config["logConfig"]["logToSdCard"]    | C_ElocConfig_Default.logConfig.logToSdCard;
-    gElocConfig.logConfig.filename          = config["logConfig"]["filename"]       | C_ElocConfig_Default.logConfig.filename;
-    gElocConfig.logConfig.maxFiles          = config["logConfig"]["maxFiles"]       | C_ElocConfig_Default.logConfig.maxFiles;
-    gElocConfig.logConfig.maxFileSize       = config["logConfig"]["maxFileSize"]    | C_ElocConfig_Default.logConfig.maxFileSize;
+    gElocConfig.secondsPerFile                = config["secondsPerFile"]              | C_ElocConfig_Default.secondsPerFile;             
+    gElocConfig.listenOnly                    = /* TODO: unusedconfig["listenOnly"] |*/ C_ElocConfig_Default.listenOnly;            
+    gElocConfig.cpuMaxFrequencyMHZ            = config["cpuMaxFrequencyMHZ"]          | C_ElocConfig_Default.cpuMaxFrequencyMHZ;    
+    gElocConfig.cpuMinFrequencyMHZ            = config["cpuMinFrequencyMHZ"]          | C_ElocConfig_Default.cpuMinFrequencyMHZ;    
+    gElocConfig.cpuEnableLightSleep           = config["cpuEnableLightSleep"]         | C_ElocConfig_Default.cpuEnableLightSleep;   
+    gElocConfig.bluetoothEnableAtStart        = config["bluetoothEnableAtStart"]      | C_ElocConfig_Default.bluetoothEnableAtStart;  
+    gElocConfig.bluetoothEnableOnTapping      = config["bluetoothEnableOnTapping"]    | C_ElocConfig_Default.bluetoothEnableOnTapping; 
+    gElocConfig.bluetoothEnableDuringRecord   = config["bluetoothEnableDuringRecord"] | C_ElocConfig_Default.bluetoothEnableDuringRecord;
+    gElocConfig.bluetoothOffTimeoutSeconds    = config["bluetoothOffTimeoutSeconds"]  | C_ElocConfig_Default.bluetoothOffTimeoutSeconds;
+
+    /** persistant log config */
+    gElocConfig.logConfig.logToSdCard         = config["logConfig"]["logToSdCard"]    | C_ElocConfig_Default.logConfig.logToSdCard;
+    gElocConfig.logConfig.filename            = config["logConfig"]["filename"]       | C_ElocConfig_Default.logConfig.filename;
+    gElocConfig.logConfig.maxFiles            = config["logConfig"]["maxFiles"]       | C_ElocConfig_Default.logConfig.maxFiles;
+    gElocConfig.logConfig.maxFileSize         = config["logConfig"]["maxFileSize"]    | C_ElocConfig_Default.logConfig.maxFileSize;
+    
+    /** Intruder config*/
+    gElocConfig.IntruderConfig.detectEnable   = config["intruderCfg"]["enable"]       | C_ElocConfig_Default.IntruderConfig.detectEnable;
+    gElocConfig.IntruderConfig.thresholdCnt   = config["intruderCfg"]["threshold"]    | C_ElocConfig_Default.IntruderConfig.thresholdCnt;
+    gElocConfig.IntruderConfig.detectWindowMS = config["intruderCfg"]["windowsMs"]    | C_ElocConfig_Default.IntruderConfig.detectWindowMS;
 }
 
 void loadMicInfo(const JsonObject& micInfo) {
@@ -232,6 +244,9 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     config["logConfig"]["filename"]       = gElocConfig.logConfig.filename;
     config["logConfig"]["maxFiles"]       = gElocConfig.logConfig.maxFiles;
     config["logConfig"]["maxFileSize"]    = gElocConfig.logConfig.maxFileSize;
+    config["intruderCfg"]["enable"]       = gElocConfig.IntruderConfig.detectEnable;
+    config["intruderCfg"]["threshold"]    = gElocConfig.IntruderConfig.thresholdCnt;
+    config["intruderCfg"]["windowsMs"]    = gElocConfig.IntruderConfig.detectWindowMS;
 
     
     JsonObject micInfo = doc.createNestedObject("mic");

@@ -134,7 +134,7 @@ public:
 
 ElocSystem::ElocSystem():
     mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true), 
-    mRefreshStatus(false), mIntruderDetected(false), mIntruderThresholdCnt(INTRUDER_DETECTION_THRSH),
+    mRefreshStatus(false), mIntruderDetected(false), 
     mFwUpdateProcessing(false), mFactoryInfo()
 {
     ESP_LOGI(TAG, "Reading Factory Info from NVS");
@@ -381,13 +381,20 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected, int r
 void ElocSystem::notifyStatusRefresh() {
     static uint32_t lastRefreshMs = 0;
     static uint32_t cntFastUpdates = 0;
-    if ((millis() - lastRefreshMs) <= 2000) {
+    const intruderConfig_t& cfg = getConfig().IntruderConfig;
+    if (!cfg.detectEnable) {
+        cntFastUpdates = 0;
+        mIntruderDetected = false;
+        return;
+    }
+    if ((millis() - lastRefreshMs) <= cfg.detectWindowMS) {
         cntFastUpdates++;
     }
     else {
         cntFastUpdates = 0;
     }
-    if ((cntFastUpdates > mIntruderThresholdCnt) && (mIntruderThresholdCnt != 0)) {
+    if ((cntFastUpdates > cfg.thresholdCnt) && (cfg.thresholdCnt != 0)) {
+        ESP_LOGW(TAG, "Intruder detected after %d knocks", cntFastUpdates);
         mIntruderDetected = true;
     }
     lastRefreshMs = millis();

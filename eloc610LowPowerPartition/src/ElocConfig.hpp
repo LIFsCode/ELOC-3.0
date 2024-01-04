@@ -46,6 +46,12 @@ typedef struct {
     uint32_t maxFileSize;
 }logConfig_t;
 
+typedef struct {
+    bool detectEnable;
+    uint32_t thresholdCnt;
+    uint32_t detectWindowMS;
+}intruderConfig_t;
+
 /// @brief holds all the device specific configuration settings
 typedef struct {
     int  secondsPerFile;
@@ -59,6 +65,7 @@ typedef struct {
     int bluetoothOffTimeoutSeconds;
     bool testI2SClockInput;
     logConfig_t logConfig;
+    intruderConfig_t IntruderConfig;
 }elocConfig_T;
 
 const elocConfig_T& getConfig();

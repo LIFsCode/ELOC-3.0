@@ -33,7 +33,7 @@ esp_err_t ELOC_IOEXP::init() {
         mErrorCode = ESP_ERR_NOT_FOUND;
         return mErrorCode;
     }
-    if ((mErrorCode = portConfig_I(LiION_DETECT))) return mErrorCode;
+    if ((mErrorCode = portConfig_I(LiION_DETECT | SD_DETECT_N))) return mErrorCode;
     if ((mErrorCode = portConfig_O (LED_STATUS | LED_BATTERY | CHARGE_EN_N))) return mErrorCode;
     // set outputs to default values
     if ((mErrorCode = setOutputPort(LED_STATUS))) return mErrorCode;
@@ -75,4 +75,7 @@ esp_err_t ELOC_IOEXP::chargeBattery(bool enable) {
 }
 bool ELOC_IOEXP::hasLiIonBattery() {
     return this->readInput() & LiION_DETECT;
+}
+bool ELOC_IOEXP::isSdCardPresent() {
+    return !(this->readInput() & SD_DETECT_N);
 }

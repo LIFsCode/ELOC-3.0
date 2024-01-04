@@ -37,8 +37,8 @@ public:
 	static const uint32_t LED_BATTERY	= 0x02;
 	static const uint32_t CHARGE_EN_N	= 0x04;
 	static const uint32_t LiION_DETECT	= 0x08;
-	// Bit 4-7 is unconnected (spare)
-	static const uint32_t NC_IO4 		= 0x10;
+	static const uint32_t SD_DETECT_N 	= 0x10;
+	// Bit 5-7 is unconnected (spare)
 	static const uint32_t NC_IO5		= 0x20;
 	static const uint32_t NC_IO6		= 0x40;
 	static const uint32_t NC_IO7		= 0x80;
@@ -62,6 +62,7 @@ public:
 	esp_err_t toggleOutputBit(uint32_t bit);
 	esp_err_t chargeBattery(bool enable);
 	bool hasLiIonBattery();
+	bool isSdCardPresent();
 
 };
 

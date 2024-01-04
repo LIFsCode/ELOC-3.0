@@ -278,16 +278,6 @@ static void IRAM_ATTR buttonISR(void *args)
     // xQueueSendFromISR(rec_req_evt_queue, &mode, (TickType_t)0);
 }
 
-static void LEDflashError() {
-    ESP_LOGI(TAG, "-----fast flash------------");
-    for (auto i = 0; i < 10; i++)
-    {
-        gpio_set_level(STATUS_LED, 1);
-        vTaskDelay(pdMS_TO_TICKS(40));
-        gpio_set_level(STATUS_LED, 0);
-        vTaskDelay(pdMS_TO_TICKS(40));
-    }
-}
 
 /**
  * Iterate through partitions & output to console

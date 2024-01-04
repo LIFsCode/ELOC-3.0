@@ -24,12 +24,10 @@
 #include <esp_err.h>
 #include <esp_log.h>
 
-#include "CmdParser.hpp"
-#include "CmdAdvCallback.hpp"
-
-#define ARDUINOJSON_ENABLE_STD_STREAM 1
 #include "ArduinoJson.h"
 #include "WString.h"
+#include "CmdParser.hpp"
+#include "CmdAdvCallback.hpp"
 
 #include "ESP32Time.h"
 

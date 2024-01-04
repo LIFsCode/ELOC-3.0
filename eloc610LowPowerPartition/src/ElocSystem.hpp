@@ -30,6 +30,8 @@
 #include "ELOC_IOEXP.hpp"
 #include "lis3dh.h"
 
+#include "ElocStatus.hpp"
+
 //TODO: check for a good file to place this
 typedef enum {
     REC_REQ_NONE = 0,
@@ -47,16 +49,47 @@ typedef enum {
 //TODO: handle rec_req_evt_queue at a single point
 extern QueueHandle_t rec_req_evt_queue;
 extern QueueHandle_t rec_ai_evt_queue;
-extern bool ai_run_enable;
+
+class StatusLED;
 
 class ElocSystem
 {
+public:
+    typedef struct Status_t {
+        bool btEnabled;
+        bool btConnected;
+        WAVFileWriter::Mode recMode;
+        bool ai_run_enable;
+        bool sdCardMounted;
+        bool batteryLow;
+        bool intruderDetected;
+        inline bool operator==(const Status_t& rhs) const
+        {
+            return ((this->btEnabled == rhs.btEnabled) &&
+                    (this->btConnected == rhs.btConnected) &&
+                    (this->recMode == rhs.recMode) &&
+                    (this->ai_run_enable == rhs.ai_run_enable) &&
+                    (this->sdCardMounted == rhs.sdCardMounted) &&
+                    (this->batteryLow == rhs.batteryLow) &&
+                    (this->intruderDetected == rhs.intruderDetected));
+        }
+    }Status_t;
 private:
     /* data */
     ElocSystem();
     CPPI2C::I2c* mI2CInstance;
     ELOC_IOEXP* mIOExpInstance;
     LIS3DH* mLis3DH;
+    StatusLED* mStatusLed;
+    StatusLED* mBatteryLed;
+
+    Status_t mStatus;
+    bool mBuzzerIdle;
+    bool mRefreshStatus;
+    bool mIntruderDetected;
+    uint32_t mIntruderThresholdCnt;
+
+    bool mFwUpdateProcessing;
 
     struct factoryInfo_t {
         uint16_t hw_gen;
@@ -75,6 +108,15 @@ private:
      *        or if CONFIG_PM_ENABLE is not enabled in sdkconfig
      */
     esp_err_t pm_configure(const void* vconfig);
+
+    // simple wrapper for BuzzerBeep with the ElocSystem specific callback
+    void setBuzzerBeep(unsigned int frequency, unsigned int beeps);
+    void setBuzzerBeep(unsigned int frequency, unsigned int beeps, unsigned int const pauseDuration, unsigned int const sequences);
+
+    static void BuzzerDone() {
+        ElocSystem::GetInstance().setBuzzerIdle();
+    }
+    void setBuzzerIdle();
 public:
     inline static ElocSystem& GetInstance() {
         static ElocSystem System;
@@ -112,6 +154,12 @@ public:
     /// @brief Configures the Power Management based on the ElocConfig
     /// @return ESP_OK on success, error code otherwise
     esp_err_t pm_configure();
+
+    void notifyStatusRefresh();
+    esp_err_t handleSystemStatus(bool btEnabled, bool btConnected);
+
+    void notifyFwUpdateError();
+    void notifyFwUpdate();
 };
 
 

@@ -25,9 +25,8 @@
 #ifndef ELOCCONFIG_HPP_
 #define ELOCCONFIG_HPP_
 
-#define ARDUINOJSON_ENABLE_STD_STREAM 1
-#include "ArduinoJson.h"
 #include "WString.h"
+
 
 /// @brief Holds all the Microphone & recording spedific settings
 typedef struct {
@@ -47,6 +46,12 @@ typedef struct {
     uint32_t maxFileSize;
 }logConfig_t;
 
+typedef struct {
+    bool detectEnable;
+    uint32_t thresholdCnt;
+    uint32_t detectWindowMS;
+}intruderConfig_t;
+
 /// @brief holds all the device specific configuration settings
 typedef struct {
     int  secondsPerFile;
@@ -60,6 +65,7 @@ typedef struct {
     int bluetoothOffTimeoutSeconds;
     bool testI2SClockInput;
     logConfig_t logConfig;
+    intruderConfig_t IntruderConfig;
 }elocConfig_T;
 
 const elocConfig_T& getConfig();

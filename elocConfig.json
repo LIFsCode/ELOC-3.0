@@ -19,6 +19,11 @@
       "filename": "/sdcard/log/eloc.log",
       "maxFiles": 10,
       "maxFileSize": 5120
+    },
+    "intruderCfg": {
+      "enable": false,
+      "threshold": 5,
+      "windowsMs": 2000
     }
   },
   "mic": {

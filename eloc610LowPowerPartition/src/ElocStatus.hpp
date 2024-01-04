@@ -32,9 +32,10 @@
 //TODO: All these variables are shared across multiple tasks and must be guarded with mutexes
 
 
-
 /* Recording specific status indicators */
 extern WAVFileWriter wav_writer;
+extern bool ai_run_enable;
+
 
 extern int64_t gTotalUPTimeSinceReboot;  //esp_timer_get_time returns 64-bit time since startup, in microseconds.
 extern int64_t gTotalRecordTimeSinceReboot;

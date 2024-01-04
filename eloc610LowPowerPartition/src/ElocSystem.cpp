@@ -28,15 +28,114 @@
 #include <esp_pm.h>
 #include <driver/rtc_io.h>
 
+// arduino includes
+#include "Arduino.h"
+#include "EasyBuzzer.h"
+
 #include "config.h"
+#include "SDCardSDIO.h"
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
+#include "Battery.hpp"
+
+//TODO move sd card into ELOC system
+extern SDCardSDIO *sd_card;
 
 
 static const char *TAG = "ElocSystem";
 
+
+class StatusLED
+{
+private:
+    ELOC_IOEXP& mIOExpInstance;
+    uint32_t mIObit;
+    int32_t mDurationMs;
+    uint32_t mOnDurationMs;
+    uint32_t mOffDurationMs;
+    uint32_t mRepeats;
+    uint32_t mRepeatCnt;
+    bool mIsBlinking;
+    bool mIsRepeating;
+
+    uint32_t mStartedMs;
+    uint32_t mPeriodStartMs;    
+    bool mCurrentState;
+    const char* mName;
+public:
+
+    StatusLED(ELOC_IOEXP& IOExpInstance, uint32_t bit, const char* name ="") :
+        mIOExpInstance(IOExpInstance), mIObit(bit),
+        mDurationMs(-1), mOnDurationMs(0), mOffDurationMs(0), mRepeats(0),mRepeatCnt(0),
+        mIsBlinking(false), mIsRepeating(false), mStartedMs(0), mPeriodStartMs(0), mName(name) {
+    }
+    virtual ~StatusLED() {};
+
+    esp_err_t  setState(bool val) {
+        mDurationMs = -1;
+        mIsBlinking = false;
+        mIsRepeating = false;
+        return mIOExpInstance.setOutputBit(mIObit, val);
+    }
+    esp_err_t setBlinking(bool initial, uint32_t onMs, uint32_t offMs, int32_t durationMs) {
+        mIsBlinking = true;
+        mOnDurationMs = onMs;
+        mOffDurationMs = offMs;
+        mDurationMs = durationMs;
+        mCurrentState = initial;
+        mStartedMs = millis();
+        mPeriodStartMs = mStartedMs;
+        ESP_LOGV(TAG, "%s: mOnDurationMs %d, mOffDurationMs %d, mDurationMs=%d", mName, mOnDurationMs, mOffDurationMs, mDurationMs);
+        return mIOExpInstance.setOutputBit(mIObit, mCurrentState);
+    }
+    esp_err_t setBlinkingPeriodic(uint32_t onMs, uint32_t offMs, int32_t durationMs, uint32_t repeats) {
+        mIsRepeating = true;
+        mRepeats = repeats*2; // double the repeats for high low period
+        mRepeatCnt = 0;
+        ESP_LOGV(TAG, "%s: Repeated mode %d repeats", mName, mRepeats);
+        return setBlinking(false, onMs, offMs, durationMs);
+    }
+
+    esp_err_t update() {
+        if(mIsBlinking) {
+            if (millis() - mStartedMs >= mDurationMs) {
+                if (mIsRepeating) {
+                    mStartedMs = millis();
+                    mPeriodStartMs = mStartedMs;
+                    mRepeatCnt = 0;
+                }
+                else {
+                    mIsBlinking = false;
+                    return mIOExpInstance.setOutputBit(mIObit, false);
+                }
+            }
+            uint32_t periodLimit = mCurrentState ? mOnDurationMs : mOffDurationMs;
+            if (millis() - mPeriodStartMs >= periodLimit) {
+                if (mIsRepeating) {
+                    mRepeatCnt++;
+                    if (mRepeatCnt == mRepeats) {
+                        // if we already repeated the required times i
+                        mCurrentState = false;
+                        return mIOExpInstance.setOutputBit(mIObit, false);
+                    }
+                    else if (mRepeatCnt >= mRepeats) {
+                        return ESP_OK; // idle until mDurationMs expires
+                    }
+                }
+                mPeriodStartMs = millis();
+                mCurrentState = !mCurrentState;
+                return mIOExpInstance.setOutputBit(mIObit, mCurrentState);
+            }
+        }
+        return ESP_OK; 
+    }
+};
+
+
 ElocSystem::ElocSystem():
-    mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mFactoryInfo()
+    mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true), 
+    mRefreshStatus(false), mIntruderDetected(false), 
+    mFwUpdateProcessing(false), mFactoryInfo()
 {
     ESP_LOGI(TAG, "Reading Factory Info from NVS");
 
@@ -121,8 +220,23 @@ ElocSystem::ElocSystem():
                 ESP_LOGI(TAG, "Temperature: %d °C", lis3dh.lis3dh_get_temperature());
             }
         }
+
+        mStatusLed = new StatusLED(*mIOExpInstance, ELOC_IOEXP::LED_STATUS, "StatusLED");
+        if (!mStatusLed) {
+            ESP_LOGE(TAG, "Failed to create status LED!");
+        }
+        mBatteryLed = new StatusLED(*mIOExpInstance, ELOC_IOEXP::LED_BATTERY, "BatteryLED");
+        if (!mBatteryLed) {
+            ESP_LOGE(TAG, "Failed to create battery LED!");
+        }
+
+        mBatteryLed->setBlinking(true, 500, 500, -1);
+        mStatusLed->setBlinking(true, 500, 500, -1);
+
     }
 
+    ESP_LOGI(TAG, "Setup Buzzer");
+    EasyBuzzer.setPin(BUZZER_PIN);
 
 }
 
@@ -145,6 +259,7 @@ esp_err_t ElocSystem::pm_configure(const void* vconfig) {
     // or won't work at all
     gpio_sleep_sel_dis(GPIO_BUTTON);
     gpio_sleep_sel_dis(LIS3DH_INT_PIN);
+    gpio_sleep_sel_dis(BUZZER_PIN);
     // now setup GPIOs as wakeup source. This is required to wake up the recorder in tickless idle
     //BUGME: this seems to be a bug in ESP IDF: https://github.com/espressif/arduino-esp32/issues/7158
     //       gpio_wakeup_enable does not correctly switch to rtc_gpio_wakeup_enable() for RTC GPIOs.
@@ -187,4 +302,147 @@ esp_err_t ElocSystem::pm_configure() {
         return err;
     }
     return ESP_OK;
+}
+
+esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
+
+    Status_t status;
+    status.batteryLow = Battery::GetInstance().isLow();
+    status.btEnabled = btEnabled;
+    status.btConnected = btConnected;
+    status.recMode = wav_writer.get_mode();
+    status.ai_run_enable = ai_run_enable;
+    status.sdCardMounted = sd_card->isMounted();
+    status.intruderDetected = mIntruderDetected;
+    if ((mStatus == status) && !mRefreshStatus) {
+        if (esp_err_t err = mStatusLed->update()) {
+            ESP_LOGE(TAG, "mStatusLed->update() failed with %s", esp_err_to_name(err));
+        }
+        if (esp_err_t err = mBatteryLed->update()) {
+            ESP_LOGE(TAG, "mBatteryLed->update() failed with %s", esp_err_to_name(err));
+        }
+        if (!mBuzzerIdle) {
+            EasyBuzzer.update();
+        }
+    }
+    else {
+        if (mStatus.intruderDetected && !mIntruderDetected) {
+            // release intruder alarm buzzer beeping 
+            setBuzzerIdle();
+        }
+        if (mIntruderDetected) {
+            setBuzzerBeep(494, 50);
+        }
+        else if (status.batteryLow) {
+            mStatusLed->setBlinkingPeriodic(50, 100, 5*1000, 3);
+            mBatteryLed->setBlinkingPeriodic(50, 100, 5*1000, 3);
+            setBuzzerBeep(98 , 1, 10*1000, 100);
+            ESP_LOGW(TAG, "Battery Low detected!");
+        }
+        else if (!status.sdCardMounted) {
+            mStatusLed->setBlinkingPeriodic(50, 100, 1*1000, 5);
+            mBatteryLed->setBlinkingPeriodic(50, 100, 1*1000, 5);
+            ESP_LOGW(TAG, "SD Card not mounted!");
+        }
+        else if (status.recMode != WAVFileWriter::Mode::disabled) {
+            mStatusLed->setBlinking(true, 100, 900, 30*1000);
+            if (status.ai_run_enable) {
+                mBatteryLed->setBlinking(true, 100, 900, 30*1000);
+            }
+        }
+        else if (status.ai_run_enable) {
+            mStatusLed->setBlinking(true, 100, 900, 30*1000);
+        }
+        else if (status.btConnected) {
+            mStatusLed->setState(true);
+            mBatteryLed->setState(true);
+            if (!mStatus.btConnected) {
+                setBuzzerBeep(98 , 1, 10*1000, 5);
+            }
+        }
+        else if (status.btEnabled) {
+            mStatusLed->setState(true);
+            mBatteryLed->setState(false);
+            if (!mStatus.btEnabled) {
+                setBuzzerBeep(261 , 2);
+            }
+        }
+        else {
+            // off else wise: TODO: check if this is intended behavior
+            mStatusLed->setState(false);
+            mBatteryLed->setState(false);
+            if (mStatus.btEnabled) {
+                setBuzzerBeep(523 , 2);
+            }
+        }
+
+    }
+    mRefreshStatus = false;
+    mStatus = status;
+
+    return ESP_OK;
+}
+
+void ElocSystem::notifyStatusRefresh() {
+    static uint32_t lastRefreshMs = 0;
+    static uint32_t cntFastUpdates = 0;
+    const intruderConfig_t& cfg = getConfig().IntruderConfig;
+    if (!cfg.detectEnable) {
+        cntFastUpdates = 0;
+        mIntruderDetected = false;
+        return;
+    }
+    if ((millis() - lastRefreshMs) <= cfg.detectWindowMS) {
+        cntFastUpdates++;
+    }
+    else {
+        cntFastUpdates = 0;
+    }
+    if ((cntFastUpdates > cfg.thresholdCnt) && (cfg.thresholdCnt != 0)) {
+        ESP_LOGW(TAG, "Intruder detected after %d knocks", cntFastUpdates);
+        mIntruderDetected = true;
+    }
+    lastRefreshMs = millis();
+    mRefreshStatus = true;
+}
+
+void ElocSystem::setBuzzerIdle() {
+    mBuzzerIdle = true;
+    EasyBuzzer.stopBeep();
+}
+
+void ElocSystem::setBuzzerBeep(unsigned int frequency, unsigned int beeps) {
+    setBuzzerBeep(frequency, beeps, 0, 1);
+}
+
+void ElocSystem::setBuzzerBeep(unsigned int frequency, unsigned int beeps, unsigned int const pauseDuration, unsigned int const sequences) {
+    mBuzzerIdle = false;
+    //ESP_LOGI(TAG, "Beep: freq: %u, beeps %u, pause: %u, ceq: %u", frequency, beeps, pauseDuration, sequences);
+    return EasyBuzzer.beep(frequency, 100, 250, beeps, pauseDuration, sequences, BuzzerDone);
+}
+
+void ElocSystem::notifyFwUpdateError() {
+    for (int i=0;i<20;i++){
+        mStatusLed->setState(true);
+        mBatteryLed->setState(true);
+        vTaskDelay(pdMS_TO_TICKS(40));
+        mStatusLed->setState(false);
+        mBatteryLed->setState(false);
+        vTaskDelay(pdMS_TO_TICKS(40));
+    }  
+    mFwUpdateProcessing = false;
+}
+
+void ElocSystem::notifyFwUpdate() {
+    // Toggle LEDs with the speed 
+    if (mFwUpdateProcessing) {
+        mStatusLed->update();
+        mBatteryLed->update();
+    }
+    else { 
+        // will never be reset, except by notifyFwUpdateError, a successfull update results in a reboot
+        mFwUpdateProcessing = true; 
+        mStatusLed->setBlinking(false, 100, 100, 60*1000);
+        mBatteryLed->setBlinking(false, 100, 100, 60*1000);
+    }
 }

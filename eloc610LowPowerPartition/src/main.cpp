@@ -536,51 +536,6 @@ esp_err_t checkSDCard() {
     return ESP_OK;
 }
 
-void saveStatusToSD()
-{
-    String sendstring;
-
-    sendstring = sendstring + "Session ID:  " + gSessionIdentifier + "\n";
-
-    sendstring = sendstring + "Session Start Time:  " +
-                 String(timeObject.getYear()) + "-" +
-                 String(timeObject.getMonth()) + "-" +
-                 String(timeObject.getDay()) + " " +
-                 String(timeObject.getHour(true)) + ":" +
-                 String(timeObject.getMinute()) + ":" +
-                 String(timeObject.getSecond()) + "\n";
-
-    sendstring = sendstring + "Firmware Version:  " + gFirmwareVersion + "\n";  // firmware
-
-    sendstring = sendstring + "File Header:  " + getDeviceInfo().fileHeader + "\n";  // file header
-
-    sendstring = sendstring + "Bluetooth on when Record?:   " +
-                (getConfig().bluetoothEnableDuringRecord ? "on" : "off") + "\n";
-
-    sendstring = sendstring + "Sample Rate:  "      + String(getMicInfo().MicSampleRate) + "\n";
-    sendstring = sendstring + "Seconds Per File:  " + String(getConfig().secondsPerFile) + "\n";
-
-    // sendstring=sendstring+   "Voltage Offset:  " +String(gVoltageOffset)                  + "\n" ;
-    sendstring = sendstring + "Mic Type:  "         + getMicInfo().MicType + "\n";
-    sendstring = sendstring + "SD Card Free GB:   " + String(sd_card->freeSpaceGB()) + "\n";
-    sendstring = sendstring + "Mic Gain:  "         + String(getMicInfo().MicBitShift) + "\n";
-    sendstring = sendstring + "GPS Location:  "     + getDeviceInfo().locationCode + "\n";
-    sendstring = sendstring + "GPS Accuracy:  "     + getDeviceInfo().locationAccuracy + " m\n";
-
-    // sendstring=sendstring+ "\n\n";
-
-    FILE *fp;
-    String temp = "/sdcard/eloc/" + gSessionIdentifier + "/" + "config_" + gSessionIdentifier + ".txt";
-    fp = fopen(temp.c_str(), "wb");
-    // fwrite()
-    // String temp=
-    // String temp="/sdcard/eloc/test.txt";
-    // File file = SD.open(temp.c_str(), FILE_WRITE);
-    // file.print(sendstring);
-    fputs(sendstring.c_str(), fp);
-    fclose(fp);
-}
-
 /**
  * @brief Get the configuration of the I2S microphone
  * @note Possible configuration sources are:

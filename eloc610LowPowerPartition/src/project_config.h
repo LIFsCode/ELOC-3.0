@@ -172,6 +172,7 @@
 
         /* LIS3DH Config*/
         #define LIS3DH_INT_PIN GPIO_NUM_12
+        #define INTRUDER_DETECTION_THRSH 5 // 0 for disabling
 
         /* Buzzer Config */
         #define BUZZER_PIN GPIO_NUM_13

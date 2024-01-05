@@ -78,6 +78,23 @@ void upateI2sConfig() {
         ESP_LOGI(TAG, "Resetting invalid sample rate to default = %d", I2S_DEFAULT_SAMPLE_RATE);
         i2s_mic_Config.sample_rate = I2S_DEFAULT_SAMPLE_RATE;
     }
+    switch (gMicInfo.MicChannel) {
+        // TODO: check about potential wrong channel selection in ESP IDF lib
+        case MicChannel_t::Left:
+            i2s_mic_Config.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;
+            break;
+        case MicChannel_t::Right:
+            i2s_mic_Config.channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT;
+            break;
+        default:
+            ESP_LOGE(TAG, "Mic Channel mode %s is currently not supported!", toString(gMicInfo.MicChannel));
+            #ifdef I2S_DEFAULT_CHANNEL_FORMAT_LEFT
+                i2s_mic_Config.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;
+            #else
+                i2s_mic_Config.channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT;
+            #endif
+            break;
+    }
 
     ESP_LOGI(TAG, "Sample rate = %d", i2s_mic_Config.sample_rate);
 }

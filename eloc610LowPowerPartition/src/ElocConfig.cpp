@@ -49,7 +49,13 @@ static const micInfo_t C_MicInfo_Default {
     .MicBitShift=11,
     .MicSampleRate = I2S_DEFAULT_SAMPLE_RATE,
     .MicUseAPLL = true,
-    .MicUseTimingFix = true
+    .MicUseTimingFix = true,
+    .MicChannel =
+#ifdef I2S_DEFAULT_CHANNEL_FORMAT_LEFT 
+        MicChannel_t::Left
+#else
+        MicChannel_t::Right
+#endif
 };
 micInfo_t gMicInfo = C_MicInfo_Default;
 
@@ -158,12 +164,23 @@ void loadConfig(const JsonObject& config) {
     gElocConfig.IntruderConfig.detectWindowMS = config["intruderCfg"]["windowsMs"]    | C_ElocConfig_Default.IntruderConfig.detectWindowMS;
 }
 
+MicChannel_t ParseMicChannel(const char* str, MicChannel_t default_value) {
+    for (int i=0; i<sizeof(MicChannel_tStrings); i++) {
+        if (!strcmp(str, MicChannel_tStrings[i])) {
+            return static_cast<MicChannel_t>(i);
+        }
+    }
+    ESP_LOGW(TAG, "Unsupported Mic Channel %s", str);
+    return default_value;
+}
+
 void loadMicInfo(const JsonObject& micInfo) {
-    gMicInfo.MicType                     = micInfo["MicType"]                     | C_MicInfo_Default.MicType; 
-    gMicInfo.MicBitShift                 = micInfo["MicBitShift"]                 | C_MicInfo_Default.MicBitShift;             
-    gMicInfo.MicSampleRate               = micInfo["MicSampleRate"]               | C_MicInfo_Default.MicSampleRate;   
-    gMicInfo.MicUseAPLL                  = micInfo["MicUseAPLL"]                  | C_MicInfo_Default.MicUseAPLL;             
-    gMicInfo.MicUseTimingFix             = micInfo["MicUseTimingFix"]             | C_MicInfo_Default.MicUseTimingFix;
+    gMicInfo.MicType         = micInfo["MicType"]         | C_MicInfo_Default.MicType; 
+    gMicInfo.MicBitShift     = micInfo["MicBitShift"]     | C_MicInfo_Default.MicBitShift;             
+    gMicInfo.MicSampleRate   = micInfo["MicSampleRate"]   | C_MicInfo_Default.MicSampleRate;   
+    gMicInfo.MicUseAPLL      = micInfo["MicUseAPLL"]      | C_MicInfo_Default.MicUseAPLL;             
+    gMicInfo.MicUseTimingFix = micInfo["MicUseTimingFix"] | C_MicInfo_Default.MicUseTimingFix;
+    gMicInfo.MicChannel = ParseMicChannel(micInfo["MicChannel"], C_MicInfo_Default.MicChannel);
 
     upateI2sConfig();
 }     
@@ -276,6 +293,7 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     micInfo["MicSampleRate"]               = MicInfo.MicSampleRate;
     micInfo["MicUseAPLL"]                  = MicInfo.MicUseAPLL;
     micInfo["MicUseTimingFix"]             = MicInfo.MicUseTimingFix;
+    micInfo["MicChannel"]                  = toString(MicInfo.MicChannel);
 }
 
 bool printConfig(String& buf, CfgType cfgType/* = CfgType::RUNTIME*/) {

@@ -27,6 +27,14 @@
 
 #include "WString.h"
 
+ #define ENUM_MACRO(name, v0, v1, v2)\
+    enum class name { v0, v1, v2};\
+    constexpr const char *name##Strings[] = {  #v0, #v1, #v2}; \
+    constexpr const char *toString(name value) {  return name##Strings[static_cast<int>(value)]; }
+
+/// @brief Definition of channel selection. NOTE: Changes affect the JSON schema of the configuration!
+ENUM_MACRO(MicChannel_t, Left, Right, Stereo);
+#undef ENUM_MACRO
 
 /// @brief Holds all the Microphone & recording spedific settings
 typedef struct {
@@ -35,6 +43,7 @@ typedef struct {
     uint32_t MicSampleRate; // TODO: this should finally be moved to Mic Info for consistency
     bool     MicUseAPLL;
     bool     MicUseTimingFix;
+    MicChannel_t MicChannel;
 }micInfo_t;
 
 const micInfo_t& getMicInfo();

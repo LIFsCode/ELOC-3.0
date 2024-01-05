@@ -105,6 +105,7 @@
         #define I2S_DMA_BUFFER_LEN   1000
         // WARNING: This value will be overridden by '.config' on SD card or SPIFFS
         #define I2S_DEFAULT_SAMPLE_RATE 16000
+        #define I2S_DEFAULT_CHANNEL_FORMAT_LEFT         // or I2S_DEFAULT_CHANNEL_FORMAT_RIGHT
 
         /**
          * Start ELOC 3.2 board defintions
@@ -121,7 +122,7 @@
 
         /**
          * @deprecated?  
-         * I2S_DEFAULT_BIT_SHIFT replaced combination of I2S_BITS_PER_SAMPLE & I2S_DEFAULT_VOLUME
+         * I2S_DEFAULT_BIT_SHIFT replaced by combination of I2S_BITS_PER_SAMPLE & I2S_DEFAULT_VOLUME
          */
         #define I2S_DEFAULT_BIT_SHIFT 14                // Default bit shift for this mic
 
@@ -148,7 +149,6 @@
          * @link https://marketplace.visualstudio.com/items?itemName=alexnesnes.teleplot
          * 
          * @note: This is a debug feature and will cause significant serial output!
-         * 
          */              
         //  #define VISUALIZE_WAVEFORM
 
@@ -172,7 +172,7 @@
 
         /* LIS3DH Config*/
         #define LIS3DH_INT_PIN GPIO_NUM_12
-        #define INTRUDER_DETECTION_THRSH 5 // 0 for disabling
+        #define INTRUDER_DETECTION_THRSH 5  // 0 for disabling
 
         /* Buzzer Config */
         #define BUZZER_PIN GPIO_NUM_13

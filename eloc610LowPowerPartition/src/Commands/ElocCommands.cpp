@@ -358,6 +358,13 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
     resp.setResultSuccess(status);
 }
 
+void cmd_getVoltages(CmdParser* cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    String& voltages = resp.getPayload();
+    Battery::GetInstance().testReadVoltage(voltages);
+    resp.setResultSuccess(voltages);
+}
+
 bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     bool success = true;
     success &= cmdCallback.addCmd("setConfig", &cmd_SetConfig, "Write config key as json, e.g. setConfig#cfg={\"device\":{\"location\":\"not_set\"}}");
@@ -367,6 +374,7 @@ bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     success &= cmdCallback.addCmd("setTime", &cmd_SetTime, "Set the current Time. Time format is given as JSON, e.g. setTime#time={\"seconds\":1351824120,\"ms\":42,\"timezone\":6,\"type\":\"G\"}");
     success &= cmdCallback.addCmd("setRecordMode", &cmd_SetRecordMode, "Enable/disable recording. If used without arguments, current mode is toggled(on/off). Otherwise set recording to specified mode, e.g. setRecordingmode#mode=recordOff_DetectOn");
     success &= cmdCallback.addCmd("setLogPersistent", &cmd_SetLogPersistent, "Configure the logging messages to be stored on a rotating log file on SD carde.g. setLogPersitent#cfg={\"logToSdCard\":\"true\",\"filename\":\"/sdcard/log/eloc.log\",\"maxFiles\":6,\"maxFileSize\":1024}");
+    success &= cmdCallback.addCmd("getVoltages", &cmd_getVoltages, "Debug read voltages");
 
     if (!success) {
         ESP_LOGE(TAG, "Failed to add all BT commands!");

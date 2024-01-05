@@ -71,6 +71,7 @@ public:
         static Battery battery;
         return battery;
     }
+    void testReadVoltage(String& result);
 
     virtual float getVoltage();
     virtual float getSoC();

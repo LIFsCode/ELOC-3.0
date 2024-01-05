@@ -157,6 +157,7 @@ const std::vector<socLUT_t>& Battery::getSocLUT() const {
 
 void Battery::updateVoltage() {
 
+    return;
     int64_t nowMs = (esp_timer_get_time() / 1000ULL);
     if (((nowMs - mLastReadingMs) <= UPDATE_INTERVAL_MS) && mLastReadingMs) {
         // reduce load by only updating the battery value once every few seconds
@@ -190,7 +191,44 @@ void Battery::updateVoltage() {
             ESP_LOGI(TAG, "Failed to enable charging %s", esp_err_to_name(err));
     }
 }
-    //TODO: set battery 
+void Battery::testReadVoltage(String& result) {
+    // disable charging first
+    if (esp_err_t err = setChargingEnable(false)) {
+        ESP_LOGI(TAG, "Failed to enable charging %s", esp_err_to_name(err));
+    }
+    mVoltage = 0.0;
+    std::vector<float> accum; 
+    accum.clear();
+    for (int i=0;  i<100;i++) {
+        if (mAdc.CheckCalFuse()) {
+            mVoltage= static_cast<float>(mAdc.GetVoltage())/1000.0; // CppAdc1::GetVoltage returns mV
+        }
+        else {
+            mVoltage= mAdc.GetRaw();
+        }
+        // scale the voltage according to the voltage divider on ELOC 3.0 HW
+        mVoltage = mVoltage * (1500.0 + 470.0) / (1500.0);
+        accum.push_back(mVoltage);
+        vTaskDelay(pdMS_TO_TICKS(50));
+    } 
+    static char msg[512];
+    result += "{";
+    for (int i=0; i<accum.size(); i++) {
+        if (i != 0) result += ",";
+        snprintf(msg, sizeof(msg), "\"%d ms\": %.3f", i*50, accum[i]);
+        ESP_LOGI(TAG, "%s V", msg);
+        result += msg;
+    }
+    result += "}";
+      
+    //ESP_LOGI(TAG, "scaled voltage =%.3fV, avg = %.3f", mVoltage, accum/static_cast<float>(AVG_WINDOW));
+
+    if (mChargingEnabled) {
+        if (esp_err_t err = setChargingEnable(mChargingEnabled)) 
+            ESP_LOGI(TAG, "Failed to enable charging %s", esp_err_to_name(err));
+    }
+}
+//TODO: set battery 
 float Battery::getVoltage() {
     updateVoltage();
     return mVoltage;

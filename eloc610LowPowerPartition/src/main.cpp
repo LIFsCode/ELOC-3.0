@@ -526,27 +526,7 @@ esp_err_t checkSDCard() {
     return ESP_OK;
 }
 
-/**
- * @brief Get the configuration of the I2S microphone
- * @note Possible configuration sources are:
- *         1. '.config' file on SD card
- *         2. '.config' file on SPIFFS
- *         3. Setting in src/config.h
- * TODO: Confirm the priority of the configuration sources??
- * @return i2s_config_t
- */
-i2s_config_t getI2sConfig() {
-    i2s_mic_Config.sample_rate = getMicInfo().MicSampleRate;
-    // not getting set. getConfig().MicUseAPLL, //the only thing that works with LowPower/APLL is 16khz 12khz??
-    i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL;
-    if (i2s_mic_Config.sample_rate == 0) {
-        ESP_LOGI(TAG, "Resetting invalid sample rate to default = %d", I2S_DEFAULT_SAMPLE_RATE);
-        i2s_mic_Config.sample_rate = I2S_DEFAULT_SAMPLE_RATE;
-    }
 
-    ESP_LOGI(TAG, "Sample rate = %d", i2s_mic_Config.sample_rate);
-    return i2s_mic_Config;
-}
 
 void start_sound_recording(FILE *fp) {
     /**
@@ -913,12 +893,6 @@ void app_main(void) {
     xQueueReset(rec_ai_evt_queue);
 
     ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
-
-    /**
-     * Get the configuration of the I2S microphone & start it
-     * @warning TODO: Check requirements if the configuration changes after this point? Restart required?
-     */
-    getI2sConfig();
 
     ESP_LOGI(TAG, "Creating Bluetooth  task...");
     if (esp_err_t err = BluetoothServerSetup(false)) {

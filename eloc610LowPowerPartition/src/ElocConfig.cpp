@@ -56,6 +56,25 @@ micInfo_t gMicInfo = C_MicInfo_Default;
 const micInfo_t& getMicInfo() {
     return gMicInfo;
 }
+
+/**
+ * @brief Update the configuration of the I2S microphone
+ * @note Possible configuration sources are:
+ *         1. '.config' file on SD card
+ *         2. '.config' file on SPIFFS
+ *         3. Setting in src/config.h
+ * TODO: Confirm the priority of the configuration sources??
+ */
+void upateI2sConfig() {
+    i2s_mic_Config.sample_rate = gMicInfo.MicSampleRate;
+    i2s_mic_Config.use_apll = gMicInfo.MicUseAPLL;
+    if (i2s_mic_Config.sample_rate == 0) {
+        ESP_LOGI(TAG, "Resetting invalid sample rate to default = %d", I2S_DEFAULT_SAMPLE_RATE);
+        i2s_mic_Config.sample_rate = I2S_DEFAULT_SAMPLE_RATE;
+    }
+
+    ESP_LOGI(TAG, "Sample rate = %d", i2s_mic_Config.sample_rate);
+}
 /**************************************************************************************************/
 
 
@@ -145,6 +164,8 @@ void loadMicInfo(const JsonObject& micInfo) {
     gMicInfo.MicSampleRate               = micInfo["MicSampleRate"]               | C_MicInfo_Default.MicSampleRate;   
     gMicInfo.MicUseAPLL                  = micInfo["MicUseAPLL"]                  | C_MicInfo_Default.MicUseAPLL;             
     gMicInfo.MicUseTimingFix             = micInfo["MicUseTimingFix"]             | C_MicInfo_Default.MicUseTimingFix;
+
+    upateI2sConfig();
 }     
 
 bool readConfigFile(const char* filename) {
@@ -212,9 +233,9 @@ void readConfig() {
     printConfig(cfg);
     ESP_LOGI(TAG, "Running with this Configuration:");
     printf(cfg.c_str());
+
+    upateI2sConfig();
     
-    i2s_mic_Config.sample_rate = gMicInfo.MicSampleRate;
-    i2s_mic_Config.use_apll = gMicInfo.MicUseAPLL;
 }
 
 void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {

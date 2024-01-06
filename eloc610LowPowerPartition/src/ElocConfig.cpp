@@ -127,7 +127,13 @@ static const elocConfig_T C_ElocConfig_Default {
         .detectEnable = false,
         .thresholdCnt = INTRUDER_DETECTION_THRSH,
         .detectWindowMS = 2000,
-    }
+    },
+    .batteryConfig = {
+        .updateIntervalMs = 10*60*1000, //10 minutes
+        .avgSamples = 10,
+        .avgIntervalMs = 0,
+        .noBatteryMode  = false,
+    },
 };
 elocConfig_T gElocConfig = C_ElocConfig_Default;
 const elocConfig_T& getConfig() {
@@ -179,6 +185,11 @@ void loadConfig(const JsonObject& config) {
     gElocConfig.IntruderConfig.detectEnable   = config["intruderCfg"]["enable"]       | C_ElocConfig_Default.IntruderConfig.detectEnable;
     gElocConfig.IntruderConfig.thresholdCnt   = config["intruderCfg"]["threshold"]    | C_ElocConfig_Default.IntruderConfig.thresholdCnt;
     gElocConfig.IntruderConfig.detectWindowMS = config["intruderCfg"]["windowsMs"]    | C_ElocConfig_Default.IntruderConfig.detectWindowMS;
+    /** battery config*/
+    gElocConfig.IntruderConfig.detectEnable   = config["battery"]["updateIntervalMs"] | C_ElocConfig_Default.batteryConfig.updateIntervalMs;
+    gElocConfig.IntruderConfig.thresholdCnt   = config["battery"]["avgSamples"]       | C_ElocConfig_Default.batteryConfig.avgSamples;
+    gElocConfig.IntruderConfig.detectWindowMS = config["battery"]["avgIntervalMs"]    | C_ElocConfig_Default.batteryConfig.avgIntervalMs;
+    gElocConfig.IntruderConfig.detectWindowMS = config["battery"]["noBatteryMode"]    | C_ElocConfig_Default.batteryConfig.noBatteryMode;
 }
 
 MicChannel_t ParseMicChannel(const char* str, MicChannel_t default_value) {
@@ -302,6 +313,10 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     config["intruderCfg"]["enable"]       = gElocConfig.IntruderConfig.detectEnable;
     config["intruderCfg"]["threshold"]    = gElocConfig.IntruderConfig.thresholdCnt;
     config["intruderCfg"]["windowsMs"]    = gElocConfig.IntruderConfig.detectWindowMS;
+    config["battery"]["updateIntervalMs"] = gElocConfig.batteryConfig.updateIntervalMs;
+    config["battery"]["avgSamples"]       = gElocConfig.batteryConfig.avgSamples;
+    config["battery"]["avgIntervalMs"]    = gElocConfig.batteryConfig.avgIntervalMs;
+    config["battery"]["noBatteryMode"]    = gElocConfig.batteryConfig.noBatteryMode;
 
     
     JsonObject micInfo = doc.createNestedObject("mic");

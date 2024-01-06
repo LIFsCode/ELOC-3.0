@@ -61,6 +61,13 @@ typedef struct {
     uint32_t detectWindowMS;
 }intruderConfig_t;
 
+typedef struct {
+    uint32_t updateIntervalMs; // time between battery voltage readings in ms
+    uint32_t avgSamples;       // number of voltage samples to read
+    uint32_t avgIntervalMs;    // interval between voltage readings (0 == ignored)
+    bool noBatteryMode;        // disables battery readings to allow the device to be powered from USB only
+}batteryConfig_t;
+
 /// @brief holds all the device specific configuration settings
 typedef struct {
     int  secondsPerFile;
@@ -75,6 +82,7 @@ typedef struct {
     bool testI2SClockInput;
     logConfig_t logConfig;
     intruderConfig_t IntruderConfig;
+    batteryConfig_t batteryConfig;
 }elocConfig_T;
 
 const elocConfig_T& getConfig();

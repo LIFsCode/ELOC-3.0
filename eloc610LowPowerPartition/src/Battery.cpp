@@ -161,20 +161,7 @@ const std::vector<socLUT_t>& Battery::getSocLUT() const {
         return C_LiFePo_SOCs;
     }
 }
-
-void Battery::updateVoltage() {
-
-    if (mBatteryType == BAT_NONE) {
-        // do not read voltages if no battery is present. Prevent disabling charger when ELOC is powered
-        // only via USB. In that case it would turn off if the charger is disabled.
-        return; 
-    }
-    int64_t nowMs = (esp_timer_get_time() / 1000ULL);
-    if (((nowMs - mLastReadingMs) <= UPDATE_INTERVAL_MS) && mLastReadingMs) {
-        // reduce load by only updating the battery value once every few seconds
-        return;
-    }
-    mLastReadingMs = nowMs;
+esp_err_t Battery::readRawVoltage() {
 
     // disable charging first
     if (esp_err_t err = setChargingEnable(false)) {
@@ -198,9 +185,30 @@ void Battery::updateVoltage() {
     //ESP_LOGI(TAG, "scaled voltage =%.3fV, avg = %.3f", mVoltage, accum/static_cast<float>(AVG_WINDOW));
 
     if (mChargingEnabled) {
-        if (esp_err_t err = setChargingEnable(mChargingEnabled)) 
+        if (esp_err_t err = setChargingEnable(mChargingEnabled)) {
             ESP_LOGI(TAG, "Failed to enable charging %s", esp_err_to_name(err));
+            return err;
+        }
     }
+    return ESP_OK;
+}
+
+void Battery::updateVoltage() {
+
+    if (mBatteryType == BAT_NONE) {
+        // do not read voltages if no battery is present. Prevent disabling charger when ELOC is powered
+        // only via USB. In that case it would turn off if the charger is disabled.
+        return; 
+    }
+    int64_t nowMs = (esp_timer_get_time() / 1000ULL);
+    if (((nowMs - mLastReadingMs) <= UPDATE_INTERVAL_MS) && mLastReadingMs) {
+        // reduce load by only updating the battery value once every few seconds
+        return;
+    }
+    mLastReadingMs = nowMs;
+
+    readRawVoltage();
+
 }
     //TODO: set battery 
 float Battery::getVoltage() {

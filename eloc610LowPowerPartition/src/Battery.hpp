@@ -58,6 +58,7 @@ private:
     const uint32_t AVG_WINDOW;
     const uint32_t UPDATE_INTERVAL_MS;
     
+    esp_err_t readRawVoltage();
     void updateVoltage();
     virtual esp_err_t setChargingEnable(bool enable); 
     const bat_limits_t& getLimits() const;

@@ -25,6 +25,7 @@
 #define BATTERY_HPP_
 
 #include <vector>
+#include <map>
 
 #include "CPPANALOG/analogio.h"
 #include "ElocSystem.hpp"
@@ -53,10 +54,12 @@ private:
     float mVoltage;
     batType_t mBatteryType;
     int64_t mLastReadingMs;
+    std::map<float, float> mCalData;
 
     const bool mHasIoExpander;
     const uint32_t AVG_WINDOW;
     const uint32_t UPDATE_INTERVAL_MS;
+    static const char* CAL_FILE;
     
     esp_err_t readRawVoltage();
     void updateVoltage();
@@ -65,6 +68,8 @@ private:
     const std::vector<socLUT_t>&  getSocLUT() const;
     Battery();
     esp_err_t init();
+    esp_err_t loadCalFile();
+    esp_err_t writeCalFile();
 
 public:
     virtual ~Battery();
@@ -85,6 +90,9 @@ public:
     virtual esp_err_t setDefaultChargeEn(bool enable); 
 
     bool isCalibrationDone() const;
+    esp_err_t clearCal();
+    esp_err_t printCal(String& buf) const;
+    esp_err_t updateCal(const char* buf) ;
 };
 
 

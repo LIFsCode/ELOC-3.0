@@ -28,11 +28,18 @@
 
 #include "CPPANALOG/analogio.h"
 
+#include "ArduinoJson.h"
+#include "WString.h"
+
+#include "utils/ffsutils.h"
+
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
 #include "Battery.hpp"
 
 static const char* TAG = "Battery";
+
+static const uint32_t JSON_DOC_SIZE = 512;
 
 //TODO: adjust these limits for Li-ION
 static const bat_limits_t C_LiION_LIMITS = {
@@ -89,6 +96,7 @@ static const std::vector<socLUT_t> C_LiFePo_SOCs =
     {3.40, 100},
 };    
 
+const char* Battery::CAL_FILE = "/spiffs/battery.cal";
 
 Battery::Battery() : 
     mChargingEnabled(true),
@@ -309,3 +317,99 @@ bool Battery::isCalibrationDone() const {
     return false;
 }
 
+esp_err_t Battery::loadCalFile() {
+    if (ffsutil::fileExist(CAL_FILE)) {
+        FILE *f = fopen(CAL_FILE, "r");
+        if (f == NULL) {
+            ESP_LOGW(TAG, "file not present: %s", CAL_FILE);
+            return ESP_ERR_NOT_FOUND;
+        } else {
+
+            fseek(f, 0, SEEK_END);
+            long fsize = ftell(f);
+            fseek(f, 0, SEEK_SET);  /* same as rewind(f); */
+
+            char *input = reinterpret_cast<char*>(malloc(fsize + 1));
+            if (!input) {
+                ESP_LOGE(TAG, "Not enough memory for reading %s", CAL_FILE);
+                fclose(f);
+                return false;
+            }
+            fread(input, fsize, 1, f);
+                
+            ESP_LOGI(TAG, "Read this Calibration:");
+            printf(input);
+
+            StaticJsonDocument<JSON_DOC_SIZE> doc;
+            DeserializationError error = deserializeJson(doc, input, fsize);
+            
+            if (error) {
+                ESP_LOGE(TAG, "Parsing %s failed with %s!", CAL_FILE, error.c_str());
+            }
+            // convert JSON calibration file to map
+            JsonObject root = doc.as<JsonObject>();
+            for (JsonPair kv : root) {
+                mCalData[std::stof(kv.key().c_str())] = kv.value().as<float>();
+            }
+
+            free(input);
+            fclose(f);
+
+        }
+        return ESP_OK;
+    }
+    else {
+        ESP_LOGW(TAG, "No bat calibration file found, running without calibration!");
+    }
+    return ESP_OK;
+}
+
+esp_err_t Battery::writeCalFile() {
+    FILE *f = fopen(CAL_FILE, "w+");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open config file %s!", CAL_FILE);
+        return ESP_ERR_NO_MEM;
+    } 
+    String buffer;
+    printCal(buffer);
+    fprintf(f, "%s", buffer.c_str());
+    // BUGME: add scopeguard here to make sure file is closed
+    fclose(f);
+    return ESP_OK;
+
+}
+esp_err_t Battery::clearCal() {
+    if (remove(CAL_FILE)) {
+        ESP_LOGE(TAG, "Failed to delete battery calibration file %s", CAL_FILE);
+        return ESP_ERR_FLASH_OP_FAIL;
+    }
+    return ESP_OK;
+}
+esp_err_t Battery::printCal(String& buf) const {
+    FILE *f = fopen(CAL_FILE, "r");
+    if (f == NULL) {
+        ESP_LOGW(TAG, "file not present: %s", CAL_FILE);
+        return ESP_ERR_NOT_FOUND;
+    } else {
+
+        fseek(f, 0, SEEK_END);
+        long fsize = ftell(f);
+        fseek(f, 0, SEEK_SET);  /* same as rewind(f); */
+
+        char *input = reinterpret_cast<char*>(malloc(fsize + 1));
+        if (!input) {
+            ESP_LOGE(TAG, "Not enough memory for reading %s", CAL_FILE);
+            fclose(f);
+            return ESP_ERR_NO_MEM;
+        }
+        fread(input, fsize, 1, f);
+        buf = input;
+        free(input);
+        fclose(f);
+    }
+    return ESP_OK;
+}
+esp_err_t Battery::updateCal(const char* buf) {
+    // TODO allow to update calibration--> use shared json merge funciton from  config
+    return ESP_OK;
+}

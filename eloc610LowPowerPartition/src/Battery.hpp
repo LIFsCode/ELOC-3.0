@@ -54,6 +54,7 @@ private:
     float mVoltage;
     batType_t mBatteryType;
     int64_t mLastReadingMs;
+    bool mCalibrationValid;
     std::map<float, float> mCalData;
 
     const bool mHasIoExpander;

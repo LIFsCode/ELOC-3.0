@@ -106,6 +106,7 @@ Battery::Battery() :
     mVoltage(0.0),
     mBatteryType(BAT_NONE),
     mLastReadingMs(0),
+    mCalibrationValid(false),
     mHasIoExpander(ElocSystem::GetInstance().hasIoExpander()),
     AVG_WINDOW(getConfig().batteryConfig.avgSamples),
     UPDATE_INTERVAL_MS(getConfig().batteryConfig.updateIntervalMs)
@@ -216,6 +217,37 @@ void Battery::updateVoltage() {
     mLastReadingMs = nowMs;
 
     readRawVoltage();
+
+    if (!mCalibrationValid) {
+        // if no calibration is present keep raw value
+        return;
+    }
+    float loPoint = NAN;
+    float hiPoint = NAN;
+    float offset = 0;
+    float scale = 1.0;
+    for( std::map<float, float>::iterator iter = mCalData.begin(); iter != mCalData.end(); ++iter ) {
+        Serial.print(iter->first);
+        Serial.print(" : ");
+        Serial.println(iter->second);
+        if (iter->first < mVoltage) {
+            loPoint = iter->first;
+            offset =(iter->second - iter->first);
+        }
+        if (iter->first >= mVoltage) {
+            hiPoint = iter->first;
+            if (isnan(loPoint)) {
+                offset = (iter->second - iter->first);
+            }
+            else {
+                scale = (mCalData[hiPoint] - mCalData[loPoint]) / (hiPoint - loPoint);
+                offset = (iter->second - iter->first*scale);
+            }
+            break;
+        }
+    }  
+    float newVal = mVoltage * scale + offset;
+    ESP_LOGV(TAG, "Calibrate voltage: read %.3fV, offset %.3f, scale %3f, result %.3fV", mVoltage, offset, scale, newVal);
 
 }
     //TODO: set battery 
@@ -351,6 +383,7 @@ esp_err_t Battery::loadCalFile() {
             for (JsonPair kv : root) {
                 mCalData[std::stof(kv.key().c_str())] = kv.value().as<float>();
             }
+            mCalibrationValid = true;
 
             free(input);
             fclose(f);
@@ -379,6 +412,7 @@ esp_err_t Battery::writeCalFile() {
 
 }
 esp_err_t Battery::clearCal() {
+    mCalibrationValid = false;
     if (remove(CAL_FILE)) {
         ESP_LOGE(TAG, "Failed to delete battery calibration file %s", CAL_FILE);
         return ESP_ERR_FLASH_OP_FAIL;

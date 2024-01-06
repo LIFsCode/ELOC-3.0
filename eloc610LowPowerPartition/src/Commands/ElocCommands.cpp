@@ -358,6 +358,46 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
     resp.setResultSuccess(status);
 }
 
+void cmd_SetBattery(CmdParser *cmdParser) {
+
+    CmdResponse& resp = CmdResponse::getInstance();
+    const char* mode = cmdParser->getValueFromKey("mode");
+    if (!mode) {
+        const char* errMsg = "Missing key 'mode'";
+        ESP_LOGE(TAG, "%s", errMsg);
+        resp.setError(ESP_ERR_INVALID_ARG, errMsg);
+        return;
+    }
+    if (!strcasecmp(mode, "clear")) {
+        //TODO clear battery calibration
+    }
+    else if (!strcasecmp(mode, "add")) {
+        const char* cal = cmdParser->getValueFromKey("cal");
+        if (!cal) {
+            const char* errMsg = "Missing key 'cal'";
+            ESP_LOGE(TAG, "%s", errMsg);
+            resp.setError(ESP_ERR_INVALID_ARG, errMsg);
+            return;
+        }
+        ESP_LOGI(TAG, "updating calibration with %s", cal);
+        //TODO add battery calibration
+        //resp.setResult(err);
+        return; 
+    }
+    char errMsg[128];
+    snprintf(errMsg, sizeof(errMsg), "Invalid mode '%s'", mode);
+    ESP_LOGE(TAG, "%s", errMsg);
+    resp.setError(ESP_ERR_INVALID_ARG, errMsg);
+    return;
+}
+void cmd_GetBattery(CmdParser *cmdParser) {
+
+    CmdResponse& resp = CmdResponse::getInstance();
+    String& cfg = resp.getPayload(); // write directly to output buffer to avoid reallocation
+    resp.setResultSuccess(cfg);
+    return;
+}
+
 bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     bool success = true;
     success &= cmdCallback.addCmd("setConfig", &cmd_SetConfig, "Write config key as json, e.g. setConfig#cfg={\"device\":{\"location\":\"not_set\"}}");

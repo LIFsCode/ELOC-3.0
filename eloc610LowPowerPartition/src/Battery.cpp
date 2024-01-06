@@ -29,6 +29,7 @@
 #include "CPPANALOG/analogio.h"
 
 #include "ElocSystem.hpp"
+#include "ElocConfig.hpp"
 #include "Battery.hpp"
 
 static const char* TAG = "Battery";
@@ -98,8 +99,8 @@ Battery::Battery() :
     mBatteryType(BAT_NONE),
     mLastReadingMs(0),
     mHasIoExpander(ElocSystem::GetInstance().hasIoExpander()),
-    AVG_WINDOW(5), // TODO make this configureable
-    UPDATE_INTERVAL_MS(2000)
+    AVG_WINDOW(getConfig().batteryConfig.avgSamples),
+    UPDATE_INTERVAL_MS(getConfig().batteryConfig.updateIntervalMs)
 {
     //TODO: Read from config file if battery charging should be enabled by default
     setChargingEnable(mChargingEnabled);
@@ -113,7 +114,13 @@ Battery::Battery() :
     if (getVoltage() < 0.5) {
         mBatteryType = BAT_NONE;
     }
-    ESP_LOGI(TAG, "Detected %s", getBatType());
+    if (getConfig().batteryConfig.noBatteryMode) {
+        mBatteryType = BAT_NONE;
+        ESP_LOGI(TAG, "Disabled battery readings via config!");
+    }
+    else {
+        ESP_LOGI(TAG, "Detected %s", getBatType());
+    }
 }
 
 Battery::~Battery()
@@ -157,6 +164,11 @@ const std::vector<socLUT_t>& Battery::getSocLUT() const {
 
 void Battery::updateVoltage() {
 
+    if (mBatteryType == BAT_NONE) {
+        // do not read voltages if no battery is present. Prevent disabling charger when ELOC is powered
+        // only via USB. In that case it would turn off if the charger is disabled.
+        return; 
+    }
     int64_t nowMs = (esp_timer_get_time() / 1000ULL);
     if (((nowMs - mLastReadingMs) <= UPDATE_INTERVAL_MS) && mLastReadingMs) {
         // reduce load by only updating the battery value once every few seconds

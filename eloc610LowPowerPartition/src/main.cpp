@@ -847,9 +847,6 @@ void app_main(void) {
     ESP_LOGI(TAG, "Setting up HW System...");
     ElocSystem::GetInstance();
 
-    ESP_LOGI(TAG, "Setting up Battery...");
-    Battery::GetInstance();
-
     if (!SPIFFS.begin(true, "/spiffs")) {
         ESP_LOGI(TAG, "An Error has occurred while mounting SPIFFS");
         // return;
@@ -871,6 +868,9 @@ void app_main(void) {
     ffsutil::printListDir("/sdcard/eloc");
 
     readConfig();
+
+    ESP_LOGI(TAG, "Setting up Battery...");
+    Battery::GetInstance();
 
     // Setup persistent logging only if SD card is mounted
     if (sd_card && sd_card->isMounted()) {

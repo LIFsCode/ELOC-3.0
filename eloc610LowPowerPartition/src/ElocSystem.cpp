@@ -351,7 +351,7 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
             }
         }
         else if (status.ai_run_enable) {
-            mStatusLed->setBlinking(true, 100, 900, 30*1000);
+            mBatteryLed->setBlinking(true, 100, 900, 30*1000);
         }
         else if (status.btConnected) {
             mStatusLed->setState(true);

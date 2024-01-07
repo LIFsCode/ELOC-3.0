@@ -62,7 +62,7 @@ private:
     const uint32_t UPDATE_INTERVAL_MS;
     static const char* CAL_FILE;
     
-    esp_err_t readRawVoltage();
+    esp_err_t readRawVoltage(float& voltage);
     void updateVoltage();
     virtual esp_err_t setChargingEnable(bool enable); 
     const bat_limits_t& getLimits() const;
@@ -93,6 +93,8 @@ public:
     esp_err_t clearCal();
     esp_err_t printCal(String& buf) const;
     esp_err_t updateCal(const char* buf);
+
+    esp_err_t getRawVoltage(float& voltage);
 };
 
 

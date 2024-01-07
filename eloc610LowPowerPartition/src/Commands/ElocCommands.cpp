@@ -418,6 +418,10 @@ void cmd_GetBattery(CmdParser *cmdParser) {
     }
     else if (!strcasecmp(mode, "raw")) { 
         //TODO: read raw voltage (uncalibrated here)
+        float voltage = 0;
+        esp_err_t err = Battery::GetInstance().getRawVoltage(voltage);
+        payload = String(voltage);
+        resp.setResult(err);
     }
     return;
 }

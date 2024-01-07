@@ -176,13 +176,13 @@ const std::vector<socLUT_t>& Battery::getSocLUT() const {
         return C_LiFePo_SOCs;
     }
 }
-esp_err_t Battery::readRawVoltage() {
+esp_err_t Battery::readRawVoltage(float& voltage) {
 
     // disable charging first
     if (esp_err_t err = setChargingEnable(false)) {
         ESP_LOGI(TAG, "Failed to enable charging %s", esp_err_to_name(err));
     }
-    mVoltage = 0.0;
+    voltage = 0.0;
     float accum=0.0; 
     for (int i=0;  i<AVG_WINDOW;i++) {
         if (mAdc.CheckCalFuse()) {
@@ -192,10 +192,10 @@ esp_err_t Battery::readRawVoltage() {
             accum+= mAdc.GetRaw();
         }
     } 
-    mVoltage=accum/static_cast<float>(AVG_WINDOW);
+    voltage=accum/static_cast<float>(AVG_WINDOW);
 
     // scale the voltage according to the voltage divider on ELOC 3.0 HW
-    mVoltage = mVoltage * (1500.0 + 470.0) / (1500.0);
+    voltage = voltage * (1500.0 + 470.0) / (1500.0);
       
     //ESP_LOGI(TAG, "scaled voltage =%.3fV, avg = %.3f", mVoltage, accum/static_cast<float>(AVG_WINDOW));
 
@@ -222,10 +222,12 @@ void Battery::updateVoltage() {
     }
     mLastReadingMs = nowMs;
 
-    readRawVoltage();
+    float rawVoltage;
+    readRawVoltage(rawVoltage);
 
     if (!mCalibrationValid) {
         // if no calibration is present keep raw value
+        mVoltage = rawVoltage;
         return;
     }
     float loPoint = NAN;
@@ -236,11 +238,11 @@ void Battery::updateVoltage() {
         Serial.print(iter->first);
         Serial.print(" : ");
         Serial.println(iter->second);
-        if (iter->first < mVoltage) {
+        if (iter->first < rawVoltage) {
             loPoint = iter->first;
             offset =(iter->second - iter->first);
         }
-        if (iter->first >= mVoltage) {
+        if (iter->first >= rawVoltage) {
             hiPoint = iter->first;
             if (isnan(loPoint)) {
                 offset = (iter->second - iter->first);
@@ -252,8 +254,8 @@ void Battery::updateVoltage() {
             break;
         }
     }  
-    float newVal = mVoltage * scale + offset;
-    ESP_LOGV(TAG, "Calibrate voltage: read %.3fV, offset %.3f, scale %3f, result %.3fV", mVoltage, offset, scale, newVal);
+    mVoltage = rawVoltage * scale + offset;
+    ESP_LOGI(TAG, "Calibrate voltage: read %.3fV, offset %.3f, scale %3f, result %.3fV", rawVoltage, offset, scale, mVoltage);
 
 }
     //TODO: set battery 
@@ -472,5 +474,9 @@ esp_err_t Battery::updateCal(const char* buf) {
     }
     calFile.close();
     return ESP_OK;
+}
+
+esp_err_t Battery::getRawVoltage(float& voltage) {
+    return readRawVoltage(voltage);
 }
 

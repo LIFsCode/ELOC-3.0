@@ -182,6 +182,9 @@ void loadConfig(const JsonObject& config) {
 }
 
 MicChannel_t ParseMicChannel(const char* str, MicChannel_t default_value) {
+    if (!str) {
+        return default_value;
+    }
     for (int i=0; i<sizeof(MicChannel_tStrings); i++) {
         if (!strcmp(str, MicChannel_tStrings[i])) {
             return static_cast<MicChannel_t>(i);

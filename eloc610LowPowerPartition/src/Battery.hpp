@@ -27,6 +27,9 @@
 #include <vector>
 #include <map>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+
 #include "CPPANALOG/analogio.h"
 #include "ElocSystem.hpp"
 #include "esp_err.h"
@@ -42,6 +45,8 @@ typedef struct { double volt; double soc; } socLUT_t;
 class Battery
 {
 private:
+    SemaphoreHandle_t mSemaphore;
+    StaticSemaphore_t _mSemaphoreBuffer;
     typedef enum {
         BAT_NONE = 0,
         BAT_LiFePo,

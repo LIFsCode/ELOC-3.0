@@ -35,6 +35,7 @@
 
 #include "utils/ffsutils.h"
 #include "utils/jsonutils.hpp"
+#include "utils/ScopeGuard.hpp"
 
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
@@ -43,6 +44,12 @@
 static const char* TAG = "Battery";
 
 static const uint32_t JSON_DOC_SIZE = 512;
+
+// wrapper for xSemaphoreGive: required for ScopeGuards ON_SCOPE_EXIT, which requires a function pointer
+// xSemaphoreGive is only a macro
+static inline BaseType_t SemaphoreGive(SemaphoreHandle_t xSemaphore) {
+    return xSemaphoreGive(xSemaphore);
+}
 
 //TODO: adjust these limits for Li-ION
 static const bat_limits_t C_LiION_LIMITS = {
@@ -102,6 +109,7 @@ static const std::vector<socLUT_t> C_LiFePo_SOCs =
 const char* Battery::CAL_FILE = "/spiffs/battery.cal";
 
 Battery::Battery() : 
+    mSemaphore(NULL),
     mChargingEnabled(true),
     mVoltageOffset(0.0), // TODO: read voltage offset from calibration info file (if present)
     mSys(ElocSystem::GetInstance()),
@@ -114,6 +122,17 @@ Battery::Battery() :
     AVG_WINDOW(getConfig().batteryConfig.avgSamples),
     UPDATE_INTERVAL_MS(getConfig().batteryConfig.updateIntervalMs)
 {
+    // Semaphore cannot be used before a call to xSemaphoreCreateBinary() or
+    // xSemaphoreCreateBinaryStatic().
+    // The semaphore's data structures will be placed in the xSemaphoreBuffer
+    // variable, the address of which is passed into the function.  The
+    // function's parameter is not NULL, so the function will not attempt any
+    // dynamic memory allocation, and therefore the function will not return
+    // return NULL.
+    mSemaphore = xSemaphoreCreateMutexStatic ( &_mSemaphoreBuffer );
+    // Semaphore is created in the 'empty' state, meaning the semaphore must first be given
+    SemaphoreGive(mSemaphore);
+
     //TODO: Read from config file if battery charging should be enabled by default
     setChargingEnable(mChargingEnabled);
 
@@ -215,48 +234,51 @@ void Battery::updateVoltage(bool forceUpdate/* = false*/) {
         // only via USB. In that case it would turn off if the charger is disabled.
         return; 
     }
-    int64_t nowMs = (esp_timer_get_time() / 1000ULL);
-    if ((((nowMs - mLastReadingMs) <= UPDATE_INTERVAL_MS) && mLastReadingMs) && !forceUpdate) {
-        // reduce load by only updating the battery value once every few seconds
-        return;
-    }
-    mLastReadingMs = nowMs;
-
-    float rawVoltage;
-    readRawVoltage(rawVoltage);
-
-    if (!mCalibrationValid) {
-        // if no calibration is present keep raw value
-        mVoltage = rawVoltage;
-        return;
-    }
-    float loPoint = NAN;
-    float hiPoint = NAN;
-    float offset = 0;
-    float scale = 1.0;
-    for( std::map<float, float>::iterator iter = mCalData.begin(); iter != mCalData.end(); ++iter ) {
-        Serial.print(iter->first);
-        Serial.print(" : ");
-        Serial.println(iter->second);
-        if (iter->first < rawVoltage) {
-            loPoint = iter->first;
-            offset =(iter->second - iter->first);
+    if( xSemaphoreTake( mSemaphore, pdMS_TO_TICKS(10) ) == pdTRUE ) {
+        ON_SCOPE_EXIT(SemaphoreGive, mSemaphore);
+        int64_t nowMs = (esp_timer_get_time() / 1000ULL);
+        if ((((nowMs - mLastReadingMs) <= UPDATE_INTERVAL_MS) && mLastReadingMs) && !forceUpdate) {
+            // reduce load by only updating the battery value once every few seconds
+            return;
         }
-        if (iter->first >= rawVoltage) {
-            hiPoint = iter->first;
-            if (isnan(loPoint)) {
-                offset = (iter->second - iter->first);
-            }
-            else {
-                scale = (mCalData[hiPoint] - mCalData[loPoint]) / (hiPoint - loPoint);
-                offset = (iter->second - iter->first*scale);
-            }
-            break;
-        }
-    }  
-    mVoltage = rawVoltage * scale + offset;
-    ESP_LOGI(TAG, "Calibrate voltage: read %.3fV, offset %.3f, scale %3f, result %.3fV", rawVoltage, offset, scale, mVoltage);
+        mLastReadingMs = nowMs;
 
+        float rawVoltage;
+        readRawVoltage(rawVoltage);
+
+        if (!mCalibrationValid) {
+            // if no calibration is present keep raw value
+            mVoltage = rawVoltage;
+            return;
+        }
+        float loPoint = NAN;
+        float hiPoint = NAN;
+        float offset = 0;
+        float scale = 1.0;
+        for( std::map<float, float>::iterator iter = mCalData.begin(); iter != mCalData.end(); ++iter ) {
+            Serial.print(iter->first);
+            Serial.print(" : ");
+            Serial.println(iter->second);
+            if (iter->first < rawVoltage) {
+                loPoint = iter->first;
+                offset =(iter->second - iter->first);
+            }
+            if (iter->first >= rawVoltage) {
+                hiPoint = iter->first;
+                if (isnan(loPoint)) {
+                    offset = (iter->second - iter->first);
+                }
+                else {
+                    scale = (mCalData[hiPoint] - mCalData[loPoint]) / (hiPoint - loPoint);
+                    offset = (iter->second - iter->first*scale);
+                }
+                break;
+            }
+        }  
+        mVoltage = rawVoltage * scale + offset;
+        ESP_LOGI(TAG, "Calibrate voltage: read %.3fV, offset %.3f, scale %3f, result %.3fV", rawVoltage, offset, scale, mVoltage);
+    }
+    
 }
     //TODO: set battery 
 float Battery::getVoltage() {
@@ -480,6 +502,13 @@ esp_err_t Battery::updateCal(const char* buf) {
 }
 
 esp_err_t Battery::getRawVoltage(float& voltage) {
-    return readRawVoltage(voltage);
+    if( xSemaphoreTake( mSemaphore, pdMS_TO_TICKS(10) ) == pdTRUE ) {
+        ON_SCOPE_EXIT(SemaphoreGive, mSemaphore);
+        return readRawVoltage(voltage);
+    }
+    else {
+        ESP_LOGE(TAG, "failed to acquire semapore");
+        return NAN;
+    }
 }
 

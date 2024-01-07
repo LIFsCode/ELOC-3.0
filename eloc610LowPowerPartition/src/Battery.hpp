@@ -70,7 +70,6 @@ private:
     Battery();
     esp_err_t init();
     esp_err_t loadCalFile();
-    esp_err_t writeCalFile();
 
 public:
     virtual ~Battery();
@@ -93,7 +92,7 @@ public:
     bool isCalibrationDone() const;
     esp_err_t clearCal();
     esp_err_t printCal(String& buf) const;
-    esp_err_t updateCal(const char* buf) ;
+    esp_err_t updateCal(const char* buf);
 };
 
 

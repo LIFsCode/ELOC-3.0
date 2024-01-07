@@ -370,6 +370,9 @@ void cmd_SetBattery(CmdParser *cmdParser) {
     }
     if (!strcasecmp(mode, "clear")) {
         //TODO clear battery calibration
+        esp_err_t err = Battery::GetInstance().clearCal();
+        resp.setResult(err);
+        return;
     }
     else if (!strcasecmp(mode, "add")) {
         const char* cal = cmdParser->getValueFromKey("cal");
@@ -380,8 +383,15 @@ void cmd_SetBattery(CmdParser *cmdParser) {
             return;
         }
         ESP_LOGI(TAG, "updating calibration with %s", cal);
-        //TODO add battery calibration
-        //resp.setResult(err);
+        esp_err_t err = Battery::GetInstance().updateCal(cal);
+        if (err != ESP_OK) {
+            resp.setError(err, "failed to update calibration data");
+        }
+        else {
+            String& payload = resp.getPayload(); // write directly to output buffer to avoid reallocation
+            err = Battery::GetInstance().printCal(payload);
+            resp.setResult(err);
+        }
         return; 
     }
     char errMsg[128];
@@ -393,8 +403,22 @@ void cmd_SetBattery(CmdParser *cmdParser) {
 void cmd_GetBattery(CmdParser *cmdParser) {
 
     CmdResponse& resp = CmdResponse::getInstance();
-    String& cfg = resp.getPayload(); // write directly to output buffer to avoid reallocation
-    resp.setResultSuccess(cfg);
+    const char* mode = cmdParser->getValueFromKey("mode");
+    if (!mode) {
+        const char* errMsg = "Missing key 'mode'";
+        ESP_LOGE(TAG, "%s", errMsg);
+        resp.setError(ESP_ERR_INVALID_ARG, errMsg);
+        return;
+    }
+    String& payload = resp.getPayload(); // write directly to output buffer to avoid reallocation
+    if (!strcasecmp(mode, "cal")) {
+        //TODO clear battery calibration
+        esp_err_t err = Battery::GetInstance().printCal(payload);
+        resp.setResult(err);
+    }
+    else if (!strcasecmp(mode, "raw")) { 
+        //TODO: read raw voltage (uncalibrated here)
+    }
     return;
 }
 
@@ -407,6 +431,8 @@ bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     success &= cmdCallback.addCmd("setTime", &cmd_SetTime, "Set the current Time. Time format is given as JSON, e.g. setTime#time={\"seconds\":1351824120,\"ms\":42,\"timezone\":6,\"type\":\"G\"}");
     success &= cmdCallback.addCmd("setRecordMode", &cmd_SetRecordMode, "Enable/disable recording. If used without arguments, current mode is toggled(on/off). Otherwise set recording to specified mode, e.g. setRecordingmode#mode=recordOff_DetectOn");
     success &= cmdCallback.addCmd("setLogPersistent", &cmd_SetLogPersistent, "Configure the logging messages to be stored on a rotating log file on SD carde.g. setLogPersitent#cfg={\"logToSdCard\":\"true\",\"filename\":\"/sdcard/log/eloc.log\",\"maxFiles\":6,\"maxFileSize\":1024}");
+    success &= cmdCallback.addCmd("setBattery", &cmd_SetBattery, "Set battery calibration values. Mode otions: \"clear\", \"add\", cal in the format {\"<esp meas voltage>\" : <real voltage>} e.g. setBattery#mode=add#cal={\"3.0\":3.1}");
+    success &= cmdCallback.addCmd("getBattery", &cmd_GetBattery, "read the battery calibration or the raw (uncalibrated voltage). Mode otions: \"raw\", \"cal\"");
 
     if (!success) {
         ESP_LOGE(TAG, "Failed to add all BT commands!");

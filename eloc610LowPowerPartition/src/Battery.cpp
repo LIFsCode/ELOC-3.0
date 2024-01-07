@@ -24,6 +24,8 @@
 
 #include <esp_log.h>
 #include <driver/adc.h>
+#include <istream>
+#include <fstream>
 #include "config.h"
 
 #include "CPPANALOG/analogio.h"
@@ -32,6 +34,7 @@
 #include "WString.h"
 
 #include "utils/ffsutils.h"
+#include "utils/jsonutils.hpp"
 
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
@@ -129,6 +132,9 @@ Battery::Battery() :
     }
     else {
         ESP_LOGI(TAG, "Detected %s", getBatType());
+    }
+    if (esp_err_t err = loadCalFile() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load calibration with %s", esp_err_to_name(err));
     }
 }
 
@@ -343,89 +349,66 @@ esp_err_t Battery::setDefaultChargeEn(bool enable)
 }
 
 bool Battery::isCalibrationDone() const {
-    //TODO: check what kind of calibration to perform with ELOC
-    //TODO: check if calibration is necessary of if it can be applied to
-    //      the esp32 internal calibration --> esp_adc_cal_check_efuse()
-    return false;
+    return mCalibrationValid;
 }
 
 esp_err_t Battery::loadCalFile() {
     if (ffsutil::fileExist(CAL_FILE)) {
-        FILE *f = fopen(CAL_FILE, "r");
-        if (f == NULL) {
+        std::ifstream inputFile;
+        inputFile.open(CAL_FILE, std::fstream::in);
+        if(!inputFile){
             ESP_LOGW(TAG, "file not present: %s", CAL_FILE);
             return ESP_ERR_NOT_FOUND;
-        } else {
-
-            fseek(f, 0, SEEK_END);
-            long fsize = ftell(f);
-            fseek(f, 0, SEEK_SET);  /* same as rewind(f); */
-
-            char *input = reinterpret_cast<char*>(malloc(fsize + 1));
-            if (!input) {
-                ESP_LOGE(TAG, "Not enough memory for reading %s", CAL_FILE);
-                fclose(f);
-                return false;
-            }
-            fread(input, fsize, 1, f);
-                
-            ESP_LOGI(TAG, "Read this Calibration:");
-            printf(input);
-
-            StaticJsonDocument<JSON_DOC_SIZE> doc;
-            DeserializationError error = deserializeJson(doc, input, fsize);
-            
-            if (error) {
-                ESP_LOGE(TAG, "Parsing %s failed with %s!", CAL_FILE, error.c_str());
-            }
-            // convert JSON calibration file to map
-            JsonObject root = doc.as<JsonObject>();
-            for (JsonPair kv : root) {
-                mCalData[std::stof(kv.key().c_str())] = kv.value().as<float>();
-            }
-            mCalibrationValid = true;
-
-            free(input);
-            fclose(f);
-
         }
+        StaticJsonDocument<JSON_DOC_SIZE> doc;
+        DeserializationError error = deserializeJson(doc, inputFile);
+            
+        if (error) {
+            ESP_LOGE(TAG, "Parsing %s failed with %s!", CAL_FILE, error.c_str());
+        }
+        // convert JSON calibration file to map
+        JsonObject root = doc.as<JsonObject>();
+        for (JsonPair kv : root) {
+            mCalData[std::stof(kv.key().c_str())] = kv.value().as<float>();
+        }
+        mCalibrationValid = true;
+        inputFile.close();
+
         return ESP_OK;
     }
     else {
         ESP_LOGW(TAG, "No bat calibration file found, running without calibration!");
+        FILE *f = fopen(CAL_FILE, "w");
+        if (f == NULL) {
+            ESP_LOGE(TAG, "Failed to create cal file %s!", CAL_FILE);
+            return ESP_ERR_NO_MEM;
+        } 
+        fprintf(f, "%s", "{}");
+        fclose(f);
     }
     return ESP_OK;
 }
 
-esp_err_t Battery::writeCalFile() {
-    FILE *f = fopen(CAL_FILE, "w+");
+esp_err_t Battery::clearCal() {
+    ESP_LOGI(TAG, "Clearing battery calibration");
+    mCalibrationValid = false;
+    mCalData.clear();
+    FILE *f = fopen(CAL_FILE, "w");
     if (f == NULL) {
-        ESP_LOGE(TAG, "Failed to open config file %s!", CAL_FILE);
+        ESP_LOGE(TAG, "Failed to clear battery calibration file %s", CAL_FILE);
         return ESP_ERR_NO_MEM;
     } 
-    String buffer;
-    printCal(buffer);
-    fprintf(f, "%s", buffer.c_str());
-    // BUGME: add scopeguard here to make sure file is closed
+    fprintf(f, "%s", "{}");
     fclose(f);
-    return ESP_OK;
-
-}
-esp_err_t Battery::clearCal() {
-    mCalibrationValid = false;
-    if (remove(CAL_FILE)) {
-        ESP_LOGE(TAG, "Failed to delete battery calibration file %s", CAL_FILE);
-        return ESP_ERR_FLASH_OP_FAIL;
-    }
     return ESP_OK;
 }
 esp_err_t Battery::printCal(String& buf) const {
+
     FILE *f = fopen(CAL_FILE, "r");
     if (f == NULL) {
         ESP_LOGW(TAG, "file not present: %s", CAL_FILE);
         return ESP_ERR_NOT_FOUND;
     } else {
-
         fseek(f, 0, SEEK_END);
         long fsize = ftell(f);
         fseek(f, 0, SEEK_SET);  /* same as rewind(f); */
@@ -436,7 +419,9 @@ esp_err_t Battery::printCal(String& buf) const {
             fclose(f);
             return ESP_ERR_NO_MEM;
         }
+        memset(input, 0, fsize+1);
         fread(input, fsize, 1, f);
+        ESP_LOGI(TAG, "cal file (size %ld): %s", fsize, input);
         buf = input;
         free(input);
         fclose(f);
@@ -444,6 +429,48 @@ esp_err_t Battery::printCal(String& buf) const {
     return ESP_OK;
 }
 esp_err_t Battery::updateCal(const char* buf) {
-    // TODO allow to update calibration--> use shared json merge funciton from  config
+    static StaticJsonDocument<JSON_DOC_SIZE> newCfg;
+    newCfg.clear();
+
+    DeserializationError error = deserializeJson(newCfg, buf);
+    if (error) {
+        ESP_LOGE(TAG, "Parsing config failed with %s!", error.c_str());
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    String cal;
+    if (esp_err_t err = printCal(cal)) {
+        ESP_LOGE(TAG, "Failed to load existing calibration data");
+        return err;
+    }
+    StaticJsonDocument<JSON_DOC_SIZE> doc;
+    error = deserializeJson(doc, cal);
+    if (error) {
+        ESP_LOGE(TAG, "Parsing existing config failed with %s!", error.c_str());
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    jsonutils::merge(doc, newCfg);
+
+    // convert JSON calibration file to map
+    JsonObject root = doc.as<JsonObject>();
+    for (JsonPair kv : root) {
+        mCalData[std::stof(kv.key().c_str())] = kv.value().as<float>();
+    }
+    mCalibrationValid = true;
+
+    std::ofstream calFile;
+    calFile.open(CAL_FILE, std::fstream::out);
+    if(!calFile){
+        ESP_LOGW(TAG, "Failed to open file: %s", CAL_FILE);
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (serializeJsonPretty(doc, calFile) == 0) {
+        ESP_LOGE(TAG, "Failed serialize JSON config!");
+        calFile.close();
+        return ESP_FAIL;
+    }
+    calFile.close();
     return ESP_OK;
 }
+

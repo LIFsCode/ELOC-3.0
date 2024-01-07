@@ -67,6 +67,7 @@ private:
     const uint32_t UPDATE_INTERVAL_MS;
     static const char* CAL_FILE;
     
+    void updateOutdatedVoltage();
     esp_err_t readRawVoltage(float& voltage);
     virtual esp_err_t setChargingEnable(bool enable); 
     const bat_limits_t& getLimits() const;
@@ -90,6 +91,7 @@ public:
     bool isLow();
     bool isFull();
     bool isEmpty();
+
     void updateVoltage(bool forceUpdate = false);
 
     virtual esp_err_t setDefaultChargeEn(bool enable); 

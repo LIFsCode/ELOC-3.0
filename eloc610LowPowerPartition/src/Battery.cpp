@@ -227,6 +227,15 @@ esp_err_t Battery::readRawVoltage(float& voltage) {
     return ESP_OK;
 }
 
+void Battery::updateOutdatedVoltage() {
+    int64_t nowMs = (esp_timer_get_time() / 1000ULL);
+    if (((nowMs - mLastReadingMs) <= 2*UPDATE_INTERVAL_MS) && mLastReadingMs) {
+        // reduce load by only updating the battery value once every few seconds
+        return;
+    }
+    updateVoltage();
+}
+
 void Battery::updateVoltage(bool forceUpdate/* = false*/) {
 
     if (mBatteryType == BAT_NONE) {
@@ -278,18 +287,17 @@ void Battery::updateVoltage(bool forceUpdate/* = false*/) {
         mVoltage = rawVoltage * scale + offset;
         ESP_LOGI(TAG, "Calibrate voltage: read %.3fV, offset %.3f, scale %3f, result %.3fV", rawVoltage, offset, scale, mVoltage);
     }
-    
+
 }
     //TODO: set battery 
 float Battery::getVoltage() {
-    updateVoltage();
+    updateOutdatedVoltage();
     return mVoltage;
 }
 
 float Battery::getSoC()
 {
-    //TODO: Create a table for Voltage - SoC translation per battery type
-    updateVoltage();
+    updateOutdatedVoltage();
 
     const std::vector<socLUT_t>& lut = getSocLUT();
     if (lut[0].volt > mVoltage) {
@@ -327,7 +335,7 @@ bool Battery::isLow()
     if (mBatteryType == BAT_NONE) {
         return false;
     }
-    updateVoltage();
+    updateOutdatedVoltage();
     if (mVoltage <= getLimits().Vlow) {
         return true;
     }
@@ -338,7 +346,7 @@ bool Battery::isFull()
     if (mBatteryType == BAT_NONE) {
         return true;
     }
-    updateVoltage();
+    updateOutdatedVoltage();
     if (mVoltage >= getLimits().Vfull) {
         return true;
     }
@@ -349,7 +357,7 @@ bool Battery::isEmpty()
     if (mBatteryType == BAT_NONE) {
         return false;
     }
-    updateVoltage();
+    updateOutdatedVoltage();
     if (mVoltage <= getLimits().Voff) {
         return true;
     }

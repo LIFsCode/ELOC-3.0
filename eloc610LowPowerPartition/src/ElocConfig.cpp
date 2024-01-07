@@ -31,6 +31,7 @@
 #include "SPIFFS.h"
 
 #include "utils/ffsutils.h"
+#include "utils/jsonutils.hpp"
 #include "config.h"
 #include "ElocConfig.hpp"
 
@@ -378,20 +379,6 @@ void clearConfig() {
     remove(CFG_FILE);
 }
 
-
-static void merge(JsonVariant dst, JsonVariantConst src) {
-    if (src.is<JsonObjectConst>()) {
-        for (JsonPairConst kvp : src.as<JsonObjectConst>()) {
-            if (dst[kvp.key()])
-                merge(dst[kvp.key()], kvp.value());
-            else
-                dst[kvp.key()] = kvp.value();
-        }
-    } else {
-        dst.set(src);
-    }
-}
-
 esp_err_t updateConfig(const char* buf) {
     static StaticJsonDocument<JSON_DOC_SIZE> newCfg;
     newCfg.clear();
@@ -404,7 +391,7 @@ esp_err_t updateConfig(const char* buf) {
     static StaticJsonDocument<JSON_DOC_SIZE> doc;
     buildConfigFile(doc);
 
-    merge(doc, newCfg);
+    jsonutils::merge(doc, newCfg);
 
     JsonObject device = doc["device"];
     loadDevideInfo(device);

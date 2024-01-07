@@ -120,6 +120,9 @@ Battery::Battery() :
     if (!mAdc.CheckCalFuse()) {
         ESP_LOGW(TAG, "ADC %d has not been calibrated!", BAT_ADC);
     }
+    if (esp_err_t err = loadCalFile() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load calibration with %s", esp_err_to_name(err));
+    }
     if (mHasIoExpander) {
         mBatteryType = mSys.getIoExpander().hasLiIonBattery() ? BAT_LiPo : BAT_LiFePo;
     }
@@ -132,9 +135,6 @@ Battery::Battery() :
     }
     else {
         ESP_LOGI(TAG, "Detected %s", getBatType());
-    }
-    if (esp_err_t err = loadCalFile() != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to load calibration with %s", esp_err_to_name(err));
     }
 }
 
@@ -374,6 +374,9 @@ esp_err_t Battery::loadCalFile() {
             mCalData[std::stof(kv.key().c_str())] = kv.value().as<float>();
         }
         mCalibrationValid = true;
+        String cal;
+        serializeJson(doc, cal);
+        ESP_LOGI(TAG, "Calibration data loaded: %s", cal.c_str());
         inputFile.close();
 
         return ESP_OK;

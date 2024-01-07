@@ -7,6 +7,10 @@
 *.code-workspace
 dependencies.lock
 
+# ignore auto generated sdkconfig files and only keep  the defaults under version control
+sdkconfig*
+!sdkconfig.defaults
+
 #ignore all log files
 *.log
 

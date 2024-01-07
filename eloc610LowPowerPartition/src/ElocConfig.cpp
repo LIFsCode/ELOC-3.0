@@ -187,10 +187,10 @@ void loadConfig(const JsonObject& config) {
     gElocConfig.IntruderConfig.thresholdCnt   = config["intruderCfg"]["threshold"]    | C_ElocConfig_Default.IntruderConfig.thresholdCnt;
     gElocConfig.IntruderConfig.detectWindowMS = config["intruderCfg"]["windowsMs"]    | C_ElocConfig_Default.IntruderConfig.detectWindowMS;
     /** battery config*/
-    gElocConfig.IntruderConfig.detectEnable   = config["battery"]["updateIntervalMs"] | C_ElocConfig_Default.batteryConfig.updateIntervalMs;
-    gElocConfig.IntruderConfig.thresholdCnt   = config["battery"]["avgSamples"]       | C_ElocConfig_Default.batteryConfig.avgSamples;
-    gElocConfig.IntruderConfig.detectWindowMS = config["battery"]["avgIntervalMs"]    | C_ElocConfig_Default.batteryConfig.avgIntervalMs;
-    gElocConfig.IntruderConfig.detectWindowMS = config["battery"]["noBatteryMode"]    | C_ElocConfig_Default.batteryConfig.noBatteryMode;
+    gElocConfig.batteryConfig.updateIntervalMs = config["battery"]["updateIntervalMs"] | C_ElocConfig_Default.batteryConfig.updateIntervalMs;
+    gElocConfig.batteryConfig.avgSamples       = config["battery"]["avgSamples"]       | C_ElocConfig_Default.batteryConfig.avgSamples;
+    gElocConfig.batteryConfig.avgIntervalMs    = config["battery"]["avgIntervalMrs"]    | C_ElocConfig_Default.batteryConfig.avgIntervalMs;
+    gElocConfig.batteryConfig.noBatteryMode    = config["battery"]["noBatteryMode"]    | C_ElocConfig_Default.batteryConfig.noBatteryMode;
 }
 
 MicChannel_t ParseMicChannel(const char* str, MicChannel_t default_value) {

@@ -25,6 +25,10 @@
 #define BATTERY_HPP_
 
 #include <vector>
+#include <map>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #include "CPPANALOG/analogio.h"
 #include "ElocSystem.hpp"
@@ -41,6 +45,8 @@ typedef struct { double volt; double soc; } socLUT_t;
 class Battery
 {
 private:
+    SemaphoreHandle_t mSemaphore;
+    StaticSemaphore_t _mSemaphoreBuffer;
     typedef enum {
         BAT_NONE = 0,
         BAT_LiFePo,
@@ -53,17 +59,23 @@ private:
     float mVoltage;
     batType_t mBatteryType;
     int64_t mLastReadingMs;
+    bool mCalibrationValid;
+    std::map<float, float> mCalData;
 
     const bool mHasIoExpander;
     const uint32_t AVG_WINDOW;
     const uint32_t UPDATE_INTERVAL_MS;
+    const uint32_t avgIntervalMs;
+    static const char* CAL_FILE;
     
-    void updateVoltage();
+    void updateOutdatedVoltage();
+    esp_err_t readRawVoltage(float& voltage);
     virtual esp_err_t setChargingEnable(bool enable); 
     const bat_limits_t& getLimits() const;
     const std::vector<socLUT_t>&  getSocLUT() const;
     Battery();
     esp_err_t init();
+    esp_err_t loadCalFile();
 
 public:
     virtual ~Battery();
@@ -81,9 +93,16 @@ public:
     bool isFull();
     bool isEmpty();
 
+    void updateVoltage(bool forceUpdate = false);
+
     virtual esp_err_t setDefaultChargeEn(bool enable); 
 
     bool isCalibrationDone() const;
+    esp_err_t clearCal();
+    esp_err_t printCal(String& buf) const;
+    esp_err_t updateCal(const char* buf);
+
+    esp_err_t getRawVoltage(float& voltage);
 };
 
 

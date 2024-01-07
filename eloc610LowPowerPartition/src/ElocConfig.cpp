@@ -31,6 +31,7 @@
 #include "SPIFFS.h"
 
 #include "utils/ffsutils.h"
+#include "utils/jsonutils.hpp"
 #include "config.h"
 #include "ElocConfig.hpp"
 
@@ -127,7 +128,13 @@ static const elocConfig_T C_ElocConfig_Default {
         .detectEnable = false,
         .thresholdCnt = INTRUDER_DETECTION_THRSH,
         .detectWindowMS = 2000,
-    }
+    },
+    .batteryConfig = {
+        .updateIntervalMs = 10*60*1000, //10 minutes
+        .avgSamples = 10,
+        .avgIntervalMs = 0,
+        .noBatteryMode  = false,
+    },
 };
 elocConfig_T gElocConfig = C_ElocConfig_Default;
 const elocConfig_T& getConfig() {
@@ -179,6 +186,11 @@ void loadConfig(const JsonObject& config) {
     gElocConfig.IntruderConfig.detectEnable   = config["intruderCfg"]["enable"]       | C_ElocConfig_Default.IntruderConfig.detectEnable;
     gElocConfig.IntruderConfig.thresholdCnt   = config["intruderCfg"]["threshold"]    | C_ElocConfig_Default.IntruderConfig.thresholdCnt;
     gElocConfig.IntruderConfig.detectWindowMS = config["intruderCfg"]["windowsMs"]    | C_ElocConfig_Default.IntruderConfig.detectWindowMS;
+    /** battery config*/
+    gElocConfig.batteryConfig.updateIntervalMs = config["battery"]["updateIntervalMs"] | C_ElocConfig_Default.batteryConfig.updateIntervalMs;
+    gElocConfig.batteryConfig.avgSamples       = config["battery"]["avgSamples"]       | C_ElocConfig_Default.batteryConfig.avgSamples;
+    gElocConfig.batteryConfig.avgIntervalMs    = config["battery"]["avgIntervalMrs"]   | C_ElocConfig_Default.batteryConfig.avgIntervalMs;
+    gElocConfig.batteryConfig.noBatteryMode    = config["battery"]["noBatteryMode"]    | C_ElocConfig_Default.batteryConfig.noBatteryMode;
 }
 
 MicChannel_t ParseMicChannel(const char* str, MicChannel_t default_value) {
@@ -218,6 +230,7 @@ bool readConfigFile(const char* filename) {
         fseek(f, 0, SEEK_SET);  /* same as rewind(f); */
 
         char *input = reinterpret_cast<char*>(malloc(fsize + 1));
+        memset(input, 0, fsize+1);
         if (!input) {
             ESP_LOGE(TAG, "Not enough memory for reading %s", filename);
             fclose(f);
@@ -298,13 +311,17 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     config["bluetoothEnableOnTapping"]    = ElocConfig.bluetoothEnableOnTapping;
     config["bluetoothEnableDuringRecord"] = ElocConfig.bluetoothEnableDuringRecord;
     config["bluetoothOffTimeoutSeconds"]  = ElocConfig.bluetoothOffTimeoutSeconds;
-    config["logConfig"]["logToSdCard"]    = gElocConfig.logConfig.logToSdCard;
-    config["logConfig"]["filename"]       = gElocConfig.logConfig.filename;
-    config["logConfig"]["maxFiles"]       = gElocConfig.logConfig.maxFiles;
-    config["logConfig"]["maxFileSize"]    = gElocConfig.logConfig.maxFileSize;
-    config["intruderCfg"]["enable"]       = gElocConfig.IntruderConfig.detectEnable;
-    config["intruderCfg"]["threshold"]    = gElocConfig.IntruderConfig.thresholdCnt;
-    config["intruderCfg"]["windowsMs"]    = gElocConfig.IntruderConfig.detectWindowMS;
+    config["logConfig"]["logToSdCard"]    = ElocConfig.logConfig.logToSdCard;
+    config["logConfig"]["filename"]       = ElocConfig.logConfig.filename;
+    config["logConfig"]["maxFiles"]       = ElocConfig.logConfig.maxFiles;
+    config["logConfig"]["maxFileSize"]    = ElocConfig.logConfig.maxFileSize;
+    config["intruderCfg"]["enable"]       = ElocConfig.IntruderConfig.detectEnable;
+    config["intruderCfg"]["threshold"]    = ElocConfig.IntruderConfig.thresholdCnt;
+    config["intruderCfg"]["windowsMs"]    = ElocConfig.IntruderConfig.detectWindowMS;
+    config["battery"]["updateIntervalMs"] = ElocConfig.batteryConfig.updateIntervalMs;
+    config["battery"]["avgSamples"]       = ElocConfig.batteryConfig.avgSamples;
+    config["battery"]["avgIntervalMs"]    = ElocConfig.batteryConfig.avgIntervalMs;
+    config["battery"]["noBatteryMode"]    = ElocConfig.batteryConfig.noBatteryMode;
 
     
     JsonObject micInfo = doc.createNestedObject("mic");
@@ -363,20 +380,6 @@ void clearConfig() {
     remove(CFG_FILE);
 }
 
-
-static void merge(JsonVariant dst, JsonVariantConst src) {
-    if (src.is<JsonObjectConst>()) {
-        for (JsonPairConst kvp : src.as<JsonObjectConst>()) {
-            if (dst[kvp.key()])
-                merge(dst[kvp.key()], kvp.value());
-            else
-                dst[kvp.key()] = kvp.value();
-        }
-    } else {
-        dst.set(src);
-    }
-}
-
 esp_err_t updateConfig(const char* buf) {
     static StaticJsonDocument<JSON_DOC_SIZE> newCfg;
     newCfg.clear();
@@ -389,7 +392,7 @@ esp_err_t updateConfig(const char* buf) {
     static StaticJsonDocument<JSON_DOC_SIZE> doc;
     buildConfigFile(doc);
 
-    merge(doc, newCfg);
+    jsonutils::merge(doc, newCfg);
 
     JsonObject device = doc["device"];
     loadDevideInfo(device);

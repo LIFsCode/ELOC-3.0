@@ -14,7 +14,7 @@
     "bluetoothEnableOnTapping": true,
     "bluetoothEnableDuringRecord": true,
     "bluetoothOffTimeoutSeconds": 60,
-	"logConfig": {
+    "logConfig": {
       "logToSdCard": true,
       "filename": "/sdcard/log/eloc.log",
       "maxFiles": 10,
@@ -24,13 +24,20 @@
       "enable": false,
       "threshold": 5,
       "windowsMs": 2000
+    },
+    "battery": {
+      "updateIntervalMs": 600000,
+      "avgSamples": 10,
+      "avgIntervalMs": 0,
+      "noBatteryMode": false
     }
   },
   "mic": {
     "MicType": "ns",
     "MicBitShift": 11,
-    "MicSampleRate": 20000,
+    "MicSampleRate": 16000,
     "MicUseAPLL": true,
-    "MicUseTimingFix": true
+    "MicUseTimingFix": true,
+    "MicChannel": "Left"
   }
 }

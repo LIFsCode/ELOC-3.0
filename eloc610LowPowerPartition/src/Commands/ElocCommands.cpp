@@ -146,6 +146,9 @@ void printStatus(String& buf) {
 
 void cmd_GetStatus(CmdParser* cmdParser) {
     CmdResponse& resp = CmdResponse::getInstance();
+    // first update the battery to have actual reading
+    Battery::GetInstance().updateVoltage(true);
+
     // write directly to output buffer to avoid reallocation
     String& status = resp.getPayload(); 
     printStatus(status);
@@ -422,6 +425,12 @@ void cmd_GetBattery(CmdParser *cmdParser) {
         esp_err_t err = Battery::GetInstance().getRawVoltage(voltage);
         payload = String(voltage);
         resp.setResult(err);
+    }
+    else {
+        char errMsg[128];
+        snprintf(errMsg, sizeof(errMsg), "Invalid mode '%s'", mode);
+        ESP_LOGE(TAG, "%s", errMsg);
+        resp.setError(ESP_ERR_INVALID_ARG, errMsg);
     }
     return;
 }

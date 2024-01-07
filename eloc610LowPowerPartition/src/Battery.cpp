@@ -208,7 +208,7 @@ esp_err_t Battery::readRawVoltage(float& voltage) {
     return ESP_OK;
 }
 
-void Battery::updateVoltage() {
+void Battery::updateVoltage(bool forceUpdate/* = false*/) {
 
     if (mBatteryType == BAT_NONE) {
         // do not read voltages if no battery is present. Prevent disabling charger when ELOC is powered
@@ -216,7 +216,7 @@ void Battery::updateVoltage() {
         return; 
     }
     int64_t nowMs = (esp_timer_get_time() / 1000ULL);
-    if (((nowMs - mLastReadingMs) <= UPDATE_INTERVAL_MS) && mLastReadingMs) {
+    if ((((nowMs - mLastReadingMs) <= UPDATE_INTERVAL_MS) && mLastReadingMs) && !forceUpdate) {
         // reduce load by only updating the battery value once every few seconds
         return;
     }

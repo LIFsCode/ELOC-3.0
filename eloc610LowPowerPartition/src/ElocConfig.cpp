@@ -230,6 +230,7 @@ bool readConfigFile(const char* filename) {
         fseek(f, 0, SEEK_SET);  /* same as rewind(f); */
 
         char *input = reinterpret_cast<char*>(malloc(fsize + 1));
+        memset(input, 0, fsize+1);
         if (!input) {
             ESP_LOGE(TAG, "Not enough memory for reading %s", filename);
             fclose(f);

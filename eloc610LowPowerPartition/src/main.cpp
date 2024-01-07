@@ -1090,6 +1090,7 @@ void app_main(void) {
         }
 
         if ((loopCnt++ % 10) == 0) {
+            Battery::GetInstance().updateVoltage(); // only updates actual as often as set in the config
             ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC, Temp %d °C",
             Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC(), ElocSystem::GetInstance().getTemperaure());
 

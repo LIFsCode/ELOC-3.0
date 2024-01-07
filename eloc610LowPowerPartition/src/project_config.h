@@ -210,4 +210,12 @@
 // #define WAV_BUFFER_IN_PSRAM
 #define EI_BUFFER_IN_PSRAM
 
+
+/////////////////////////////////// Thread Related configurations ///////////////////////////////////
+
+#define TASK_PRIO_WAV 8
+#define TASK_PRIO_AI 7
+#define TASK_PRIO_I2S 10
+#define TASK_PRIO_CMD 1
+
 #endif  // _PROJECT_CONFIG_H_

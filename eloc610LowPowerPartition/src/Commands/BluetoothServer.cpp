@@ -38,6 +38,7 @@
 #include "BluetoothSerial.h"
 #include "ESP32Time.h"
 
+#include "project_config.h"
 #include "config.h"
 #include "lis3dh.h"
 #include "utils/strutils.h"
@@ -330,7 +331,7 @@ esp_err_t BluetoothServerSetup(bool installGpioIsr) {
     // a single event is enough, it is only used to trigger the start of BT
     gpio_evt_queue = xQueueCreate(1, sizeof(uint8_t));
 
-    xTaskCreate(wakeup_task, "BT Server", 4096, NULL, 1, NULL);
+    xTaskCreate(wakeup_task, "BT Server", 4096, NULL, TASK_PRIO_CMD, NULL);
 
     if (!ElocSystem::GetInstance().hasLIS3DH()) {
         ESP_LOGW(TAG, "No LIS3DH avaiable! No possibility to enable BT during runtime! System will enable BT continously to guarantee communication...");

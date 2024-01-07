@@ -120,7 +120,8 @@ Battery::Battery() :
     mCalibrationValid(false),
     mHasIoExpander(ElocSystem::GetInstance().hasIoExpander()),
     AVG_WINDOW(getConfig().batteryConfig.avgSamples),
-    UPDATE_INTERVAL_MS(getConfig().batteryConfig.updateIntervalMs)
+    UPDATE_INTERVAL_MS(getConfig().batteryConfig.updateIntervalMs),
+    avgIntervalMs(getConfig().batteryConfig.avgIntervalMs)
 {
     // Semaphore cannot be used before a call to xSemaphoreCreateBinary() or
     // xSemaphoreCreateBinaryStatic().
@@ -201,6 +202,8 @@ esp_err_t Battery::readRawVoltage(float& voltage) {
     if (esp_err_t err = setChargingEnable(false)) {
         ESP_LOGI(TAG, "Failed to enable charging %s", esp_err_to_name(err));
     }
+    // add addtional delay before reading to let the voltage of the battery relax
+    vTaskDelay(pdMS_TO_TICKS(150));
     voltage = 0.0;
     float accum=0.0; 
     for (int i=0;  i<AVG_WINDOW;i++) {
@@ -210,6 +213,7 @@ esp_err_t Battery::readRawVoltage(float& voltage) {
         else {
             accum+= mAdc.GetRaw();
         }
+        if (avgIntervalMs) vTaskDelay(avgIntervalMs);
     } 
     voltage=accum/static_cast<float>(AVG_WINDOW);
 

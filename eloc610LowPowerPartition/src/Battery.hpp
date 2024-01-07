@@ -65,6 +65,7 @@ private:
     const bool mHasIoExpander;
     const uint32_t AVG_WINDOW;
     const uint32_t UPDATE_INTERVAL_MS;
+    const uint32_t avgIntervalMs;
     static const char* CAL_FILE;
     
     void updateOutdatedVoltage();

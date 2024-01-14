@@ -19,6 +19,7 @@
 #include "project_config.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "utils/time_utils.hpp"
 
 extern TaskHandle_t ei_TaskHandler;
 
@@ -48,8 +49,18 @@ class EdgeImpulse {
     /**
      * @brief This callback allows the classifier to be run from main.cpp
      *        This is required due to namespace issues, static implementations etc..
-     */ 
+     */
     std::function<void()> callback;
+
+    /**
+     * @brief Detecting time since last activated
+     */
+    uint32_t detectingTime_secs = 0;
+
+    /**
+     * @brief Detecting time time since boot
+     */
+    uint32_t totalDetectingTime_secs = 0;
 
  public:
     /**
@@ -178,9 +189,27 @@ class EdgeImpulse {
     /**
      * @brief Start a continuous inferencing task
      * 
-     * @return int 0 on success
+     * @return ESP_OK on success
      */
-    int start_ei_thread(std::function<void()> callback);
+    esp_err_t start_ei_thread(std::function<void()> callback);
+
+    /**
+     * @brief Get the detectingTime
+     * @note This is the time since last activated
+     * @return float 
+     */
+    float get_detectingTime_hr() const {
+        return detectingTime_secs / 3600.0;
+    }
+
+    /**
+     * @brief Get the totalDetectingTime
+     * @note  This is the total time since boot
+     * @return float 
+     */
+    float get_totalDetectingTime_hr() const {
+        return totalDetectingTime_secs / 3600.0;
+    }
 };
 
 #endif  //  ELOC610LOWPOWERPARTITION_SRC_EDGEIMPULSE_HPP_

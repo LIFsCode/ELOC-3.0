@@ -63,8 +63,7 @@ bool EdgeImpulse::buffers_setup(uint32_t n_samples)
         inference.buffers[1] = (int16_t *)malloc(n_samples * sizeof(int16_t));
     #endif
 
-    if (inference.buffers[1] == NULL)
-    {
+    if (inference.buffers[1] == NULL) {
         #ifdef EI_BUFFER_IN_PSRAM
             heap_caps_free(inference.buffers[0]);
         #else
@@ -105,8 +104,7 @@ bool EdgeImpulse::microphone_inference_record(void)
     //   ret = false;
     // }
 
-    while (inference.buf_ready == 0)
-    {
+    while (inference.buf_ready == 0) {
         // NOTE: Trying to write audio out here seems to leads to poor audio performance?
         // if(wav_writer.buf_ready == 1){
         //   wav_writer.write();
@@ -188,6 +186,8 @@ EI_IMPULSE_ERROR EdgeImpulse::run_classifier(signal_t *signal, ei_impulse_result
 void EdgeImpulse::ei_thread() {
   ESP_LOGV(TAG, "Func: %s", __func__);
 
+  static auto last_SystemTimeSecs = time_utils::getSystemTimeSecs();
+
   while (status == Status::running) {
     if (xTaskNotifyWait(
                           0 /* ulBitsToClearOnEntry */,
@@ -197,6 +197,14 @@ void EdgeImpulse::ei_thread() {
       if (inference.buf_ready == 1) {
         // Run classifier from main.cpp
         callback();
+
+        // Update times
+        auto change_SystemTimeSecs = time_utils::getSystemTimeSecs() - last_SystemTimeSecs;
+        detectingTime_secs += change_SystemTimeSecs;
+        totalDetectingTime_secs += change_SystemTimeSecs;
+        last_SystemTimeSecs = time_utils::getSystemTimeSecs();
+        ESP_LOGV(TAG, "detectingTime_secs: %d", detectingTime_secs);
+        ESP_LOGV(TAG, "totalDetectingTime_secs: %d", totalDetectingTime_secs);
       }
     }  // if (xTaskNotifyWait())
   }
@@ -208,8 +216,11 @@ void EdgeImpulse::start_ei_thread_wrapper(void *_this) {
   reinterpret_cast<EdgeImpulse *>(_this)->ei_thread();
 }
 
-int EdgeImpulse::start_ei_thread(std::function<void()> _callback) {
+esp_err_t EdgeImpulse::start_ei_thread(std::function<void()> _callback) {
   ESP_LOGV(TAG, "Func: %s", __func__);
+
+  status = Status::running;
+  detectingTime_secs = 0;
 
   this->callback = _callback;
 
@@ -217,8 +228,9 @@ int EdgeImpulse::start_ei_thread(std::function<void()> _callback) {
 
   if (ret != pdPASS) {
     ESP_LOGE(TAG, "Failed to create ei_thread");
-    return -1;
+    status = Status::not_running;
+    return ret;
   }
 
-  return 0;
+  return ESP_OK;
 }

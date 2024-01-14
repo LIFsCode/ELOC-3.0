@@ -26,8 +26,6 @@
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
 
-#include <time.h>
-#include <sys/time.h>
 #include <sys/stat.h>
 
 #include "esp_sleep.h"
@@ -39,7 +37,6 @@
 #include "ESP32Time.h"
 #include "BluetoothSerial.h"
 /** Arduino libraries END*/
-
 
 #include "version.h"
 
@@ -53,6 +50,7 @@
 #include "Commands/BluetoothServer.hpp"
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
+#include "utils/time_utils.hpp"
 
 static const char *TAG = "main";
 
@@ -158,7 +156,7 @@ void printRevision()
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
-    if(0){
+    if (0) {
         esp_chip_info_t chip_info;
         esp_chip_info(&chip_info);
         printf("\nThis is ESP32 chip with %d CPU cores, WiFi%s%s, ",
@@ -241,16 +239,7 @@ void printMemory()
     ESP_LOGI(TAG, "\n\n\n\n");
 }
 
-int64_t getSystemTimeMS()
-{
-    ESP_LOGV(TAG, "Func: %s", __func__);
 
-    struct timeval tv_now;
-    gettimeofday(&tv_now, NULL);
-    int64_t time_us = ((int64_t)tv_now.tv_sec * 1000000L) + (int64_t)tv_now.tv_usec;
-    time_us = time_us / 1000;
-    return (time_us);
-}
 
 
 /**
@@ -316,48 +305,14 @@ void printPartitionInfo()
 
 }
 
-void time() {
-
-    struct timeval tv_now;
-    gettimeofday(&tv_now, NULL);
-    int64_t time_us = ((int64_t)tv_now.tv_sec * 1000000L) + (int64_t)tv_now.tv_usec;
-    time_us = time_us / 1000;
-}
-
-/**
- * Purpose ??
-*/
-String uint64ToString(uint64_t input)
-{
-    ESP_LOGV(TAG, "Func: %s", __func__);
-
-    String result = "";
-    uint8_t base = 10;
-
-    do
-    {
-        char c = input % base;
-        input /= base;
-
-        if (c < 10)
-            c += '0';
-        else
-            c += 'A' - 10;
-        result = c + result;
-    } while (input);
-    
-    return result;
-}
 
 /**
  * Set device time?
 */
-void setTime(long epoch, int ms)
-{
+void setTime(long epoch, int ms) {
     ESP_LOGV(TAG, "Func: %s", __func__);
-    
-    /*
 
+    /*
     setTime(atol(seconds.c_str())+(TIMEZONE_OFFSET*60L*60L),  (atol(milliseconds.c_str()))*1000    );
     //timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
     // timestamps coming in from android are always GMT (minus 7 hrs)
@@ -372,7 +327,7 @@ void setTime(long epoch, int ms)
     */
 
     struct timeval tv;
-    tv.tv_sec = epoch; // epoch time (seconds)
+    tv.tv_sec = epoch;  // epoch time (seconds)
     tv.tv_usec = ms;   // microseconds
     settimeofday(&tv, NULL);
 }
@@ -380,6 +335,7 @@ void setTime(long epoch, int ms)
 /**
  * @brief Set initial time
  * @note If time is not set the getLocalTime() will stuck for 5 ms due to invalid timestamp
+ * @todo: Move to time_utils.cpp
 */
 void initTime()
 {
@@ -397,7 +353,7 @@ bool createSessionFolder()
 {
     String fname;
     //TODO: check if another session identifier based on ISO time for mat would be more helpful
-    gSessionIdentifier = getDeviceInfo().fileHeader + uint64ToString(getSystemTimeMS());
+    gSessionIdentifier = getDeviceInfo().fileHeader + time_utils::getSystemTimeMS();
     fname = "/sdcard/eloc/" + gSessionIdentifier;
     ESP_LOGI(TAG, "Creating session folder %s", fname.c_str());
     mkdir(fname.c_str(), 0777);
@@ -429,11 +385,11 @@ bool createFilename(char *fname, size_t size)
     strftime(timeStr, sizeof(timeStr), "%F_%H_%M_%S", &timeinfo);
     fname[0] = '\0';
     int n = snprintf(fname, size, "/sdcard/eloc/%s/%s_%s.wav", gSessionIdentifier.c_str(), gSessionIdentifier.c_str(), timeStr);
-    if ((n < 0) || (n > size))
-    {
+    if ((n < 0) || (n > size)) {
         ESP_LOGE(TAG, "filename buffer too small");
         return false;
     }
+
     ESP_LOGI(TAG, "filename %s", fname);
     return true;
 }
@@ -1025,12 +981,6 @@ void app_main(void) {
         ESP_LOGE(TAG, "Failed to create I2SMEMSSampler");
         return;
     } else {
-        // Don't start I2S unless required
-        // input->install_and_start();
-        
-        // Zero DMA buffer, prevents popping sound on start
-        // input->zero_dma_buffer(I2S_DEFAULT_PORT);
-        
         if (checkSDCard() == ESP_OK) {
             // create a new wave file wav_writer & make sure sample rate is up to date
             if (wav_writer.initialize(i2s_mic_Config.sample_rate, 2, NUMBER_OF_CHANNELS) != true) {
@@ -1090,7 +1040,7 @@ void app_main(void) {
         }
 
         if ((loopCnt++ % 10) == 0) {
-            Battery::GetInstance().updateVoltage(); // only updates actual as often as set in the config
+            Battery::GetInstance().updateVoltage();  // only updates actual as often as set in the config
             ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC, Temp %d °C",
             Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC(), ElocSystem::GetInstance().getTemperaure());
 
@@ -1125,24 +1075,18 @@ void app_main(void) {
 
         if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);
-        }
+            auto ei_status = edgeImpulse->get_status() == edgeImpulse->Status::running ? "running" : "not running";
+            ESP_LOGI(TAG, "EI current status = %s", ei_status);
 
-        // Try to restart if not running
-        if (edgeImpulse->get_status() == edgeImpulse->Status::not_running) {
-                auto buf_setup_result = false;
-
-                #ifdef AI_CONTINUOUS_INFERENCE
-                    buf_setup_result = edgeImpulse->buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
-                #else
-                    buf_setup_result = edgeImpulse->buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
-                #endif  // AI_CONTINUOUS_INFERENCE
-
-            if (buf_setup_result == false) {
-                ESP_LOGE(TAG, "ERR: inference_stetup failed, restarting...");
-                delay(500);
+            if (ai_run_enable == false && edgeImpulse->get_status() == edgeImpulse->Status::running) {
                 edgeImpulse->set_status(edgeImpulse->Status::not_running);
+            } else if (ai_run_enable == true && edgeImpulse->get_status() == edgeImpulse->Status::not_running) {
+                if (edgeImpulse->start_ei_thread(ei_callback_func) != ESP_OK) {
+                    delay(500);
+                }
             }
         }
+
 #else
         // Delay longer if not EI enabled
         delay(300);

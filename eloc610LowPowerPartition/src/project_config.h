@@ -218,4 +218,11 @@
 #define TASK_PRIO_I2S 10
 #define TASK_PRIO_CMD 1
 
+// define specific CPU Cores for critical tasks
+// setting tasks fixed to a core, makes sure the AI will have a separate core as it will be the most time consuming operation
+// TODO: could be extended to the other tasks as well (main task is fixed via menuconfig)
+#define TASK_I2S_CORE 0
+#define TASK_WAV_CORE 0
+#define TASK_AI_CORE 1
+
 #endif  // _PROJECT_CONFIG_H_

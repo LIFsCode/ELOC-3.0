@@ -254,7 +254,7 @@ int WAVFileWriter::start_wav_write_task(int secondsPerFile)
 
   this->secondsPerFile = secondsPerFile;
 
-  int ret = xTaskCreate(this->start_wav_writer_wrapper, "wav_file_writer", 1024 * 4, this, TASK_PRIO_WAV, &i2s_TaskHandler);
+  int ret = xTaskCreatePinnedToCore(this->start_wav_writer_wrapper, "wav_file_writer", 1024 * 4, this, TASK_PRIO_WAV, &i2s_TaskHandler, TASK_WAV_CORE);
 
   if (ret != pdPASS) {
     ESP_LOGE(TAG, "Failed to create wav file writer task");

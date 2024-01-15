@@ -100,9 +100,8 @@
         #define I2S_MIC_LEFT_RIGHT_CLOCK GPIO_NUM_5
         #define I2S_MIC_SERIAL_CLOCK GPIO_NUM_18
         #define I2S_MIC_SERIAL_DATA   GPIO_NUM_19
-        // TODO: check if we want these configurable
-        #define I2S_DMA_BUFFER_COUNT 18
-        #define I2S_DMA_BUFFER_LEN   1000
+        #define I2S_DMA_BUFFER_COUNT 8
+        #define I2S_DMA_BUFFER_LEN   1024
         // WARNING: This value will be overridden by '.config' on SD card or SPIFFS
         #define I2S_DEFAULT_SAMPLE_RATE 16000
         #define I2S_DEFAULT_CHANNEL_FORMAT_LEFT         // or I2S_DEFAULT_CHANNEL_FORMAT_RIGHT

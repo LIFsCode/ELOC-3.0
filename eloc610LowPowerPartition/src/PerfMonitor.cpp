@@ -89,7 +89,7 @@ static esp_err_t print_real_time_stats(TickType_t xTicksToWait)
         goto exit;
     }
 
-    printf("\n\t| Task         | Run Time   | Percentage\n");
+    printf("\n\t| Task         | Core | Run Time   | Percentage\n");
     //Match each task in start_array to those in the end_array
     for (int i = 0; i < start_array_size; i++) {
         int k = -1;
@@ -106,7 +106,7 @@ static esp_err_t print_real_time_stats(TickType_t xTicksToWait)
         if (k >= 0) {
             uint32_t task_elapsed_time = end_array[k].ulRunTimeCounter - start_array[i].ulRunTimeCounter;
             uint32_t percentage_time = (task_elapsed_time * 100UL) / (total_elapsed_time * portNUM_PROCESSORS);
-            printf("\t| %12s | %10"PRIu32" | %3"PRIu32"%%\n", start_array[i].pcTaskName, task_elapsed_time, percentage_time);
+            printf("\t| %12s | %4d | %10"PRIu32" | %3"PRIu32"%%\n", start_array[i].pcTaskName, start_array[i].xCoreID, task_elapsed_time, percentage_time);
         }
     }
 
@@ -146,7 +146,7 @@ static void stats_task(void *arg)
 esp_err_t setup() {
 
     //Create and start stats task
-    BaseType_t ret = xTaskCreatePinnedToCore(stats_task, "stats", 4096, NULL, STATS_TASK_PRIO, NULL, tskNO_AFFINITY);
+    BaseType_t ret = xTaskCreatePinnedToCore(stats_task, "stats", 4096, NULL, STATS_TASK_PRIO, NULL, 0);
 
     if (ret != pdPASS) return ESP_FAIL;
     return ESP_OK;

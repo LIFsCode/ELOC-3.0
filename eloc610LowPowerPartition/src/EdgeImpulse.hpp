@@ -20,6 +20,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "utils/time_utils.hpp"
+#include "../lib/edge-impulse/src/model-parameters/model_metadata.h"
 
 extern TaskHandle_t ei_TaskHandler;
 
@@ -61,6 +62,11 @@ class EdgeImpulse {
      * @brief Detecting time time since boot
      */
     uint32_t totalDetectingTime_secs = 0;
+
+    /**
+     * @brief Number of characteristic sounds detected
+     */
+    uint32_t detectedEvents = 0;
 
  public:
     /**
@@ -210,6 +216,36 @@ class EdgeImpulse {
     float get_totalDetectingTime_hr() const {
         return totalDetectingTime_secs / 3600.0;
     }
+
+    /**
+     * @brief Get the version of the Edge Impulse model
+     * @note This is found in model_metadata.h
+     * @return const char* 
+     */
+    const char* get_aiModel() const {
+        String s =  String(EI_CLASSIFIER_PROJECT_NAME) +
+                    (".") +
+                    String(EI_CLASSIFIER_PROJECT_ID) +
+                    "." +
+                    String(EI_CLASSIFIER_PROJECT_DEPLOY_VERSION);
+        return s.c_str();
+    }
+
+    /**
+     * @brief Increment counter when characteristic sound detected
+     * 
+     */
+    void increment_detectedEvents() {
+        detectedEvents++;
+    }
+
+    /**
+     * @brief Getter for detectedEvents
+     * 
+     * @return uint32_t 
+     */
+    uint32_t get_detectedEvents() const {return detectedEvents;}
+
 };
 
 #endif  //  ELOC610LOWPOWERPARTITION_SRC_EDGEIMPULSE_HPP_

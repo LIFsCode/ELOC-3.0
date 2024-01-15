@@ -119,8 +119,19 @@ void printStatus(String& buf) {
 
 
     session["recordingTime[h]"]    = (float)wav_writer.get_recording_time_total_sec() / 1000 / 1000 / 60 / 60;
-    JsonObject ai = session.createNestedObject("ai");
+    JsonObject ai = session.createNestedObject("detection");
     ai["state"]                   = ai_run_enable;
+    // first set to defaults in case edge impuse is not included in binary
+    ai["detectingTime[h]"]        = 0.0;
+    ai["detectedEvents"]          = 0;
+    ai["aiModel"]                 = "";
+#ifdef EDGE_IMPULSE_ENABLED
+    if (edgeImpulse != nullptr) {
+        ai["detectingTime[h]"]        = edgeImpulse->get_totalDetectingTime_hr();
+        ai["detectedEvents"]          = edgeImpulse->get_detectedEvents();
+        ai["aiModel"]                 = EI_CLASSIFIER_PROJECT_NAME;
+    }
+#endif
     JsonObject device = doc.createNestedObject("device");
     device["firmware"]                   = gFirmwareVersion;
     device["Uptime[h]"]                  = (float)esp_timer_get_time() / 1000 / 1000 / 60 / 60;

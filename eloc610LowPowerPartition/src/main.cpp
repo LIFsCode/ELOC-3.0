@@ -274,7 +274,7 @@ static void IRAM_ATTR buttonISR(void *args)
 void printPartitionInfo()
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
-    
+
     // will always set boot partition back to partition0 except if it
 
     esp_partition_iterator_t it;
@@ -400,7 +400,6 @@ bool createFilename(char *fname, size_t size)
 */
 String getProperDateTime()
 {
-
     String year = String(timeObject.getYear());
     String month = String(timeObject.getMonth());
     String day = String(timeObject.getDay());
@@ -539,19 +538,19 @@ int create_inference_result_file_SD(String f_name)
         return -1;
     }
 
-    FILE *fp = fopen(f_name.c_str(), "r");
+    FILE *fp_result = fopen(f_name.c_str(), "r");
 
-    if (fp) {
+    if (fp_result) {
         ESP_LOGI(TAG, "%s exists on SD card", f_name.c_str());
-        fclose(fp);
+        fclose(fp_result);
         inference_result_file_SD_available = true;
         return 0;
     }
 
     String file_string;
 
-    fp = fopen(f_name.c_str(), "wb");
-    if (!fp) {
+    fp_result = fopen(f_name.c_str(), "wb");
+    if (!fp_result) {
         ESP_LOGE(TAG, "Failed to open file for writing");
         return -1;
     }
@@ -571,21 +570,20 @@ int create_inference_result_file_SD(String f_name)
     // Column headers
     file_string += "\n\nYear-Month-Day Hour:Min:Sec";
 
-    for (auto i = 0; i < EI_CLASSIFIER_NN_OUTPUT_COUNT; i++)
-    {   
+    for (auto i = 0; i < EI_CLASSIFIER_NN_OUTPUT_COUNT; i++) {
         ei_impulse_result_t results = { 0 };
         file_string += " ,";
         file_string += results.classification[i].label;
 
         // FIXME:
         // Need to create a wrapper to access this
-        //file_string += ei_classifier_inferencing_categories[i];
+        // file_string += ei_classifier_inferencing_categories[i];
     }
 
     file_string += "\n";
 
-    fputs(file_string.c_str(), fp);
-    fclose(fp);
+    fputs(file_string.c_str(), fp_result);
+    fclose(fp_result);
 
     inference_result_file_SD_available = true;
 
@@ -597,21 +595,18 @@ int create_inference_result_file_SD(String f_name)
  * @param file_string string in csv format, e.g. 0.94, 0.06
  * @return 0 on success, -1 on fail
  */
-int save_inference_result_SD(String f_name, String results_string)
-{
-    FILE *fp = fopen(f_name.c_str(), FILE_APPEND);
+int save_inference_result_SD(String f_name, String results_string) {
+    FILE *fp_result = fopen(f_name.c_str(), FILE_APPEND);
 
-    if (!fp) {
+    if (!fp_result) {
         ESP_LOGE(TAG, "Failed to open file for writing");
         return -1;
     }
 
-    String file_string;
+    String file_string = getProperDateTime() + " " + results_string;
 
-    file_string += getProperDateTime() + " " + results_string;
-
-    fputs(file_string.c_str(), fp);
-    fclose(fp);
+    fputs(file_string.c_str(), fp_result);
+    fclose(fp_result);
 
     return 0;
 }
@@ -661,10 +656,10 @@ void ei_callback_func() {
         }
 
         #ifdef AI_CONTINUOUS_INFERENCE
-            if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))
+            if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))  // NOLINT
         #else
             // Non-continuous, always print
-            if (1)
+            if (1)  // NOLINT
         #endif  //  AI_CONTINUOUS_INFERENCE
             {
                 // print the predictions
@@ -683,6 +678,7 @@ void ei_callback_func() {
 
                     if ((strcmp(result.classification[ix].label, "background") != 0) &&
                         result.classification[ix].value > AI_RESULT_THRESHOLD) {
+                        edgeImpulse->increment_detectedEvents();
                         // Start recording??
                         if (wav_writer &&
                             wav_writer.is_file_handle_set() == false &&
@@ -692,6 +688,8 @@ void ei_callback_func() {
                         }
                     }
                 }
+
+                ESP_LOGI(TAG, "detectedEvents = %d", edgeImpulse->get_detectedEvents());
 
                 file_str += "\n";
                 // Save results to file
@@ -734,6 +732,7 @@ void app_main(void) {
     #else
         ESP_LOGI(TAG, "Continuous inference disabled");
     #endif
+
 #endif
 
     initTime();
@@ -881,6 +880,7 @@ void app_main(void) {
     }
 
     edgeImpulse = new EdgeImpulse(I2S_DEFAULT_SAMPLE_RATE);
+    ESP_LOGI(TAG, "Edge impulse model version: %s", edgeImpulse->get_aiModel());
     edgeImpulse->output_inferencing_settings();
 
     // TODO: Set some flag if this fails??
@@ -903,7 +903,7 @@ void app_main(void) {
         signal.get_data = &microphone_audio_signal_get_data;
         ei_impulse_result_t result = {0};
 
-        // Artifically fill buffer with test data
+        // Artificially fill buffer with test data
         auto ei_skip_rate = TEST_SAMPLE_LENGTH / EI_CLASSIFIER_RAW_SAMPLE_COUNT;
         auto skip_current = ei_skip_rate;   // Make sure to fill first sample, then start skipping if needed
 

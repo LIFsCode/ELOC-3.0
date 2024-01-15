@@ -27,25 +27,25 @@ static const char *TAG = "time_utils";
 
 namespace time_utils {
 
-    String uint64ToString(uint64_t input) {
-        ESP_LOGV(TAG, "Func: %s", __func__);
+    // String uint64ToString(uint64_t input) {
+    //     ESP_LOGV(TAG, "Func: %s", __func__);
 
-        String result = "";
-        const uint8_t base = 10;
+    //     String result = "";
+    //     const uint8_t base = 10;
 
-        do {
-            char c = input % base;
-            input /= base;
+    //     do {
+    //         char c = input % base;
+    //         input /= base;
 
-            if (c < 10)
-                c += '0';
-            else
-                c += 'A' - 10;
-            result = c + result;
-        } while (input);
+    //         if (c < 10)
+    //             c += '0';
+    //         else
+    //             c += 'A' - 10;
+    //         result = c + result;
+    //     } while (input);
 
-        return result;
-    }
+    //     return result;
+    // }
 
     // void time() {
     //     struct timeval tv_now;
@@ -65,7 +65,8 @@ namespace time_utils {
     }
 
     String getSystemTimeMS_string() {
-        return(uint64ToString(getSystemTimeMS()));
+        // return(uint64ToString(getSystemTimeMS()));
+        return(String(getSystemTimeMS()));
     }
 
     int64_t getSystemTimeSecs() {

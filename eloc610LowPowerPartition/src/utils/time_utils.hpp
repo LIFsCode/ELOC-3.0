@@ -31,7 +31,7 @@
 #include "version.h"
 
 namespace time_utils {
-    String uint64ToString(uint64_t);
+    // String uint64ToString(uint64_t);
     int64_t getSystemTimeMS();
     String getSystemTimeMS_string();
     int64_t getSystemTimeSecs();

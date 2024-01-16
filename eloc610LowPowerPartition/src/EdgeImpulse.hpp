@@ -219,17 +219,10 @@ class EdgeImpulse {
 
     /**
      * @brief Get the version of the Edge Impulse model
-     * @note This is found in model_metadata.h
-     * @return const char* 
+     * @note This is made of concatenated values found in model_metadata.h
+     * @return string 
      */
-    const char* get_aiModel() const {
-        String s =  String(EI_CLASSIFIER_PROJECT_NAME) +
-                    (".") +
-                    String(EI_CLASSIFIER_PROJECT_ID) +
-                    "." +
-                    String(EI_CLASSIFIER_PROJECT_DEPLOY_VERSION);
-        return s.c_str();
-    }
+    String get_aiModel() const;
 
     /**
      * @brief Increment counter when characteristic sound detected
@@ -246,6 +239,13 @@ class EdgeImpulse {
      */
     uint32_t get_detectedEvents() const {return detectedEvents;}
 
+    /**
+     * @brief Wrapper to access the ei classifier inferencing categories object
+     * @note This is found in model_metadata.h
+     * @param i index
+     * @return const char* 
+     */
+    const char* get_ei_classifier_inferencing_categories(int i) const;
 };
 
 #endif  //  ELOC610LOWPOWERPARTITION_SRC_EDGEIMPULSE_HPP_

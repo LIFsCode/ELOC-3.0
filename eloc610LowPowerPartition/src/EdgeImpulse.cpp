@@ -236,3 +236,16 @@ esp_err_t EdgeImpulse::start_ei_thread(std::function<void()> _callback) {
 
   return ESP_OK;
 }
+
+String EdgeImpulse::get_aiModel() const {
+    String s =  String(EI_CLASSIFIER_PROJECT_NAME) +
+                (".") +
+                String(EI_CLASSIFIER_PROJECT_ID) +
+                "." +
+                String(EI_CLASSIFIER_PROJECT_DEPLOY_VERSION);
+    return s;
+}
+
+const char* EdgeImpulse::get_ei_classifier_inferencing_categories(int i) const {
+    return ei_classifier_inferencing_categories[i];
+}

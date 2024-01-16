@@ -176,8 +176,8 @@ void WAVFileWriter::start_write_thread()
         // Recalculate every time to avoid rounding errors
         recording_time_file_sec = m_file_size / (sizeof(int16_t) * m_sample_rate);
 
-        // Limit output to 1 log per second
-        if (recording_time_file_sec > old_secs_written) {
+        // Limit output to once every 5 secs
+        if (recording_time_file_sec % 5 == 0 && recording_time_file_sec != old_secs_written) {
           ESP_LOGI(TAG, "WAV file size bytes: %u, secs: %u", m_file_size, recording_time_file_sec);
           old_secs_written = recording_time_file_sec;
         }

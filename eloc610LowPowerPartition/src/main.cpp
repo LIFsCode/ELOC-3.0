@@ -456,7 +456,7 @@ bool mountSDCard()
             }
             float freeSpace = sd_card->freeSpaceGB();
             float totalSpace = sd_card->getCapacityMB()/1024;
-            ESP_LOGI(TAG, "SD card %f / %f GB free", freeSpace, totalSpace);
+            ESP_LOGV(TAG, "SD card %f / %f GB free", freeSpace, totalSpace);
         }
     #endif
     gMountedSDCard = sd_card->isMounted();
@@ -677,8 +677,6 @@ void ei_callback_func() {
             if (1)  // NOLINT
         #endif  //  AI_CONTINUOUS_INFERENCE
             {
-                // print the predictions
-                ESP_LOGI(TAG, "Predictions ");
                 ESP_LOGI(TAG, "(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
                         result.timing.dsp, result.timing.classification, result.timing.anomaly);
 
@@ -705,7 +703,7 @@ void ei_callback_func() {
                     }
                 }
 
-                ESP_LOGI(TAG, "detectedEvents = %d", edgeImpulse->get_detectedEvents());
+                // ESP_LOGI(TAG, "detectedEvents = %d", edgeImpulse->get_detectedEvents());
 
                 file_str += "\n";
                 // Only save results & wav file if classification value exceeds a threshold

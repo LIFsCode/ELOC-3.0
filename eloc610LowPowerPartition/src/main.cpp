@@ -92,11 +92,11 @@ bool ai_run_enable = false;
  */
 const uint32_t sample_buffer_size = sizeof (signed short) * 1024;
 
-uint64_t gStartupTime; // gets read in at startup to set system time.
+uint64_t gStartupTime;  // gets read in at startup to set system time.
 
 char gSessionFolder[65];
 
-int gMinutesWaitUntilDeepSleep = 60; // change to 1 or 2 for testing
+int gMinutesWaitUntilDeepSleep = 60;  // change to 1 or 2 for testing
 
 ESP32Time timeObject;
 // WebServer server(80);
@@ -104,6 +104,7 @@ ESP32Time timeObject;
 bool gWillUpdate = false;
 float gFreeSpaceGB = 0.0;
 uint32_t gFreeSpaceKB = 0;
+bool session_folder_created = false;
 
 // String gTimeDifferenceCode; //see getTimeDifferenceCode() below
 
@@ -138,7 +139,7 @@ void resetPeripherals()
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
-    if(0){
+    if (0) {
         periph_module_reset(PERIPH_I2S0_MODULE);
         periph_module_reset(PERIPH_BT_MODULE);
         periph_module_reset(PERIPH_WIFI_BT_COMMON_MODULE);
@@ -203,19 +204,19 @@ void resetESP32()
     ESP_LOGI(TAG, "Resetting..");
     resetPeripherals();
     // esp_task_wdt_init(30, false); //bump it up to 30 econds doesn't work.
-    rtc_wdt_protect_off(); // Disable RTC WDT write protection
+    rtc_wdt_protect_off();  // Disable RTC WDT write protection
 
     rtc_wdt_set_stage(RTC_WDT_STAGE0, RTC_WDT_STAGE_ACTION_RESET_RTC);
     rtc_wdt_set_time(RTC_WDT_STAGE0, 500);
     rtc_wdt_enable();     // Start the RTC WDT timer
-    rtc_wdt_protect_on(); // Enable RTC WDT write protection
+    rtc_wdt_protect_on();  // Enable RTC WDT write protection
 
     // ESP_LOGI(TAG, "starting deep sleep");
     // delay(50);
     // esp_deep_sleep_start();
     // ESP_LOGI(TAG, "deep sleep should never make it here");
 
-    delay(1000); // should never get here
+    delay(1000);  // should never get here
 }
 
 void printMemory()
@@ -284,8 +285,7 @@ void printPartitionInfo()
 
     // Loop through all matching partitions, in this case, all with the type 'data' until partition with desired
     // label is found. Verify if its the same instance as the one found before.
-    for (; it != NULL; it = esp_partition_next(it))
-    {
+    for (; it != NULL; it = esp_partition_next(it)) {
         const esp_partition_t *part = esp_partition_get(it);
         ESP_LOGI(TAG, "\tfound partition '%s' at offset 0x%" PRIx32 " with size 0x%" PRIx32, part->label, part->address, part->size);
     }
@@ -296,13 +296,11 @@ void printPartitionInfo()
     ESP_LOGI(TAG, "Currently running partitions: ");
     const esp_partition_t *running = esp_ota_get_running_partition();
     ESP_LOGI(TAG, "\t '%s' at offset 0x%" PRIx32 " with size 0x%" PRIx32, running->label, running->address, running->size);
-    
+
     esp_app_desc_t running_app_info;
-    if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK)
-    {
+    if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK) {
         ESP_LOGI(TAG, "Running firmware version: %s", running_app_info.version);
     }
-
 }
 
 
@@ -371,6 +369,9 @@ bool createSessionFolder()
 
     fprintf(f, "%s", cfg.c_str());
     fclose(f);
+
+    session_folder_created = true;
+
     return true;
 }
 
@@ -464,7 +465,7 @@ bool mountSDCard()
 
 esp_err_t checkSDCard() {
     if (!gMountedSDCard) {
-        // in case SD card is not yet mounted, mout it now, e.g. not inserted durint boot
+        // in case SD card is not yet mounted, mount it now, e.g. not inserted durint boot
         if (!mountSDCard()) {
             return ESP_ERR_NOT_FOUND;
         }
@@ -482,7 +483,12 @@ esp_err_t checkSDCard() {
 }
 
 
-
+/**
+ * @brief Open a file for wav_writer to write to
+ * @attention This function presumes SD card check has already been done
+ * 
+ * @param fp 
+ */
 void start_sound_recording(FILE *fp) {
     /**
      * @note The file pointer is set to nullptr in the wav_writer class
@@ -490,10 +496,8 @@ void start_sound_recording(FILE *fp) {
      *       hence the need to use 'is_file_handle_set()' getter
      */
 
-    static bool wav_folder_created = false;
-
-    if (wav_folder_created == false) {
-        wav_folder_created = createSessionFolder();
+    if (session_folder_created == false) {
+        session_folder_created = createSessionFolder();
     }
 
     fp = nullptr;
@@ -523,7 +527,8 @@ bool inference_result_file_SD_available = false;
 auto save_ai_results_to_sd = true;
 
 /**
- * @brief Check if file exists to record inference result from Edge Impulse
+ * @brief Create file to save inference results
+ * @attention This function presumes SD card check has already been done
  * @note If the file doesn't exits it will be created with the following details:
  *          EI Project ID, 186372
  *          EI Project owner, EDsteve
@@ -531,29 +536,30 @@ auto save_ai_results_to_sd = true;
  *          EI Project deploy version, 2
  * @return 0 on success, -1 on fail
  */
-int create_inference_result_file_SD(String f_name)
-{
-    if (checkSDCard() != ESP_OK) {
-        // Abandon
-        return -1;
+int create_inference_result_file_SD() {
+    if (session_folder_created == false) {
+        session_folder_created = createSessionFolder();
     }
 
-    FILE *fp_result = fopen(f_name.c_str(), "r");
+    ei_results_filename = "/sdcard/eloc/";
+    ei_results_filename += gSessionIdentifier;
+    ei_results_filename += "/EI-results-ID-";
+    ei_results_filename += EI_CLASSIFIER_PROJECT_ID;
+    ei_results_filename += "-DEPLOY-VER-";
+    ei_results_filename += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
+    ei_results_filename += ".csv";
 
-    if (fp_result) {
-        ESP_LOGI(TAG, "%s exists on SD card", f_name.c_str());
-        fclose(fp_result);
-        inference_result_file_SD_available = true;
-        return 0;
+    if (1) {
+        ESP_LOGI(TAG, "EI results filename: %s", ei_results_filename.c_str());
     }
 
-    String file_string;
-
-    fp_result = fopen(f_name.c_str(), "wb");
+    FILE *fp_result = fopen(ei_results_filename.c_str(), "wb");
     if (!fp_result) {
         ESP_LOGE(TAG, "Failed to open file for writing");
         return -1;
     }
+
+    String file_string;
 
     // Possible other details to include in file
     if (0) {
@@ -571,11 +577,12 @@ int create_inference_result_file_SD(String f_name)
     file_string += "\n\nYear-Month-Day Hour:Min:Sec";
 
     for (auto i = 0; i < EI_CLASSIFIER_NN_OUTPUT_COUNT; i++) {
-        ei_impulse_result_t results = { 0 };
+        // ei_impulse_result_t results = { 0 };
         file_string += " ,";
-        file_string += results.classification[i].label;
+        //file_string += results.classification[i].label;
 
-        // FIXME:
+        file_string += edgeImpulse->get_ei_classifier_inferencing_categories(i);
+
         // Need to create a wrapper to access this
         // file_string += ei_classifier_inferencing_categories[i];
     }
@@ -593,10 +600,16 @@ int create_inference_result_file_SD(String f_name)
 /**
  * @brief This function accepts a string, prepends date & time & appends to a csv file
  * @param file_string string in csv format, e.g. 0.94, 0.06
+ * @attention This function presumes SD card check has already been done
  * @return 0 on success, -1 on fail
  */
-int save_inference_result_SD(String f_name, String results_string) {
-    FILE *fp_result = fopen(f_name.c_str(), FILE_APPEND);
+int save_inference_result_SD(String results_string) {
+    if (inference_result_file_SD_available == false) {
+        if (create_inference_result_file_SD() != 0)
+            return -1;
+    }
+
+    FILE *fp_result = fopen(ei_results_filename.c_str(), FILE_APPEND);
 
     if (!fp_result) {
         ESP_LOGE(TAG, "Failed to open file for writing");
@@ -655,6 +668,8 @@ void ei_callback_func() {
             return;
         }
 
+        auto target_sound_detected = false;
+
         #ifdef AI_CONTINUOUS_INFERENCE
             if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))  // NOLINT
         #else
@@ -679,6 +694,7 @@ void ei_callback_func() {
                     if ((strcmp(result.classification[ix].label, "background") != 0) &&
                         result.classification[ix].value > AI_RESULT_THRESHOLD) {
                         edgeImpulse->increment_detectedEvents();
+                        target_sound_detected = true;
                         // Start recording??
                         if (wav_writer &&
                             wav_writer.is_file_handle_set() == false &&
@@ -692,10 +708,11 @@ void ei_callback_func() {
                 ESP_LOGI(TAG, "detectedEvents = %d", edgeImpulse->get_detectedEvents());
 
                 file_str += "\n";
-                // Save results to file
-                // TODO: Only save results & wav file if classification value exceeds a threshold?
-                if (save_ai_results_to_sd == true && checkSDCard() == ESP_OK) {
-                    save_inference_result_SD(ei_results_filename, file_str);
+                // Only save results & wav file if classification value exceeds a threshold
+                if (save_ai_results_to_sd == true &&
+                    checkSDCard() == ESP_OK &&
+                    target_sound_detected == true) {
+                    save_inference_result_SD(file_str);
                 }
 
             #if EI_CLASSIFIER_HAS_ANOMALY == 1
@@ -863,24 +880,9 @@ void app_main(void) {
 
 #ifdef EDGE_IMPULSE_ENABLED
 
-    ei_results_filename = "/sdcard/eloc/";
-    ei_results_filename += "EI-results-ID-";
-    ei_results_filename += EI_CLASSIFIER_PROJECT_ID;
-    ei_results_filename += "-DEPLOY-VER-";
-    ei_results_filename += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
-    ei_results_filename += ".csv";
-
-    if (1) {
-        ESP_LOGI(TAG, "EI results filename: %s", ei_results_filename.c_str());
-    }
-
-    // Check if file exists to record results
-    if (gMountedSDCard == true) {
-        create_inference_result_file_SD(ei_results_filename);
-    }
-
     edgeImpulse = new EdgeImpulse(I2S_DEFAULT_SAMPLE_RATE);
-    ESP_LOGI(TAG, "Edge impulse model version: %s", edgeImpulse->get_aiModel());
+    auto s = edgeImpulse->get_aiModel();
+    ESP_LOGI(TAG, "Edge impulse model version: %s", s.c_str());
     edgeImpulse->output_inferencing_settings();
 
     // TODO: Set some flag if this fails??
@@ -888,14 +890,14 @@ void app_main(void) {
 
     if (1) {
         // Run stored audio samples through the model to test it
-        // Use non-continous process for this
+        // Use non-continuous process for this
         ESP_LOGI(TAG, "Testing model against pre-recorded sample data...");
 
         static_assert((EI_CLASSIFIER_RAW_SAMPLE_COUNT <= TEST_SAMPLE_LENGTH),
                        "TEST_SAMPLE_LENGTH must be at least equal to EI_CLASSIFIER_RAW_SAMPLE_COUNT");
 
         if (EI_CLASSIFIER_RAW_SAMPLE_COUNT < TEST_SAMPLE_LENGTH) {
-            ESP_LOGI(TAG, "TEST_SAMPLE length is greater than the Edge Impulse model length, applying downsampling");
+            ESP_LOGI(TAG, "TEST_SAMPLE length is greater than the Edge Impulse model length, applying down-sampling");
         }
 
         ei::signal_t signal;
@@ -1014,9 +1016,6 @@ void app_main(void) {
     }
 
     auto loopCnt = 0;
-
-    // TODO: Define conditions on which device shuld exit this while() loop
-    // e.g. SD card full or I2S error?
 
     // This might be redundant, set directly in ElocCommands.cpp
     auto new_mode =  WAVFileWriter::Mode::disabled;

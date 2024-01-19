@@ -15,12 +15,11 @@ static const char *TAG = "SDC";
 
 #define SPI_DMA_CHAN 1
 
-SDCard::SDCard(const char *mount_point, gpio_num_t miso, gpio_num_t mosi, gpio_num_t clk, gpio_num_t cs)
-{
-  
+SDCard::SDCard() : m_card(nullptr) {
+}
 
-  
-  
+esp_err_t SDCard::init(const char *mount_point, gpio_num_t miso, gpio_num_t mosi, gpio_num_t clk, gpio_num_t cs)
+{
   m_mount_point = mount_point;
   esp_err_t ret;
   // Options for mounting the filesystem.
@@ -47,7 +46,7 @@ SDCard::SDCard(const char *mount_point, gpio_num_t miso, gpio_num_t mosi, gpio_n
   if (ret != ESP_OK)
   {
     ESP_LOGE(TAG, "Failed to initialize bus.");
-    return;
+    return ret;
   }
 
   // This initializes the slot without card detect (CD) and write protect (WP) signals.
@@ -72,13 +71,15 @@ SDCard::SDCard(const char *mount_point, gpio_num_t miso, gpio_num_t mosi, gpio_n
                     "Make sure SD card lines have pull-up resistors in place.",
                esp_err_to_name(ret));
     }
-    return;
+    return ret;
   }
    gMountedSDCard = true;
   ESP_LOGI(TAG, "SDCard mounted at: %s", m_mount_point.c_str());
 
   // Card has been initialized, print its properties
   sdmmc_card_print_info(stdout, m_card);
+
+  return ret;
 }
 
 

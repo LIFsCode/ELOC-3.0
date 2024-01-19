@@ -109,11 +109,11 @@ bool session_folder_created = false;
 // String gTimeDifferenceCode; //see getTimeDifferenceCode() below
 
 #ifdef USE_SPI_VERSION
-    SDCard *sd_card = nullptr;
+    SDCard sd_card;
 #endif
 
 #ifdef USE_SDIO_VERSION
-    SDCardSDIO *sd_card = nullptr;
+    SDCardSDIO sd_card;
 #endif
 
 I2SMEMSSampler *input = nullptr;
@@ -440,26 +440,26 @@ bool mountSDCard()
     gMountedSDCard = false;
 #ifdef USE_SPI_VERSION
     ESP_LOGI(TAG, "TRYING to mount SDCArd, SPI ");
-    sd_card = new SDCard("/sdcard", PIN_NUM_MISO, PIN_NUM_MOSI, PIN_NUM_CLK, PIN_NUM_CS);
+    sd_card.init("/sdcard", PIN_NUM_MISO, PIN_NUM_MOSI, PIN_NUM_CLK, PIN_NUM_CS);
 #endif
 
 #ifdef USE_SDIO_VERSION
 
         ESP_LOGI(TAG, "TRYING to mount SDCArd, SDIO ");
-        sd_card = new SDCardSDIO("/sdcard");
-        if (sd_card->isMounted()) {
+        sd_card.init("/sdcard");
+        if (sd_card.isMounted()) {
             ESP_LOGI(TAG, "SD card mounted ");
             const char* ELOC_FOLDER = "/sdcard/eloc";
             if (!ffsutil::folderExists(ELOC_FOLDER)) {
                 ESP_LOGI(TAG, "%s does not exist, creating empty folder", ELOC_FOLDER);
                 mkdir(ELOC_FOLDER, 0777);
             }
-            float freeSpace = sd_card->freeSpaceGB();
-            float totalSpace = sd_card->getCapacityMB()/1024;
+            float freeSpace = sd_card.freeSpaceGB();
+            float totalSpace = sd_card.getCapacityMB()/1024;
             ESP_LOGV(TAG, "SD card %f / %f GB free", freeSpace, totalSpace);
         }
     #endif
-    gMountedSDCard = sd_card->isMounted();
+    gMountedSDCard = sd_card.isMounted();
     return gMountedSDCard;
 }
 
@@ -471,7 +471,7 @@ esp_err_t checkSDCard() {
         }
     }
     // getupdated free space
-    float freeSpaceGB = sd_card->freeSpaceGB();
+    float freeSpaceGB = sd_card.freeSpaceGB();
     if ((freeSpaceGB > 0.0) && (freeSpaceGB < 0.5)) {
         //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
         //  btwrite("SD Card full. Cannot record");
@@ -843,7 +843,7 @@ void app_main(void) {
     Battery::GetInstance();
 
     // Setup persistent logging only if SD card is mounted
-    if (sd_card && sd_card->isMounted()) {
+    if (sd_card.isMounted()) {
         const logConfig_t& cfg = getConfig().logConfig;
         esp_err_t err = Logging::init(cfg.logToSdCard, cfg.filename, cfg.maxFiles, cfg.maxFileSize);
         if (err != ESP_OK) {
@@ -1105,9 +1105,8 @@ void app_main(void) {
         wav_writer.finish();
     }
 
-    if (sd_card != nullptr) {
-        delete sd_card;
-        sd_card = nullptr;
+    if (sd_card.isMounted()) {
+        sd_card.~SDCardSDIO();
     }
 
     ESP_LOGI(TAG, "app_main done");

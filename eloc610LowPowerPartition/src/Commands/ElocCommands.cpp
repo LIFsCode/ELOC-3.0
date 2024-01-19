@@ -46,7 +46,7 @@
 /********** BUGME: encapsulate ELOC status and make it threadsafe!!!*/ 
 //BUGME: global status
 extern ESP32Time timeObject;
-extern SDCardSDIO *sd_card;
+extern SDCardSDIO sd_card;
 
 #define ENUM_MACRO(name, v0, v1, v2, v3, v4, v5)\
     enum class name { v0, v1, v2, v3, v4, v5};\
@@ -141,9 +141,9 @@ void printStatus(String& buf) {
     float sdCardSizeGB = 0;
     float sdCardFreeSpaceGB = 0;
   
-    if (sd_card && sd_card->isMounted()) {
-        sdCardSizeGB = sd_card->getCapacityMB()/1024;
-        sdCardFreeSpaceGB = sd_card->freeSpaceGB();
+    if (sd_card.isMounted()) {
+        sdCardSizeGB = sd_card.getCapacityMB()/1024;
+        sdCardFreeSpaceGB = sd_card.freeSpaceGB();
 
     }
     device["SdCardSize[GB]"]             = round(sdCardSizeGB,2);

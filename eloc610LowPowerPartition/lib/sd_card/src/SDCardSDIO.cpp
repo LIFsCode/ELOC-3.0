@@ -14,8 +14,10 @@ static const char *TAG = "SDC";
 
 #define SPI_DMA_CHAN 1
 
-SDCardSDIO::SDCardSDIO(const char *mount_point) : m_mounted(false)
-{
+SDCardSDIO::SDCardSDIO() : m_mounted(false), m_card(nullptr) {
+}
+
+esp_err_t SDCardSDIO::init(const char *mount_point) {
   m_mount_point = mount_point;
   esp_err_t ret;
   // Options for mounting the filesystem.
@@ -52,13 +54,16 @@ SDCardSDIO::SDCardSDIO(const char *mount_point) : m_mounted(false)
                     "Make sure SD card lines have pull-up resistors in place.",
                esp_err_to_name(ret));
     }
-    return;
+    return ret;
   }
+
   m_mounted = true;
   ESP_LOGI(TAG, "SDCard mounted at: %s", m_mount_point.c_str());
 
   // Card has been initialized, print its properties
   sdmmc_card_print_info(stdout, m_card);
+
+  return ret;
 }
 
 SDCardSDIO::~SDCardSDIO()

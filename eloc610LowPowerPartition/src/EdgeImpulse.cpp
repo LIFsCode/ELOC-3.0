@@ -5,28 +5,25 @@
  * @note https://docs.edgeimpulse.com/docs/tutorials/advanced-inferencing/continuous-audio-sampling
  */
 
-
 #include "project_config.h"
 #include "EdgeImpulse.hpp"
 #include "trumpet_trimmed_inferencing.h"
 
 static const char *TAG = "EdgeImpulse";
 
-EdgeImpulse::EdgeImpulse(int i2s_sample_rate)
-{
+EdgeImpulse::EdgeImpulse(int i2s_sample_rate) {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
     // Run stored audio samples through the model to test it
     ESP_LOGI(TAG, "Testing model against pre-recorded sample data...");
 
     if (EI_CLASSIFIER_RAW_SAMPLE_COUNT > i2s_sample_rate)
-        ESP_LOGE(TAG,"The I2S sample rate must be at least %d", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+        ESP_LOGE(TAG, "The I2S sample rate must be at least %d", EI_CLASSIFIER_RAW_SAMPLE_COUNT);
 
     status = Status::not_running;
 }
 
-void EdgeImpulse::output_inferencing_settings()
-{
+void EdgeImpulse::output_inferencing_settings() {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
     // summary of inferencing settings (from model_metadata.h)
@@ -41,20 +38,22 @@ void EdgeImpulse::output_inferencing_settings()
  * @brief      Init buffers for inference
  * @return     true if successful
  */
-bool EdgeImpulse::buffers_setup(uint32_t n_samples)
-{
+bool EdgeImpulse::buffers_setup(uint32_t n_samples) {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
     status = Status::not_running;
 
+    // Check that n_samples is correct, should be EI_CLASSIFIER_RAW_SAMPLE_COUNT
+    assert(EI_CLASSIFIER_RAW_SAMPLE_COUNT == n_samples);
+
     #ifdef EI_BUFFER_IN_PSRAM
+        ESP_LOGI(TAG, "Allocating 2 buffers of %d bytes in RAM", n_samples);
         inference.buffers[0] = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
     #else
-        inference.buffers[0] = (int16_t *)malloc(n_samples * sizeof(int16_t));
+        inference.buffers[0] = edgeImpulse_buffers[0];
     #endif
 
-    if (inference.buffers[0] == NULL)
-    {
+    if (inference.buffers[0] == NULL) {
         ESP_LOGE(TAG, "Failed to allocate %d bytes for inference buffer", n_samples * sizeof(int16_t));
         return false;
     }
@@ -62,14 +61,12 @@ bool EdgeImpulse::buffers_setup(uint32_t n_samples)
     #ifdef EI_BUFFER_IN_PSRAM
         inference.buffers[1] = (int16_t *)heap_caps_malloc(n_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
     #else
-        inference.buffers[1] = (int16_t *)malloc(n_samples * sizeof(int16_t));
+        inference.buffers[1] = edgeImpulse_buffers[1];
     #endif
 
     if (inference.buffers[1] == NULL) {
         #ifdef EI_BUFFER_IN_PSRAM
             heap_caps_free(inference.buffers[0]);
-        #else
-            free(inference.buffers[0]);
         #endif
 
         return false;
@@ -92,30 +89,11 @@ bool EdgeImpulse::buffers_setup(uint32_t n_samples)
  *
  * @return     True when finished
  */
-bool EdgeImpulse::microphone_inference_record(void)
-{
+bool EdgeImpulse::microphone_inference_record(void) {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
-    bool ret = true;
-
-    // TODO(oohehir): Expect this to be set as loading from another point?
-    // if (inference.buf_ready == 1)
-    // {
-    //   ESP_LOGE(TAG, "Error sample buffer overrun. Decrease the number of slices per model window "
-    //       "(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW)");
-    //   ret = false;
-    // }
-
     while (inference.buf_ready == 0) {
-        // NOTE: Trying to write audio out here seems to leads to poor audio performance?
-        // if(wav_writer.buf_ready == 1){
-        //   wav_writer.write();
-        // }
-        // else
-        // {
-        // Service watchdog
         delay(1);
-        //}
     }
 
     inference.buf_ready = 0;
@@ -126,8 +104,7 @@ bool EdgeImpulse::microphone_inference_record(void)
 /**
  * Get raw audio signal data
  */
-int EdgeImpulse::microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
-{
+int EdgeImpulse::microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
     numpy::int16_to_float(&inference.buffers[inference.buf_select ^ 1][offset], out_ptr, length);
@@ -138,8 +115,7 @@ int EdgeImpulse::microphone_audio_signal_get_data(size_t offset, size_t length, 
 /**
  * @brief      Stop PDM and release buffers
  */
-void EdgeImpulse::free_buffers(void)
-{
+void EdgeImpulse::free_buffers(void) {
     ESP_LOGV(TAG, "Func: %s", __func__);
     status = Status::not_running;
     // Delay in case I2SMEMSSampler::read() is currently loading samples into buffers
@@ -150,25 +126,27 @@ void EdgeImpulse::free_buffers(void)
     inference.buf_ready = 0;
 
     if (inference.buffers[0] != NULL) {
-        ei_free(inference.buffers[0]);
+        #ifdef EI_BUFFER_IN_PSRAM
+            ei_free(inference.buffers[0]);
+        #endif
     } else {
         ESP_LOGE(TAG, "inference.buffers[0] is already NULL");
     }
 
     if (inference.buffers[1] != NULL) {
-        ei_free(inference.buffers[1]);
+        #ifdef EI_BUFFER_IN_PSRAM
+            ei_free(inference.buffers[1]);
+        #endif
     } else {
         ESP_LOGE(TAG, "inference.buffers[0] is already NULL");
     }
 }
 
-void EdgeImpulse::run_classifier_init()
-{
+void EdgeImpulse::run_classifier_init() {
     return ::run_classifier_init();
 }
 
-EI_IMPULSE_ERROR EdgeImpulse::run_classifier_continuous(signal_t *signal, ei_impulse_result_t *result)
-{
+EI_IMPULSE_ERROR EdgeImpulse::run_classifier_continuous(signal_t *signal, ei_impulse_result_t *result) {
 
     ESP_LOGV(TAG, "Func: %s", __func__);
 
@@ -176,8 +154,7 @@ EI_IMPULSE_ERROR EdgeImpulse::run_classifier_continuous(signal_t *signal, ei_imp
     return ::run_classifier_continuous(signal, result, this->debug_nn);
 }
 
-EI_IMPULSE_ERROR EdgeImpulse::run_classifier(signal_t *signal, ei_impulse_result_t *result)
-{
+EI_IMPULSE_ERROR EdgeImpulse::run_classifier(signal_t *signal, ei_impulse_result_t *result) {
 
     ESP_LOGV(TAG, "Func: %s", __func__);
 

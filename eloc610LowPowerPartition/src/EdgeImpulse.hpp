@@ -47,6 +47,10 @@ class EdgeImpulse {
     bool debug_nn = false;  // Set this to true to see e.g. features generated from the raw signal
     Status status = Status::not_running;
 
+    #ifndef EI_BUFFER_IN_PSRAM
+        signed short edgeImpulse_buffers[2][EI_CLASSIFIER_RAW_SAMPLE_COUNT];
+    #endif
+
     /**
      * @brief This callback allows the classifier to be run from main.cpp
      *        This is required due to namespace issues, static implementations etc..

@@ -60,14 +60,14 @@ static const char *TAG = "main";
     #include "edge-impulse-sdk/dsp/numpy_types.h"
     #include "test_samples.h"
 
-    EdgeImpulse *edgeImpulse = nullptr;
+    EdgeImpulse edgeImpulse(I2S_DEFAULT_SAMPLE_RATE);
 
     String ei_results_filename;
 
     // BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers
     //       but all EdgeImpulse stuff got encapsulated within a class, which does not match
     int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
-       return edgeImpulse->microphone_audio_signal_get_data(offset, length, out_ptr);
+       return edgeImpulse.microphone_audio_signal_get_data(offset, length, out_ptr);
     }
 
 #endif
@@ -577,14 +577,8 @@ int create_inference_result_file_SD() {
     file_string += "\n\nYear-Month-Day Hour:Min:Sec";
 
     for (auto i = 0; i < EI_CLASSIFIER_NN_OUTPUT_COUNT; i++) {
-        // ei_impulse_result_t results = { 0 };
         file_string += " ,";
-        //file_string += results.classification[i].label;
-
-        file_string += edgeImpulse->get_ei_classifier_inferencing_categories(i);
-
-        // Need to create a wrapper to access this
-        // file_string += ei_classifier_inferencing_categories[i];
+        file_string += edgeImpulse.get_ei_classifier_inferencing_categories(i);
     }
 
     file_string += "\n";
@@ -632,8 +626,8 @@ void ei_callback_func() {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
     if (ai_run_enable == true &&
-        edgeImpulse->get_status() == edgeImpulse->Status::running) {
-        bool m = edgeImpulse->microphone_inference_record();
+        edgeImpulse.get_status() == edgeImpulse.Status::running) {
+        bool m = edgeImpulse.microphone_inference_record();
         // Blocking function - unblocks when buffer is full
         if (!m) {
             ESP_LOGE(TAG, "ERR: Failed to record audio...");
@@ -655,9 +649,9 @@ void ei_callback_func() {
         ei_impulse_result_t result = {0};
 
         #ifdef AI_CONTINUOUS_INFERENCE
-            EI_IMPULSE_ERROR r = edgeImpulse->run_classifier_continuous(&signal, &result);
+            EI_IMPULSE_ERROR r = edgeImpulse.run_classifier_continuous(&signal, &result);
         #else
-            EI_IMPULSE_ERROR r = edgeImpulse->run_classifier(&signal, &result);
+            EI_IMPULSE_ERROR r = edgeImpulse.run_classifier(&signal, &result);
         #endif  // AI_CONTINUOUS_INFERENCE
 
         ESP_LOGI(TAG, "Cycles taken to run inference = %d", (cpu_hal_get_cycle_count() - startCounter));
@@ -691,7 +685,7 @@ void ei_callback_func() {
 
                     if ((strcmp(result.classification[ix].label, "background") != 0) &&
                         result.classification[ix].value > AI_RESULT_THRESHOLD) {
-                        edgeImpulse->increment_detectedEvents();
+                        edgeImpulse.increment_detectedEvents();
                         target_sound_detected = true;
                         // Start recording??
                         if (wav_writer &&
@@ -703,7 +697,7 @@ void ei_callback_func() {
                     }
                 }
 
-                // ESP_LOGI(TAG, "detectedEvents = %d", edgeImpulse->get_detectedEvents());
+                // ESP_LOGI(TAG, "detectedEvents = %d", edgeImpulse.get_detectedEvents());
 
                 file_str += "\n";
                 // Only save results & wav file if classification value exceeds a threshold
@@ -878,13 +872,12 @@ void app_main(void) {
 
 #ifdef EDGE_IMPULSE_ENABLED
 
-    edgeImpulse = new EdgeImpulse(I2S_DEFAULT_SAMPLE_RATE);
-    auto s = edgeImpulse->get_aiModel();
+    auto s = edgeImpulse.get_aiModel();
     ESP_LOGI(TAG, "Edge impulse model version: %s", s.c_str());
-    edgeImpulse->output_inferencing_settings();
+    edgeImpulse.output_inferencing_settings();
 
     // TODO: Set some flag if this fails??
-    edgeImpulse->buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+    edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
 
     if (1) {
         // Run stored audio samples through the model to test it
@@ -913,7 +906,7 @@ void app_main(void) {
             for (auto test_sample_count = 0, inference_buffer_count = 0; (test_sample_count < TEST_SAMPLE_LENGTH) &&
                     (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT); test_sample_count++) {
                 if (skip_current >= ei_skip_rate) {
-                    edgeImpulse->inference.buffers[0][inference_buffer_count++] = test_array[i][test_sample_count];
+                    edgeImpulse.inference.buffers[0][inference_buffer_count++] = test_array[i][test_sample_count];
                     skip_current = 1;
                 } else {
                     skip_current++;
@@ -922,11 +915,11 @@ void app_main(void) {
 
             // Mark buffer as ready
             // Mark active buffer as inference.buffers[1], inference run on inactive buffer
-            edgeImpulse->inference.buf_select = 1;
-            edgeImpulse->inference.buf_count = 0;
-            edgeImpulse->inference.buf_ready = 1;
+            edgeImpulse.inference.buf_select = 1;
+            edgeImpulse.inference.buf_count = 0;
+            edgeImpulse.inference.buf_ready = 1;
 
-            EI_IMPULSE_ERROR r = edgeImpulse->run_classifier(&signal, &result);
+            EI_IMPULSE_ERROR r = edgeImpulse.run_classifier(&signal, &result);
             if (r != EI_IMPULSE_OK) {
                 ESP_LOGW(TAG, "ERR: Failed to run classifier (%d)", r);
                 return;
@@ -949,14 +942,14 @@ void app_main(void) {
         }
 
         // Free buffers as the buffer size for continouus & non-continous differs
-        edgeImpulse->free_buffers();
+        edgeImpulse.free_buffers();
     }
 
     #ifdef AI_CONTINUOUS_INFERENCE
-        edgeImpulse->buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
+        edgeImpulse.buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
         auto print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
     #else
-        edgeImpulse->buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+        edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
     #endif  // AI_CONTINUOUS_INFERENCE
 
     #endif  // EDGE_IMPULSE_ENABLED
@@ -1004,12 +997,12 @@ void app_main(void) {
         #ifdef EDGE_IMPULSE_ENABLED
             #ifdef AI_CONTINUOUS_INFERENCE
                 // Init static vars
-                edgeImpulse->run_classifier_init();
+                edgeImpulse.run_classifier_init();
             #endif  // AI_CONTINUOUS_INFERENCE
 
-            input->register_ei_inference(&edgeImpulse->getInference(), EI_CLASSIFIER_FREQUENCY);
-            edgeImpulse->set_status(edgeImpulse->Status::running);
-            edgeImpulse->start_ei_thread(ei_callback_func);
+            input->register_ei_inference(&edgeImpulse.getInference(), EI_CLASSIFIER_FREQUENCY);
+            edgeImpulse.set_status(edgeImpulse.Status::running);
+            edgeImpulse.start_ei_thread(ei_callback_func);
         #endif
     }
 
@@ -1072,13 +1065,13 @@ void app_main(void) {
 
         if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);
-            auto ei_status = edgeImpulse->get_status() == edgeImpulse->Status::running ? "running" : "not running";
+            auto ei_status = edgeImpulse.get_status() == edgeImpulse.Status::running ? "running" : "not running";
             ESP_LOGI(TAG, "EI current status = %s", ei_status);
 
-            if (ai_run_enable == false && edgeImpulse->get_status() == edgeImpulse->Status::running) {
-                edgeImpulse->set_status(edgeImpulse->Status::not_running);
-            } else if (ai_run_enable == true && edgeImpulse->get_status() == edgeImpulse->Status::not_running) {
-                if (edgeImpulse->start_ei_thread(ei_callback_func) != ESP_OK) {
+            if (ai_run_enable == false && edgeImpulse.get_status() == edgeImpulse.Status::running) {
+                edgeImpulse.set_status(edgeImpulse.Status::not_running);
+            } else if (ai_run_enable == true && edgeImpulse.get_status() == edgeImpulse.Status::not_running) {
+                if (edgeImpulse.start_ei_thread(ei_callback_func) != ESP_OK) {
                     delay(500);
                 }
             }

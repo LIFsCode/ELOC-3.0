@@ -126,11 +126,9 @@ void printStatus(String& buf) {
     ai["detectedEvents"]          = 0;
     ai["aiModel"]                 = "";
 #ifdef EDGE_IMPULSE_ENABLED
-    if (edgeImpulse != nullptr) {
-        ai["detectingTime[h]"]        = edgeImpulse->get_totalDetectingTime_hr();
-        ai["detectedEvents"]          = edgeImpulse->get_detectedEvents();
-        ai["aiModel"]                 = EI_CLASSIFIER_PROJECT_NAME;
-    }
+    ai["detectingTime[h]"]        = edgeImpulse.get_totalDetectingTime_hr();
+    ai["detectedEvents"]          = edgeImpulse.get_detectedEvents();
+    ai["aiModel"]                 = EI_CLASSIFIER_PROJECT_NAME;
 #endif
     JsonObject device = doc.createNestedObject("device");
     device["firmware"]                   = gFirmwareVersion;

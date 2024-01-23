@@ -38,7 +38,7 @@ extern bool ai_run_enable;
 
 #ifdef EDGE_IMPULSE_ENABLED
     #include "EdgeImpulse.hpp"
-    extern EdgeImpulse *edgeImpulse;
+    extern EdgeImpulse edgeImpulse;
 #endif
 
 extern int64_t gTotalUPTimeSinceReboot;  //esp_timer_get_time returns 64-bit time since startup, in microseconds.

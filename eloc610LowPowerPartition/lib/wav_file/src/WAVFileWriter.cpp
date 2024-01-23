@@ -52,8 +52,6 @@ bool WAVFileWriter::initialize(int sample_rate, int buffer_time, int ch_count /*
 
   #ifdef WAV_BUFFER_IN_PSRAM
       heap_caps_free(buffers[0]);
-  #else
-      free(buffers[0]);
   #endif
 
     return false;

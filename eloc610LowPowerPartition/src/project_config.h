@@ -208,7 +208,7 @@
 
 // #define I2S_BUFFER_IN_PSRAM
 // #define WAV_BUFFER_IN_PSRAM
-#define EI_BUFFER_IN_PSRAM
+// #define EI_BUFFER_IN_PSRAM
 
 
 /////////////////////////////////// Thread Related configurations ///////////////////////////////////

@@ -5,17 +5,18 @@
 
 static const char *TAG = "I2SMEMSSampler";
 
-I2SMEMSSampler::I2SMEMSSampler(
-    i2s_port_t i2s_port,
-    const i2s_pin_config_t &i2s_pins,
-    i2s_config_t i2s_config,
-    int bitShift,
-    bool listenOnly,
-    bool fixSPH0645) : I2SSampler(i2s_port, i2s_config),
-                       m_i2sPins(i2s_pins),
-                       m_fixSPH0645(fixSPH0645),
-                       mBitShift(bitShift),
-                       mListenOnly(listenOnly) {
+I2SMEMSSampler::I2SMEMSSampler() {
+}
+
+void I2SMEMSSampler::init(i2s_port_t i2s_port, const i2s_pin_config_t &i2s_pins, i2s_config_t i2s_config, int bitShift,
+                            bool listenOnly, bool fixSPH0645) {
+    ESP_LOGV(TAG, "Func: %s", __func__);
+
+    I2SSampler::init(i2s_port, i2s_config);
+    m_i2sPins = i2s_pins;
+    mBitShift = bitShift;
+    mListenOnly = listenOnly;
+    m_fixSPH0645 = fixSPH0645;
     i2s_sampling_rate = i2s_config.sample_rate;
     i2s_samples_to_read = I2S_DEFAULT_SAMPLE_RATE;  // Reasonable default
     writer = nullptr;

@@ -8,6 +8,7 @@
 extern TaskHandle_t i2s_TaskHandler;
 extern TaskHandle_t ei_TaskHandler;
 
+
 class I2SMEMSSampler : public I2SSampler {
  private:
     i2s_pin_config_t m_i2sPins;
@@ -64,13 +65,15 @@ class I2SMEMSSampler : public I2SSampler {
     bool configureI2S() override;
 
  public:
-    I2SMEMSSampler(
-                i2s_port_t i2s_port,
-                const i2s_pin_config_t &i2s_pins,
-                i2s_config_t i2s_config,
-                int  bitShift = I2S_DEFAULT_BIT_SHIFT,     // TODO: depreciated?? Using I2S_DEFAULT_BIT_SHIFT + I2S_DEFAULT_VOLUME instead from config.h
-                bool listenOnly = false,
-                bool fixSPH0645 = false);
+    I2SMEMSSampler();
+
+    virtual void init(
+        i2s_port_t i2s_port,
+        const i2s_pin_config_t &i2s_pins,
+        i2s_config_t i2s_config,
+        int  bitShift = I2S_DEFAULT_BIT_SHIFT,     // TODO: depreciated?? Using I2S_DEFAULT_BIT_SHIFT + I2S_DEFAULT_VOLUME instead from config.h
+        bool listenOnly = false,
+        bool fixSPH0645 = false);
 
     virtual ~I2SMEMSSampler();
 

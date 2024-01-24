@@ -25,9 +25,9 @@
 extern TaskHandle_t ei_TaskHandler;
 
 #ifndef PIO_UNIT_TESTING
-// For unit testing
-#include <I2SMEMSSampler.h>
-extern I2SMEMSSampler *input;
+    // For unit testing
+    #include <I2SMEMSSampler.h>
+    extern I2SMEMSSampler input;
 #endif
 
 #include "edge-impulse-sdk/dsp/numpy_types.h"

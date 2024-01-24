@@ -5,17 +5,20 @@
 
 static const char *TAG = "I2Sampler";
 
-I2SSampler::I2SSampler(i2s_port_t i2sPort, const i2s_config_t &i2s_config) : m_i2sPort(i2sPort), m_i2s_config(i2s_config)
-{
+I2SSampler::I2SSampler() {
 }
 
-esp_err_t I2SSampler::install_and_start()
-{
+void I2SSampler::init(i2s_port_t i2sPort, const i2s_config_t &i2s_config) {
+    m_i2sPort = i2sPort;
+    m_i2s_config = i2s_config;
+}
+
+esp_err_t I2SSampler::install_and_start() {
     auto ret = i2s_driver_install(m_i2sPort, &m_i2s_config, 0, NULL);
 
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Func: %s, i2s_driver_install", __func__);
-return ret;
+        return ret;
     }
 
     // set up the I2S configuration from the subclass
@@ -23,7 +26,7 @@ return ret;
 
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Func: %s, configureI2S", __func__);
-return ret;
+        return ret;
     }
 
     i2s_installed_and_started = true;
@@ -31,8 +34,7 @@ return ret;
     return ret;
 }
 
-esp_err_t I2SSampler::uninstall()
-{
+esp_err_t I2SSampler::uninstall() {
     // clear any I2S configuration
     unConfigureI2S();
     // stop the i2S driver

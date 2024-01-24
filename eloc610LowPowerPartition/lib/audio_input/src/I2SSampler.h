@@ -27,13 +27,25 @@ class I2SSampler {
     */
     virtual void unConfigureI2S() {}
 
-/**
+    /**
      * @note nothing to do for the default case
      */ 
     virtual void processI2SData(void *samples, size_t count) {}
 
  public:
-    I2SSampler(i2s_port_t i2sPort, const i2s_config_t &i2sConfig);
+    /**
+     * @brief Construct a new I2SSampler object
+     * 
+     */
+    I2SSampler();
+
+    /**
+     * @brief Setup port and configuration
+     * 
+     * @param i2sPort 
+     * @param i2sConfig 
+     */
+    virtual void init(i2s_port_t i2sPort, const i2s_config_t &i2sConfig);
 
     /**
      * @brief Zero the appropiate DMA buffer for the I2S port

@@ -1027,9 +1027,20 @@ void app_main(void) {
             Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC(), ElocSystem::GetInstance().getTemperaure());
 
             // Display memory usage
-            if (0) {
-                ESP_LOGI(TAG, "Min free heap since boot = %d bytes", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
-                ESP_LOGI(TAG, "Min free PSRAM since boot = %d bytes", heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
+            if (1) {
+                multi_heap_info_t heapInfo;
+                heap_caps_get_info(&heapInfo, MALLOC_CAP_INTERNAL);
+                ESP_LOGI(TAG, "Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%", 
+                    heapInfo.minimum_free_bytes, heapInfo.total_free_bytes, 
+                    100 - (heapInfo.total_free_bytes*100) / heap_caps_get_total_size(MALLOC_CAP_INTERNAL),
+                    heapInfo.largest_free_block,
+                    100 - (heapInfo.largest_free_block*100) / heapInfo.total_free_bytes);
+                heap_caps_get_info(&heapInfo, MALLOC_CAP_SPIRAM);
+                ESP_LOGI(TAG, "PSRAM Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%", 
+                    heapInfo.minimum_free_bytes, heapInfo.total_free_bytes, 
+                    100 - (heapInfo.total_free_bytes*100) / heap_caps_get_total_size(MALLOC_CAP_SPIRAM),
+                    heapInfo.largest_free_block,
+                    100 - (heapInfo.largest_free_block*100) / heapInfo.total_free_bytes);
             }
         }
 

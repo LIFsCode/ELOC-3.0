@@ -245,10 +245,6 @@ void printMemory()
  */
 static void IRAM_ATTR buttonISR(void *args)
 {
-    if (!wav_writer) {
-        return;
-    }
-
     if (wav_writer.get_mode() == WAVFileWriter::Mode::disabled) {
         wav_writer.set_mode(WAVFileWriter::Mode::continuous);
     } else {
@@ -636,8 +632,7 @@ void ei_callback_func() {
                         edgeImpulse.increment_detectedEvents();
                         target_sound_detected = true;
                         // Start recording??
-                        if (wav_writer &&
-                            wav_writer.is_file_handle_set() == false &&
+                        if (wav_writer.wav_recording_in_progress == false &&
                             wav_writer.get_mode() == WAVFileWriter::Mode::single &&
                             checkSDCard() == ESP_OK) {
                             start_sound_recording();
@@ -929,7 +924,6 @@ void app_main(void) {
         }
     } else {
         ESP_LOGE(TAG, "SD card not mounted, cannot create WAVFileWriter");
-        if (wav_writer)
             wav_writer.set_mode(WAVFileWriter::Mode::disabled);  // Default is disabled anyway
         #ifdef EDGE_IMPULSE_ENABLED
             save_ai_results_to_sd = false;
@@ -1006,8 +1000,7 @@ void app_main(void) {
         }
 
         // Start a new recording?
-        if (wav_writer &&
-            wav_writer.is_file_handle_set() == false &&                     // FIXME: Have a better way to check if recording is in progress
+        if (wav_writer.wav_recording_in_progress == false &&
             wav_writer.get_mode() == WAVFileWriter::Mode::continuous &&
             checkSDCard() == ESP_OK) {
             start_sound_recording();
@@ -1041,10 +1034,7 @@ void app_main(void) {
 
     // Should never get here
     input.uninstall();
-
-    if (wav_writer) {
-        wav_writer.finish();
-    }
+    wav_writer.finish();
 
     if (sd_card.isMounted()) {
         sd_card.~SDCardSDIO();

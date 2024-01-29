@@ -106,6 +106,16 @@ String ESP32Time::getDateTime(bool mode){
 }
 
 /*!
+    @brief  get the time and date in format 2024-01-25_18_09_01
+*/
+String ESP32Time::getDateTimeFilename() {
+	struct tm timeinfo = getTimeStruct();
+	char s[51];
+	strftime(s, 50, "%F_%H_%M_%S", &timeinfo);
+	return String(s);
+}
+
+/*!
     @brief  get the time and date as an Arduino String object
     @param  mode
             true = Long date format

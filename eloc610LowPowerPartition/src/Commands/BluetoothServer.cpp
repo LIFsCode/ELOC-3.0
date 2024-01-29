@@ -193,14 +193,12 @@ void cmd_GetHelp(CmdParser* cmdParser) {
 }
 
 void wait_for_bt_command() {
-
     static bool sentSettings = false;
 
     String serialIN;
 
-    if (    wav_writer &&
-            wav_writer.get_mode() != WAVFileWriter::Mode::disabled &&
-            !getConfig().bluetoothEnableDuringRecord) {
+    if (wav_writer.get_mode() != WAVFileWriter::Mode::disabled &&
+        !getConfig().bluetoothEnableDuringRecord) {
         btwrite("recording");
         btwrite(""); btwrite("");
         btwrite("ELOC will disconnect. USE button to stop recording.");

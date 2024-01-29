@@ -38,6 +38,7 @@ class ESP32Time {
 		
 		String getTime();
 		String getDateTime(bool mode = false);
+		String getDateTimeFilename();
 		String getTimeDate(bool mode = false);
 		String getDate(bool mode = false);
 		String getAmPm(bool lowercase = false);

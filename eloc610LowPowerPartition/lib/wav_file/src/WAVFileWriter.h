@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <esp_heap_caps.h>
 #include <string.h>
+#include "WString.h"
+#include "ESP32Time.h"
 #include "WAVFile.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -98,9 +100,9 @@ class WAVFileWriter
   int buf_ready = 0;
 
   /**
-   * @brief Is the wav writing thread running?
+   * @brief Is the wav writing in progress?
   */
-  bool wav_thread_running = false;
+  bool wav_recording_in_progress = false;
 
   /**
    * @param buffer_size_in_samples is the number of SAMPLES that will fit in the buffer

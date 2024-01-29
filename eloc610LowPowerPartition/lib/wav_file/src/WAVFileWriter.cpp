@@ -133,8 +133,9 @@ String WAVFileWriter::createFilename() {
   fname += "/";
   fname += gSessionIdentifier;
   fname += "_";
-  fname += timeObject.getDateTime();
+  fname += timeObject.getDateTimeFilename();
   fname += ".wav";
+  ESP_LOGI(TAG, "Filename: %s", fname.c_str());
   return fname;
 }
 
@@ -181,7 +182,10 @@ void WAVFileWriter::start_write_thread() {
 
   static auto old_secs_written = 0;
 
-  if (open_file() == false) {
+  if (m_fp != nullptr) {
+    ESP_LOGE(TAG, "File pointer is not NULL");
+    enable_wav_file_write = false;
+  } else if (open_file() == false) {
     ESP_LOGE(TAG, "Failed to open file for writing");
     enable_wav_file_write = false;
   }
@@ -213,8 +217,9 @@ void WAVFileWriter::start_write_thread() {
          * recording been disabled & now needs to be stopped??
          */
         if ((m_file_size >= (m_sample_rate * secondsPerFile * sizeof(int16_t)) || mode == Mode::disabled)) {
+          // Won't be saving to this file anymore..
+          enable_wav_file_write = false;
           recording_time_total_sec += recording_time_file_sec;
-
           this->finish();
           old_secs_written = 0;
         }
@@ -230,7 +235,7 @@ void WAVFileWriter::start_write_thread() {
     }  // if (xTaskNotifyWait())
   }
 
-  wav_thread_running = false;
+  wav_recording_in_progress = false;
   vTaskDelete(NULL);
 }
 
@@ -273,14 +278,14 @@ void WAVFileWriter::setChannelCount(int channel_count)
 
 void WAVFileWriter::start_wav_writer_wrapper(void *_this)
 {
-  ((WAVFileWriter *)_this)->start_write_thread();
+  reinterpret_cast<WAVFileWriter *>(_this)->start_write_thread();
 }
 
 int WAVFileWriter::start_wav_write_task(int secondsPerFile)
 {
   ESP_LOGV(TAG, "Func: %s, secondsPerFile = %d", __func__, secondsPerFile);
 
-  wav_thread_running = true;
+  wav_recording_in_progress = true;
 
   if (secondsPerFile <= 0) {
     ESP_LOGE(TAG, "secondsPerFile must be > 0");
@@ -289,13 +294,13 @@ int WAVFileWriter::start_wav_write_task(int secondsPerFile)
 
   this->secondsPerFile = secondsPerFile;
 
-  int ret = xTaskCreatePinnedToCore(this->start_wav_writer_wrapper, "wav_file_writer", 1024 * 4, this, TASK_PRIO_WAV, &i2s_TaskHandler, TASK_WAV_CORE);
+  int ret = xTaskCreatePinnedToCore(this->start_wav_writer_wrapper, "wav_writer",
+                                    1024 * 4, this, TASK_PRIO_WAV, &i2s_TaskHandler, TASK_WAV_CORE);
 
   if (ret != pdPASS) {
     ESP_LOGE(TAG, "Failed to create wav file writer task");
+    wav_recording_in_progress = false;
     return -1;
-    wav_thread_running = false;
-
   }
 
   return 0;

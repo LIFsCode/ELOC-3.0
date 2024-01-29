@@ -73,9 +73,6 @@ static const char *TAG = "main";
 #endif
 
 bool gMountedSDCard = false;
-// wav file pointer
-// TODO: Move to wav_writer class??
-FILE *fp = nullptr;
 
 /**
  * @brief Should inference be run on sound samples? 
@@ -93,8 +90,6 @@ bool ai_run_enable = false;
 const uint32_t sample_buffer_size = sizeof (signed short) * 1024;
 
 uint64_t gStartupTime;  // gets read in at startup to set system time.
-
-char gSessionFolder[65];
 
 int gMinutesWaitUntilDeepSleep = 60;  // change to 1 or 2 for testing
 
@@ -344,7 +339,7 @@ void initTime()
 }
 
 /**
- * @brief Create folder on SD card
+ * @brief Create session folder on SD card & save config file
 */
 bool createSessionFolder()
 {
@@ -371,26 +366,6 @@ bool createSessionFolder()
 
     session_folder_created = true;
 
-    return true;
-}
-
-/**
- * @brief Create empty wav file on SD card (for use by wav writer)
- * @todo Move to WAVFileWriter class
-*/
-bool createFilename(char *fname, size_t size)
-{
-    char timeStr[64] = {};
-    tm timeinfo = timeObject.getTimeStruct();
-    strftime(timeStr, sizeof(timeStr), "%F_%H_%M_%S", &timeinfo);
-    fname[0] = '\0';
-    int n = snprintf(fname, size, "/sdcard/eloc/%s/%s_%s.wav", gSessionIdentifier.c_str(), gSessionIdentifier.c_str(), timeStr);
-    if ((n < 0) || (n > size)) {
-        ESP_LOGE(TAG, "filename buffer too small");
-        return false;
-    }
-
-    ESP_LOGI(TAG, "filename %s", fname);
     return true;
 }
 
@@ -481,43 +456,17 @@ esp_err_t checkSDCard() {
     return ESP_OK;
 }
 
-
 /**
- * @brief Open a file for wav_writer to write to
+ * @brief Start the wav writer task
  * @attention This function presumes SD card check has already been done
- * 
- * @param fp 
  */
-void start_sound_recording(FILE *fp) {
-    /**
-     * @note The file pointer is set to nullptr in the wav_writer class
-     *       but this is not reflected in the fp variable here
-     *       hence the need to use 'is_file_handle_set()' getter
-     */
-
+void start_sound_recording() {
     if (session_folder_created == false) {
         session_folder_created = createSessionFolder();
     }
 
-    fp = nullptr;
-
-    char file_name[100];
-
-    createFilename(file_name, sizeof(file_name));
-    fp = fopen(file_name, "wb");
-
-    if (fp == nullptr) {
-        ESP_LOGE(TAG, "Failed to open file for writing");
-        return;
-    } else {
-        if (wav_writer.set_file_handle(fp) == false) {
-            ESP_LOGE(TAG, "Failed to set file handle");
-            return;
-        }
-        wav_writer.set_enable_wav_file_write(true);
-        // Start thread to continuously write to wav file & when sufficient data is collected finish the file
-        wav_writer.start_wav_write_task(getConfig().secondsPerFile);
-    }
+    // Start thread to continuously write to wav file & when sufficient data is collected finish the file
+    wav_writer.start_wav_write_task(getConfig().secondsPerFile);
 }
 
 #ifdef EDGE_IMPULSE_ENABLED
@@ -691,7 +640,7 @@ void ei_callback_func() {
                             wav_writer.is_file_handle_set() == false &&
                             wav_writer.get_mode() == WAVFileWriter::Mode::single &&
                             checkSDCard() == ESP_OK) {
-                            start_sound_recording(fp);
+                            start_sound_recording();
                         }
                     }
                 }
@@ -938,7 +887,7 @@ void app_main(void) {
             }
         }
 
-        // Free buffers as the buffer size for continouus & non-continous differs
+        // Free buffers as the buffer size for continuous & non-continuous differs
         edgeImpulse.free_buffers();
     }
 
@@ -1058,10 +1007,10 @@ void app_main(void) {
 
         // Start a new recording?
         if (wav_writer &&
-            wav_writer.is_file_handle_set() == false &&
+            wav_writer.is_file_handle_set() == false &&                     // FIXME: Have a better way to check if recording is in progress
             wav_writer.get_mode() == WAVFileWriter::Mode::continuous &&
             checkSDCard() == ESP_OK) {
-            start_sound_recording(fp);
+            start_sound_recording();
         }
 
         #ifdef EDGE_IMPULSE_ENABLED

@@ -5,12 +5,15 @@
 
 #include <stdio.h>
 #include <esp_heap_caps.h>
+#include <string.h>
 #include "WAVFile.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "../../../src/project_config.h"
 
 extern TaskHandle_t i2s_TaskHandler;
+extern String gSessionIdentifier;
+extern ESP32Time timeObject;
 
 #ifndef WAV_BUFFER_IN_PSRAM
   // Use static buffers if not storing in PSRAM
@@ -24,16 +27,8 @@ class WAVFileWriter
  public:
   enum class Mode { disabled = 0, single = 1, continuous = 2 };
 
-  /**
-   * @brief Use to check if object is instantiated
-   * 
-   * @return true object is instantiated
-   * @return false 
-   */
-  explicit operator bool() const {return true; }
-
  private:
-  uint32_t m_file_size;              // Size of wav file in bytes
+  uint32_t m_file_size = 0;           // Size of wav file in bytes
   FILE *m_fp = nullptr;               // pointer to wav file
   wav_header_t m_header;              // struct of wav header
   int m_sample_rate = 16000;          // I2S sample rate, reasonable default
@@ -77,13 +72,23 @@ class WAVFileWriter
   */
   void start_write_thread();
 
+  /**
+  * @brief Create empty wav file on SD card (for use by wav writer)
+  */
+  String createFilename();
+
+  /**
+   * @brief Open file for writing
+   * @return true success
+   */
+  bool open_file();
+
  public:
   /**
    * Use a double buffer system
    * Active buffer -> fill with data
    * Inactive buffer -> write to file
-   * These are public to alow access from I2SMEMSSampler 
-   * TODO: Consider changing to private & make I2MEMSSampler a friend class?
+   * These are public to alow access from I2SMEMSSampler class
    * @param buf_select which buffer is active?
    * @param buf_count index of next element to write to
    * @param buf_ready is the inactive buffer ready to write out to SD card?
@@ -91,6 +96,11 @@ class WAVFileWriter
   size_t buf_select = 0;
   size_t buf_count;
   int buf_ready = 0;
+
+  /**
+   * @brief Is the wav writing thread running?
+  */
+  bool wav_thread_running = false;
 
   /**
    * @param buffer_size_in_samples is the number of SAMPLES that will fit in the buffer
@@ -124,11 +134,10 @@ class WAVFileWriter
   bool initialize(int sample_rate, int buffer_time, int ch_count = 1);
 
   /**
-   * @brief Register a file to write to & write header
-   * @param fp file pointer to write to (already created)
+   * @brief Write wav header
    * @return true success
    */
-  bool set_file_handle(FILE *fp);
+  bool write_wav_header();
 
   /**
    * @brief Check if file handle is set
@@ -199,13 +208,6 @@ class WAVFileWriter
   void zero_file_size() { m_file_size = 0; }
 
   /**
-   * @brief Setter for enable_wav_file_write
-   * @note Used to halt thread that continuously saves sound to wav file
-   * @param value bool value
-  */
-  void set_enable_wav_file_write(bool value) {enable_wav_file_write = value;}
-
-  /**
    * @brief Get the enable wav file write object
    * 
    * @return true 
@@ -261,4 +263,4 @@ class WAVFileWriter
   int start_wav_write_task(int secondsPerFile);
 };
 
-#endif // __WAVFILEWRITER_H__
+#endif  // __WAVFILEWRITER_H__

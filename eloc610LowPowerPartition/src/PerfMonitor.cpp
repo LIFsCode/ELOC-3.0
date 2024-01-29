@@ -89,7 +89,7 @@ static esp_err_t print_real_time_stats(TickType_t xTicksToWait)
         goto exit;
     }
 
-    printf("\n\t| Task         | Core | Run Time   | Percentage\n");
+    printf("\n\t| Task         | Core | Free Stack | Run Time   | Percentage\n");
     //Match each task in start_array to those in the end_array
     for (int i = 0; i < start_array_size; i++) {
         int k = -1;
@@ -106,7 +106,7 @@ static esp_err_t print_real_time_stats(TickType_t xTicksToWait)
         if (k >= 0) {
             uint32_t task_elapsed_time = end_array[k].ulRunTimeCounter - start_array[i].ulRunTimeCounter;
             uint32_t percentage_time = (task_elapsed_time * 100UL) / (total_elapsed_time * portNUM_PROCESSORS);
-            printf("\t| %12s | %4d | %10"PRIu32" | %3"PRIu32"%%\n", start_array[i].pcTaskName, start_array[i].xCoreID, task_elapsed_time, percentage_time);
+            printf("\t| %12s | %4d | %10"PRIu16" | %10"PRIu32" | %3"PRIu32"%%\n", start_array[i].pcTaskName, start_array[i].xCoreID, start_array[i].usStackHighWaterMark, task_elapsed_time, percentage_time);
         }
     }
 

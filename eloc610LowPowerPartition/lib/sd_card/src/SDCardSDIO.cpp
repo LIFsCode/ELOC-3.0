@@ -68,7 +68,7 @@ esp_err_t SDCardSDIO::init(const char *mount_point) {
 
 SDCardSDIO::~SDCardSDIO()
 {
-  ESP_LOGI(TAG, "Trying to unmount SDIO card" );
+  ESP_LOGI(TAG, "Trying to unmount SDIO card");
   // All done, unmount partition and disable SDMMC or SPI peripheral
   esp_vfs_fat_sdcard_unmount(m_mount_point.c_str(), m_card);
   ESP_LOGI(TAG, "SDIO card unmounted");
@@ -82,7 +82,6 @@ float SDCardSDIO::getCapacityMB() const {
 }
 
 float SDCardSDIO::freeSpaceGB() const {
-
     FATFS *fs;
     uint32_t fre_clust, fre_sect, tot_sect;
     FRESULT res;
@@ -94,12 +93,15 @@ float SDCardSDIO::freeSpaceGB() const {
     /* Get total sectors and free sectors */
     tot_sect = (fs->n_fatent - 2) * fs->csize;
     fre_sect = fre_clust * fs->csize;
-
+    float freeSpaceGB = static_cast<float>(static_cast<float>(fre_sect) / 1048576.0 / 2.0);
     /* Print the free space (assuming 512 bytes/sector) */
-    printf("%10u KiB total drive space.\n%10u KiB available.\n", tot_sect / 2, fre_sect / 2);
+    if (0) {
+      printf("%10u KiB total drive space.\n%10u KiB available.\n", tot_sect / 2, fre_sect / 2);
+      printf("\n %2.1f GB free\n", freeSpaceGB);
+    }
 
-    float freeSpaceGB = float((float)fre_sect / 1048576.0 / 2.0);
-    printf("\n %2.1f GB free\n", freeSpaceGB);
+    ESP_LOGI(TAG, "SD card free space: %f GB", freeSpaceGB);
+    ESP_LOGI(TAG, "SD card free space: %u KiB", fre_sect / 2);
     return freeSpaceGB;
 }
 

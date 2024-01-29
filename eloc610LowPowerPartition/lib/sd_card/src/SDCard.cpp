@@ -82,10 +82,6 @@ esp_err_t SDCard::init(const char *mount_point, gpio_num_t miso, gpio_num_t mosi
   return ret;
 }
 
-
-
-
-
 SDCard::~SDCard()
 {
   // All done, unmount partition and disable SDMMC or SPI peripheral

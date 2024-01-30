@@ -20,7 +20,7 @@ extern ESP32Time timeObject;
 #ifndef WAV_BUFFER_IN_PSRAM
   // Use static buffers if not storing in PSRAM
   // = size * 2 (for double buffering) & constrained to be a multiple of 512 bytes
-  static const size_t wav_static_buffer_size = (static_cast<int>((1024 * 3) * 2/512)) * 512;
+  static const size_t wav_static_buffer_size = (static_cast<int>((1024 * 1) * 2/512)) * 512;
   static signed short wav_static_buffers[2][wav_static_buffer_size];
 #endif
 

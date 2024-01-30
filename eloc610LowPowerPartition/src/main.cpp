@@ -469,6 +469,7 @@ void start_sound_recording() {
 
 bool inference_result_file_SD_available = false;
 auto save_ai_results_to_sd = true;
+auto print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
 
 /**
  * @brief Create file to save inference results
@@ -888,7 +889,6 @@ void app_main(void) {
 
     #ifdef AI_CONTINUOUS_INFERENCE
         edgeImpulse.buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
-        auto print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
     #else
         edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
     #endif  // AI_CONTINUOUS_INFERENCE

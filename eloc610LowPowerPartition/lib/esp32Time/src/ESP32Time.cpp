@@ -119,7 +119,7 @@ String ESP32Time::getDateTimeFilename() {
     @brief  get the time and date as an Arduino String object
     @param  mode
             true = Long date format
-			false = Short date format
+			false = Short date format, e.g.	16:01:12 Fri, Feb 02 2024
 */
 String ESP32Time::getTimeDate(bool mode){
 	struct tm timeinfo = getTimeStruct();

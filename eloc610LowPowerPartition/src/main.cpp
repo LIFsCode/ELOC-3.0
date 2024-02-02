@@ -234,9 +234,6 @@ void printMemory()
     ESP_LOGI(TAG, "\n\n\n\n");
 }
 
-
-
-
 /**
  * @brief Receive button presses & set sound recording state
  * @todo Long button press should change AI detection state
@@ -293,33 +290,6 @@ void printPartitionInfo()
     }
 }
 
-
-/**
- * Set device time?
-*/
-void setTime(long epoch, int ms) {
-    ESP_LOGV(TAG, "Func: %s", __func__);
-
-    /*
-    setTime(atol(seconds.c_str())+(TIMEZONE_OFFSET*60L*60L),  (atol(milliseconds.c_str()))*1000    );
-    //timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
-    // timestamps coming in from android are always GMT (minus 7 hrs)
-    // if I not add timezone then timeobject is off
-    // so timeobject does not seem to be adding timezone to system time.
-    // timestamps are in gmt+0, so timestamp convrters
-
-    struct timeval tv_now;
-    gettimeofday(&tv_now, NULL);
-    int64_t time_us = (     (int64_t)tv_now.tv_sec      * 1000000L) + (int64_t)tv_now.tv_usec;
-    time_us=time_us/1000;
-    */
-
-    struct timeval tv;
-    tv.tv_sec = epoch;  // epoch time (seconds)
-    tv.tv_usec = ms;   // microseconds
-    settimeofday(&tv, NULL);
-}
-
 /**
  * @brief Set initial time
  * @note If time is not set the getLocalTime() will stuck for 5 ms due to invalid timestamp
@@ -363,33 +333,6 @@ bool createSessionFolder()
     session_folder_created = true;
 
     return true;
-}
-
-/**
- * @brief Get wall clock time & date
- * @return String
-*/
-String getProperDateTime()
-{
-    String year = String(timeObject.getYear());
-    String month = String(timeObject.getMonth());
-    String day = String(timeObject.getDay());
-    String hour = String(timeObject.getHour(true));
-    String minute = String(timeObject.getMinute());
-    String second = String(timeObject.getSecond());
-    // String millis = String(timeObject.getMillis());
-    if (month.length() == 1)
-        month = "0" + month;
-    if (day.length() == 1)
-        day = "0" + day;
-    if (hour.length() == 1)
-        hour = "0" + hour;
-    if (minute.length() == 1)
-        minute = "0" + minute;
-    if (second.length() == 1)
-        second = "0" + second;
-
-    return (year + "-" + month + "-" + day + " " + hour + ":" + minute + ":" + second);
 }
 
 void doDeepSleep()
@@ -519,7 +462,7 @@ int create_inference_result_file_SD() {
     }
 
     // Column headers
-    file_string += "\n\nYear-Month-Day Hour:Min:Sec";
+    file_string += "\n\nHour:Min:Sec Day, Month Date Year";
 
     for (auto i = 0; i < EI_CLASSIFIER_NN_OUTPUT_COUNT; i++) {
         file_string += " ,";
@@ -555,7 +498,7 @@ int save_inference_result_SD(String results_string) {
         return -1;
     }
 
-    String file_string = getProperDateTime() + " " + results_string;
+    String file_string = timeObject.getTimeDate(false) + " " + results_string;
 
     fputs(file_string.c_str(), fp_result);
     fclose(fp_result);

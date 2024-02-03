@@ -218,7 +218,7 @@ void WAVFileWriter::start_write_thread() {
 
         // Limit output to once every 5 secs
         if (recording_time_file_sec % 5 == 0 && recording_time_file_sec != old_secs_written) {
-          ESP_LOGI(TAG, "WAV file size bytes: %u, secs: %u, WritePerf: %d MB/s, WriteTime: %lld ms, WorstCase: %d MB/s, %lld ms", m_file_size, recording_time_file_sec, speed, writeDurationMs, slowestWriteSpeed, longestWriteMs);
+          ESP_LOGI(TAG, "WAV file size bytes: %u, secs: %u, WritePerf: %d KB/s, WriteTime: %lld ms, WorstCase: %d KB/s, %lld ms", m_file_size, recording_time_file_sec, speed, writeDurationMs, slowestWriteSpeed, longestWriteMs);
           old_secs_written = recording_time_file_sec;
         }
 

@@ -50,7 +50,7 @@ lis3dh_int_click_config_t lis3dh_click_config = {
     .y_double = false,   // y-axis double tap interrupt enabled
     .z_single = false,   // z-axis single tap interrupt enabled
     .z_double = true,    // z-axis double tap interrupt enabled
-    .threshold = 10,     /* threshold which is used by the system to start the click-detection procedure */
+    .threshold = 30,     /* threshold which is used by the system to start the click-detection procedure */
     .latch = true,       /* true:  the interrupt is kept high until CLICK_SRC (39h) is read
                           * false: the interrupt is kept high for the duration of the latency window.  */
     .time_limit   = 10,  /* define the maximum time interval that can elapse between the start of 

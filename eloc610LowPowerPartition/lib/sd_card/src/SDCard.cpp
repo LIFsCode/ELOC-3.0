@@ -10,7 +10,6 @@
 #include "sdmmc_cmd.h"
 
 #include "SDCard.h"
-extern bool gMountedSDCard;
 static const char *TAG = "SDC";
 
 #define SPI_DMA_CHAN 1
@@ -73,7 +72,7 @@ esp_err_t SDCard::init(const char *mount_point, gpio_num_t miso, gpio_num_t mosi
     }
     return ret;
   }
-   gMountedSDCard = true;
+  m_mounted = true;
   ESP_LOGI(TAG, "SDCard mounted at: %s", m_mount_point.c_str());
 
   // Card has been initialized, print its properties
@@ -90,6 +89,6 @@ SDCard::~SDCard()
 
   //deinitialize the bus after all devices are removed
   spi_bus_free(spi_host_device_t(m_host.slot));
-  gMountedSDCard=false;
+  m_mounted=false;
   ESP_LOGI(TAG, "SPI card unmounted");
 }

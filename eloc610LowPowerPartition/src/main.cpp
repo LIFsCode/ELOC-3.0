@@ -72,10 +72,8 @@ static const char *TAG = "main";
 
 #endif
 
-bool gMountedSDCard = false;
-
 /**
- * @brief Should inference be run on sound samples? 
+ * @brief Should inference be run on sound samples?
  * @todo Set from Bluetooth / config file
  * @note Default is to be idle at startup
  */
@@ -241,7 +239,7 @@ void printMemory()
  * @brief Receive button presses & set sound recording state
  * @todo Long button press should change AI detection state
  * @note Terminal output from this function seems to cause watchdog to timeout
- * @param args 
+ * @param args
  */
 static void IRAM_ATTR buttonISR(void *args)
 {
@@ -405,51 +403,30 @@ void doDeepSleep()
     esp_restart();
 }
 
-bool mountSDCard()
-{
-    gMountedSDCard = false;
+bool mountSDCard() {
 #ifdef USE_SPI_VERSION
-    ESP_LOGI(TAG, "TRYING to mount SDCArd, SPI ");
+    ESP_LOGI(TAG, "Trying to mount SDCard (SPI)");
     sd_card.init("/sdcard", PIN_NUM_MISO, PIN_NUM_MOSI, PIN_NUM_CLK, PIN_NUM_CS);
 #endif
 
 #ifdef USE_SDIO_VERSION
+    ESP_LOGI(TAG, "Trying to mount SDCard (SDIO)");
+    sd_card.init("/sdcard");
 
-        ESP_LOGI(TAG, "TRYING to mount SDCArd, SDIO ");
-        sd_card.init("/sdcard");
-        if (sd_card.isMounted()) {
-            ESP_LOGI(TAG, "SD card mounted ");
-            const char* ELOC_FOLDER = "/sdcard/eloc";
-            if (!ffsutil::folderExists(ELOC_FOLDER)) {
-                ESP_LOGI(TAG, "%s does not exist, creating empty folder", ELOC_FOLDER);
-                mkdir(ELOC_FOLDER, 0777);
-            }
-            float freeSpace = sd_card.freeSpaceGB();
-            float totalSpace = sd_card.getCapacityMB()/1024;
-            ESP_LOGV(TAG, "SD card %f / %f GB free", freeSpace, totalSpace);
-        }
-    #endif
-    gMountedSDCard = sd_card.isMounted();
-    return gMountedSDCard;
-}
+    if (!sd_card.isMounted())
+        return false;
 
-esp_err_t checkSDCard() {
-    if (!gMountedSDCard) {
-        // in case SD card is not yet mounted, mount it now, e.g. not inserted durint boot
-        if (!mountSDCard()) {
-            return ESP_ERR_NOT_FOUND;
-        }
+    ESP_LOGI(TAG, "SD card mounted ");
+    const char* ELOC_FOLDER = "/sdcard/eloc";
+    if (!ffsutil::folderExists(ELOC_FOLDER)) {
+        ESP_LOGI(TAG, "%s does not exist, creating empty folder", ELOC_FOLDER);
+        mkdir(ELOC_FOLDER, 0777);
     }
-    // getupdated free space
-    float freeSpaceGB = sd_card.freeSpaceGB();
-    if ((freeSpaceGB > 0.0) && (freeSpaceGB < 0.5)) {
-        //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
-        //  btwrite("SD Card full. Cannot record");
-        //  btwrite("!!!!!!!!!!!!!!!!!!!!!");
-        ESP_LOGE(TAG, "SD card is full, Free space %.3f GB", freeSpaceGB);
-        return ESP_ERR_NO_MEM;
-    }
-    return ESP_OK;
+    float freeSpace = sd_card.freeSpaceGB();
+    float totalSpace = sd_card.getCapacityMB()/1024;
+    ESP_LOGV(TAG, "SD card %f / %f GB free", freeSpace, totalSpace);
+#endif
+    return true;
 }
 
 /**
@@ -564,8 +541,8 @@ int save_inference_result_SD(String results_string) {
 }
 
 /**
- * @brief This callback allows a thread created in EdgeImpulse to 
- *        run the inference. Required due to namespace issues, static implementations etc.. 
+ * @brief This callback allows a thread created in EdgeImpulse to
+ *        run the inference. Required due to namespace issues, static implementations etc..
  */
 void ei_callback_func() {
     ESP_LOGV(TAG, "Func: %s", __func__);
@@ -635,7 +612,7 @@ void ei_callback_func() {
                         // Start recording??
                         if (wav_writer.wav_recording_in_progress == false &&
                             wav_writer.get_mode() == WAVFileWriter::Mode::single &&
-                            checkSDCard() == ESP_OK) {
+                            sd_card.checkSDCard() == ESP_OK) {
                             start_sound_recording();
                         }
                     }
@@ -646,7 +623,7 @@ void ei_callback_func() {
                 file_str += "\n";
                 // Only save results & wav file if classification value exceeds a threshold
                 if (save_ai_results_to_sd == true &&
-                    checkSDCard() == ESP_OK &&
+                    sd_card.checkSDCard() == ESP_OK &&
                     target_sound_detected == true) {
                     save_inference_result_SD(file_str);
                 }
@@ -911,7 +888,7 @@ void app_main(void) {
     input.init(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,
                                getConfig().listenOnly, getMicInfo().MicUseTimingFix);
 
-    if (checkSDCard() == ESP_OK) {
+    if (sd_card.checkSDCard() == ESP_OK) {
         // create a new wave file wav_writer & make sure sample rate is up to date
         if (wav_writer.initialize(i2s_mic_Config.sample_rate, 2, NUMBER_OF_CHANNELS) != true) {
             ESP_LOGE(TAG, "Failed to initialize WAVFileWriter");
@@ -973,14 +950,14 @@ void app_main(void) {
             if (1) {
                 multi_heap_info_t heapInfo;
                 heap_caps_get_info(&heapInfo, MALLOC_CAP_INTERNAL);
-                ESP_LOGI(TAG, "Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%", 
-                    heapInfo.minimum_free_bytes, heapInfo.total_free_bytes, 
+                ESP_LOGI(TAG, "Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%",
+                    heapInfo.minimum_free_bytes, heapInfo.total_free_bytes,
                     100 - (heapInfo.total_free_bytes*100) / heap_caps_get_total_size(MALLOC_CAP_INTERNAL),
                     heapInfo.largest_free_block,
                     100 - (heapInfo.largest_free_block*100) / heapInfo.total_free_bytes);
                 heap_caps_get_info(&heapInfo, MALLOC_CAP_SPIRAM);
-                ESP_LOGI(TAG, "PSRAM Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%", 
-                    heapInfo.minimum_free_bytes, heapInfo.total_free_bytes, 
+                ESP_LOGI(TAG, "PSRAM Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%",
+                    heapInfo.minimum_free_bytes, heapInfo.total_free_bytes,
                     100 - (heapInfo.total_free_bytes*100) / heap_caps_get_total_size(MALLOC_CAP_SPIRAM),
                     heapInfo.largest_free_block,
                     100 - (heapInfo.largest_free_block*100) / heapInfo.total_free_bytes);
@@ -1002,7 +979,7 @@ void app_main(void) {
         // Start a new recording?
         if (wav_writer.wav_recording_in_progress == false &&
             wav_writer.get_mode() == WAVFileWriter::Mode::continuous &&
-            checkSDCard() == ESP_OK) {
+            sd_card.checkSDCard() == ESP_OK) {
             start_sound_recording();
         }
 

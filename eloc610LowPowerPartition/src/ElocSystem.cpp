@@ -41,9 +41,7 @@
 //TODO move sd card into ELOC system
 extern SDCardSDIO sd_card;
 
-
 static const char *TAG = "ElocSystem";
-
 
 class StatusLED
 {
@@ -59,7 +57,7 @@ private:
     bool mIsRepeating;
 
     uint32_t mStartedMs;
-    uint32_t mPeriodStartMs;    
+    uint32_t mPeriodStartMs;
     bool mCurrentState;
     const char* mName;
 public:
@@ -127,14 +125,14 @@ public:
                 return mIOExpInstance.setOutputBit(mIObit, mCurrentState);
             }
         }
-        return ESP_OK; 
+        return ESP_OK;
     }
 };
 
 
 ElocSystem::ElocSystem():
-    mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true), 
-    mRefreshStatus(false), mIntruderDetected(false), 
+    mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true),
+    mRefreshStatus(false), mIntruderDetected(false),
     mFwUpdateProcessing(false), mFactoryInfo()
 {
     ESP_LOGI(TAG, "Reading Factory Info from NVS");
@@ -168,7 +166,7 @@ ElocSystem::ElocSystem():
         nvs_close(my_handle);
         ESP_LOGI(TAG, "Reading values from NVS done - all OK");
     }
-    ESP_LOGI(TAG, "Factory Data: Serial=%d, HW_Gen = %d, HW_Rev = %d", 
+    ESP_LOGI(TAG, "Factory Data: Serial=%d, HW_Gen = %d, HW_Rev = %d",
         mFactoryInfo.serialNumber, mFactoryInfo.hw_gen, mFactoryInfo.hw_rev);
 
 
@@ -178,7 +176,7 @@ ElocSystem::ElocSystem():
     if (esp_err_t err = I2Cinstance.InitMaster(I2C_SDA_PIN, I2C_SCL_PIN, I2C_SPEED_HZ)) {
         ESP_LOGE(TAG, "Setting up I2c Master failed with %s", esp_err_to_name(err));
     }
-    else { 
+    else {
         // set up pointer for global getter functions
         mI2CInstance = &I2Cinstance;
         ESP_LOGI(TAG, "Setting up I2C devices...");
@@ -293,10 +291,10 @@ esp_err_t ElocSystem::pm_check_ForRecording(int sample_rate) {
 esp_err_t ElocSystem::pm_configure() {
     /** Setup Power Management */
     esp_pm_config_esp32_t cfg = {
-        .max_freq_mhz = getConfig().cpuMaxFrequencyMHZ, 
-        .min_freq_mhz = getConfig().cpuMinFrequencyMHZ, 
+        .max_freq_mhz = getConfig().cpuMaxFrequencyMHZ,
+        .min_freq_mhz = getConfig().cpuMinFrequencyMHZ,
         .light_sleep_enable = getConfig().cpuEnableLightSleep
-    };            
+    };
     if (esp_err_t err = this->pm_configure(&cfg) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set PM config with %s", esp_err_to_name(err));
         return err;
@@ -305,6 +303,7 @@ esp_err_t ElocSystem::pm_configure() {
 }
 
 esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
+    sd_card.update();
 
     Status_t status;
     status.batteryLow = Battery::GetInstance().isLow();
@@ -327,7 +326,7 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
     }
     else {
         if (mStatus.intruderDetected && !mIntruderDetected) {
-            // release intruder alarm buzzer beeping 
+            // release intruder alarm buzzer beeping
             setBuzzerIdle();
         }
         if (mIntruderDetected) {
@@ -429,19 +428,19 @@ void ElocSystem::notifyFwUpdateError() {
         mStatusLed->setState(false);
         mBatteryLed->setState(false);
         vTaskDelay(pdMS_TO_TICKS(40));
-    }  
+    }
     mFwUpdateProcessing = false;
 }
 
 void ElocSystem::notifyFwUpdate() {
-    // Toggle LEDs with the speed 
+    // Toggle LEDs with the speed
     if (mFwUpdateProcessing) {
         mStatusLed->update();
         mBatteryLed->update();
     }
-    else { 
+    else {
         // will never be reset, except by notifyFwUpdateError, a successfull update results in a reboot
-        mFwUpdateProcessing = true; 
+        mFwUpdateProcessing = true;
         mStatusLed->setBlinking(false, 100, 100, 60*1000);
         mBatteryLed->setBlinking(false, 100, 100, 60*1000);
     }

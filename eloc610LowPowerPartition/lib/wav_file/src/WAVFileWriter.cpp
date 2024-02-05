@@ -1,5 +1,8 @@
 #include "esp_log.h"
+#include "SDCardSDIO.h"
 #include "WAVFileWriter.h"
+
+extern SDCardSDIO sd_card;
 
 static const char *TAG = "WAVFileWriter";
 
@@ -141,6 +144,10 @@ String WAVFileWriter::createFilename() {
 
 bool WAVFileWriter::open_file() {
     m_fp = nullptr;
+
+    if (sd_card.checkSDCard() != ESP_OK) {
+        return false;
+    }
 
     auto fname = createFilename();
     m_fp = fopen(fname.c_str(), "wb");

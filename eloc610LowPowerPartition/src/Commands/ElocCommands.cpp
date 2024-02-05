@@ -31,7 +31,7 @@
 
 #include "ESP32Time.h"
 
-#include "SDCardSDIO.h" 
+#include "SDCardSDIO.h"
 #include "CmdResponse.hpp"
 #include "ElocConfig.hpp"
 #include "ElocStatus.hpp"
@@ -43,7 +43,7 @@
 
 
 
-/********** BUGME: encapsulate ELOC status and make it threadsafe!!!*/ 
+/********** BUGME: encapsulate ELOC status and make it threadsafe!!!*/
 //BUGME: global status
 extern ESP32Time timeObject;
 extern SDCardSDIO sd_card;
@@ -113,7 +113,7 @@ void printStatus(String& buf) {
     JsonObject session = doc.createNestedObject("session");
     session["identifier"]          = gSessionIdentifier;
     JsonObject recordingState = session.createNestedObject("recordingState");
-    
+
     RecState recState = calcRecordingState();
     addEnum(recordingState, recState);
 
@@ -133,13 +133,14 @@ void printStatus(String& buf) {
     JsonObject device = doc.createNestedObject("device");
     device["firmware"]                   = gFirmwareVersion;
     device["Uptime[h]"]                  = (float)esp_timer_get_time() / 1000 / 1000 / 60 / 60;
-    device["totalRecordingTime[h]"]      = ((float)wav_writer.get_recording_time_total_sec() + 
+    device["totalRecordingTime[h]"]      = ((float)wav_writer.get_recording_time_total_sec() +
                                             (float)wav_writer.get_recording_time_file_sec()) / 1000 / 1000 / 60 / 60;
 
     float sdCardSizeGB = 0;
     float sdCardFreeSpaceGB = 0;
-  
+
     if (sd_card.isMounted()) {
+        sd_card.updateFreeSpace();
         sdCardSizeGB = sd_card.getCapacityMB()/1024;
         sdCardFreeSpaceGB = sd_card.freeSpaceGB();
 
@@ -159,7 +160,7 @@ void cmd_GetStatus(CmdParser* cmdParser) {
     Battery::GetInstance().updateVoltage(true);
 
     // write directly to output buffer to avoid reallocation
-    String& status = resp.getPayload(); 
+    String& status = resp.getPayload();
     printStatus(status);
     resp.setResultSuccess(status);
 }
@@ -179,7 +180,7 @@ void cmd_SetConfig(CmdParser *cmdParser) {
     ESP_LOGI(TAG, "updating config with %s", cfg);
     esp_err_t err = updateConfig(cfg);
     resp.setResult(err);
-    return; 
+    return;
 
 }
 
@@ -263,7 +264,7 @@ void cmd_SetTime(CmdParser *cmdParser) {
     ESP_LOGI(TAG, "timestamp in from type %s Time Zone: %ld sec: %ld millisec: %ld", type, timeZone_offset, seconds, milliseconds);
     // TODO: why is this needed and what should it be used for?
     // const char* minutesSinceSync = "";//serialIN.substring(11, serialIN.indexOf("___"));
-    
+
     timeObject.setTime(seconds + (timeZone_offset * 60L * 60L), milliseconds * 1000);
     // timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
     //  timestamps coming in from android are always GMT (minus 7 hrs)
@@ -353,7 +354,7 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
 
     StaticJsonDocument<512> doc;
     JsonObject recordingState = doc.createNestedObject("recordingState");
-    
+
     addEnum(recordingState, new_mode);
 
     String& status = resp.getPayload();
@@ -404,7 +405,7 @@ void cmd_SetBattery(CmdParser *cmdParser) {
             err = Battery::GetInstance().printCal(payload);
             resp.setResult(err);
         }
-        return; 
+        return;
     }
     char errMsg[128];
     snprintf(errMsg, sizeof(errMsg), "Invalid mode '%s'", mode);
@@ -428,7 +429,7 @@ void cmd_GetBattery(CmdParser *cmdParser) {
         esp_err_t err = Battery::GetInstance().printCal(payload);
         resp.setResult(err);
     }
-    else if (!strcasecmp(mode, "raw")) { 
+    else if (!strcasecmp(mode, "raw")) {
         //TODO: read raw voltage (uncalibrated here)
         float voltage = 0;
         esp_err_t err = Battery::GetInstance().getRawVoltage(voltage);

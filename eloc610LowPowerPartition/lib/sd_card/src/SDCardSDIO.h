@@ -26,6 +26,13 @@ class SDCardSDIO {
   static_assert(UINT64_MAX == 18446744073709551615ULL, "uint64_t is not 64 bits");
   uint64_t m_free_bytes = 0;
 
+  /**
+   * @brief Update @param m_free_bytes with free space of SD card
+   * @note Not thread safe, so keep it private
+   * @return esp_err_t
+   */
+  esp_err_t updateFreeSpace();
+
  public:
   SDCardSDIO();
 
@@ -42,12 +49,6 @@ class SDCardSDIO {
    * @return esp_err_t
    */
   esp_err_t update();
-
-  /**
-   * @brief Update @param m_free_bytes with free space of SD card
-   * @return esp_err_t
-   */
-  esp_err_t updateFreeSpace();
 
   /**
    * @brief Check SD card mounted & more than 0.5GB free space

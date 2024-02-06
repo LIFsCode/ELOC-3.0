@@ -5,6 +5,8 @@
 
 static const char *TAG = "I2SMEMSSampler";
 
+extern bool ai_run_enable;
+
 I2SMEMSSampler::I2SMEMSSampler() {
 }
 
@@ -104,10 +106,10 @@ int I2SMEMSSampler::read()
         #define SAMPLE_LOW_LEVEL_THD 0.5    // SAMPLE_LOW_COUNT fail to reach/ exceed this volume -> increase gain
     #endif
 
-    /** 
+    /**
      * Flag if there's buffer overruns - for debug purposes
-     * 
-     * @note: The buffers are designed to overrun when with the 
+     *
+     * @note: The buffers are designed to overrun when with the
      * inference is not running or wav recording is not in progress.
      * It is the responsibility of the consuming task (i.e. inference or
      * wav writer) to cope with this situation.
@@ -188,7 +190,7 @@ int I2SMEMSSampler::read()
         /**
          * @note This bit shift = (corrected bit position of sample (loaded with MSB starting at bit 32) -
          *                         increase volume by shifting left (each shift left doubles volume))
-         *       15th Nov, allow -ve volume shift, i.e. decrease volume     
+         *       15th Nov, allow -ve volume shift, i.e. decrease volume
          */
         auto overall_bit_shift = (32 - I2S_BITS_PER_SAMPLE) - volume_shift;
         ESP_LOGV(TAG, "volume_shift = %d, overall_bit_shift = %d", volume_shift, overall_bit_shift);
@@ -198,23 +200,23 @@ int I2SMEMSSampler::read()
              * I2S mics seem to be generally 16 or 24 bit, 2's complement, MSB first.
              * This data needs to be shifted right to correct position.
              * e.g. using a raw sample from a 24 bit mic fed into a 32 bit data type as an example:
-             * 
+             *
              * M = Most significant data (MSB), D = data, X = discarded
-             *              
+             *
              * Bit pos:     31 | 30 | 29 | 28 | 27 | 26 | 25 | 24 | 23 | 22 | 21 | 20 | 19 | 18 | 17 | 16 | 15 | 14 | 13 | 12 | 11 | 10 | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0
-             * Raw sample:  M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   X   X   X   X   X   X   X   X   
-             * Shifted:     0    0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   D   X   X   X   X   X   X   X   X   X 
+             * Raw sample:  M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   X   X   X   X   X   X   X   X
+             * Shifted:     0    0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   D   X   X   X   X   X   X   X   X   X
              *                                                                                                                                                                        ^^^^^^^^ DISCARDED ^^^^^^^
              * Note: for esp-idf/ gcc, the sign bit seems to be preserved.
              * But this samples volume is too low, so shift left to increase volume
-             *                  
+             *
              * volume_shift: 31 | 30 | 29 | 28 | 27 | 26 | 25 | 24 | 23 | 22 | 21 | 20 | 19 | 18 | 17 | 16 | 15 | 14 | 13 | 12 | 11 | 10 | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0
-             * Value -1:     0    0    0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   D   D 
+             * Value -1:     0    0    0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   D   D
              * Value 0:      0    0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   D  ^^^^^^^^ DISCARDED ^^^^^^^
              * Value 1:      0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   0
-             * Value 2:      0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   0   0 
+             * Value 2:      0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   0   0
              * Value 3:      0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   0   0   0
-             * Value 4:      0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   0   0   0   0 
+             * Value 4:      0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   0   0   0   0
              */
 
             #ifdef VISUALIZE_WAVEFORM
@@ -256,8 +258,8 @@ int I2SMEMSSampler::read()
                     writer->buf_select ^= 1;
                     writer->buf_count = 0;
 
-                    // Flag overrun for later
-                    if (writer->buf_ready == 1) {
+                    // If recording a wav file & overrun => flag
+                    if (writer->wav_recording_in_progress && writer->buf_ready == 1) {
                         writer_buffer_overrun = true;
                     }
                     writer->buf_ready = 1;
@@ -285,8 +287,8 @@ int I2SMEMSSampler::read()
                     inference->buf_select ^= 1;
                     inference->buf_count = 0;
 
-                    // Flag overrun for later
-                    if (inference->buf_ready == 1) {
+                    // If running inference & buffer overrun => flag
+                    if (ai_run_enable && inference->buf_ready == 1) {
                         inference_buffer_overrun = true;
                     }
 

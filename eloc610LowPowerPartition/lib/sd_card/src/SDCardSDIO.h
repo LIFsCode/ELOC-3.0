@@ -51,12 +51,6 @@ class SDCardSDIO {
   esp_err_t update();
 
   /**
-   * @brief Update @param m_free_bytes with free space of SD card
-   * @return esp_err_t
-   */
-  esp_err_t updateFreeSpace();
-
-  /**
    * @brief Check SD card mounted & more than 0.5GB free space
    *
    * @return esp_err_t

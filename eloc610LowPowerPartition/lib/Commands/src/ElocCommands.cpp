@@ -140,7 +140,6 @@ void printStatus(String& buf) {
     float sdCardFreeSpaceGB = 0;
 
     if (sd_card.isMounted()) {
-        sd_card.updateFreeSpace();
         sdCardSizeGB = sd_card.getCapacityMB()/1024;
         sdCardFreeSpaceGB = sd_card.freeSpaceGB();
     }

@@ -25,8 +25,13 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
+#include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_spiffs.h"
+
+#include "ffsutils.h"
 
 namespace ffsutil {
 
@@ -140,5 +145,57 @@ bool folderExists(const char *folder) {
     }
     return false;
 }
+
+
+sdTestSpeed_t TestSDFile(const char *path, uint8_t *buf, int len, int TEST_FILE_SIZE /*= -1*/)
+{
+    static const char* TAG = "SD_TEST";
+    sdTestSpeed_t result = {0,0,0};
+
+    // First do write benchmark
+    result.blockSize = len;
+    unsigned long start_time = esp_timer_get_time();
+    FILE* file = fopen(path, "w+");
+    if (!file) { 
+        ESP_LOGE(TAG, "Failed to open file for writing"); 
+        return result;  
+    }  
+    if (TEST_FILE_SIZE < 0) {
+        TEST_FILE_SIZE = len;
+    }
+    int  loop = TEST_FILE_SIZE / len;
+    ESP_LOGI(TAG, "%5d passes @ %2dKB = %d\t",loop,len/1024,TEST_FILE_SIZE);
+    while (loop--) { 
+        if (!fwrite(buf, sizeof(char), len, file)) {
+            ESP_LOGE(TAG, "Write failed");
+            return result; 
+        }
+        fsync(fileno(file));
+    }
+    fclose(file);
+    unsigned long time_used = (esp_timer_get_time() - start_time)/1000;
+    result.writeSpeedKBs = TEST_FILE_SIZE / time_used;
+    ESP_LOGI(TAG, "Write: %5lu kB/s",  result.writeSpeedKBs);
+
+    // Secondly do read benchmark
+    start_time = esp_timer_get_time();
+    file = fopen(path, "r");
+    if (!file) {
+      ESP_LOGE(TAG, "Failed to open file for reading"); 
+      return result; 
+    }
+    loop = TEST_FILE_SIZE / len;    
+    while (loop--)  { 
+        if (!fread(buf, sizeof(char), len, file)) { 
+          ESP_LOGI(TAG, "Read failed"); 
+          return result; 
+        }
+    }     
+    fclose(file);
+    time_used = (esp_timer_get_time() - start_time)/1000;
+    result.readSpeedKBs = TEST_FILE_SIZE / time_used;
+    ESP_LOGI(TAG, "Read: %5lu kB/s",  result.readSpeedKBs);
+    return result;
+}  
 
 }//namespace ffsutil

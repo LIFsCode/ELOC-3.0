@@ -177,7 +177,7 @@ void cmd_GetHelp(CmdParser* cmdParser) {
     const CmdParserString* helpMsg;
     size_t numCmds = cmdCallback.getHelp(cmdStr, helpMsg);
 
-    StaticJsonDocument<512> doc;
+    StaticJsonDocument<1024> doc;
 
     JsonArray commands = doc.createNestedArray("commands");
 

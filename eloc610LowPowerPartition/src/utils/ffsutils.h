@@ -38,6 +38,13 @@ long getFileSize(const char* filename);
 
 bool folderExists(const char* folder);
 
+typedef struct {
+    unsigned long blockSize;
+    unsigned long writeSpeedKBs;
+    unsigned long readSpeedKBs;
+}sdTestSpeed_t;
+sdTestSpeed_t TestSDFile(const char *path, uint8_t *buf, int len, int TEST_FILE_SIZE = -1);
+
 }
 
 

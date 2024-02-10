@@ -927,6 +927,9 @@ void app_main(void) {
                     100 - (heapInfo.total_free_bytes*100) / heap_caps_get_total_size(MALLOC_CAP_SPIRAM),
                     heapInfo.largest_free_block,
                     100 - (heapInfo.largest_free_block*100) / heapInfo.total_free_bytes);
+                if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
+                    ESP_LOGE(TAG, "Heap integrity check failed!");
+                }
             }
         }
 

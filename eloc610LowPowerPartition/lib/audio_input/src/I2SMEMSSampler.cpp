@@ -284,17 +284,19 @@ int I2SMEMSSampler::read()
                     skip_current = 1;
 
                     if (inference->buf_count >= inference->n_samples) {
-                    inference->buf_select ^= 1;
-                    inference->buf_count = 0;
+                        inference->buf_select ^= 1;
+                        inference->buf_count = 0;
 
-                    // If running inference & buffer overrun => flag
-                    if (ai_run_enable && inference->buf_ready == 1) {
-                        inference_buffer_overrun = true;
-                    }
+                        // If running inference & buffer overrun => flag
+                        if (ai_run_enable && inference->buf_ready == 1) {
+                            inference_buffer_overrun = true;
+                        }
 
-                    inference->buf_ready = 1;
-                    if (ei_TaskHandler != NULL)
-                        xTaskNotify(ei_TaskHandler, (0), eNoAction);
+                        inference->buf_ready = 1;
+                        if (ai_run_enable && ei_TaskHandler != nullptr) {
+                            xTaskNotify(ei_TaskHandler, (0), eNoAction);
+                            ESP_LOGI(TAG, "Notifying EI Task");
+                        }
                     }
 
                 } else {

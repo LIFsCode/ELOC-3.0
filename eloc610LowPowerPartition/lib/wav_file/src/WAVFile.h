@@ -1,9 +1,9 @@
 #pragma once
 
 /* Header contents must be set dynamically. Using this construct in the header:
- *  gRealSampleRate*2*NUMBER_OF_CHANNELS;
- *  will only evaluate gRealSampleRate once! Hence if recording is started 
- *  multiple times witch different sample rate settings the WAVFile will get 
+ *  gRealSampleRate*2*NUMBER_OF_MIC_CHANNELS;
+ *  will only evaluate gRealSampleRate once! Hence if recording is started
+ *  multiple times witch different sample rate settings the WAVFile will get
  *  corrupted.
  */
 #pragma pack(push, 1)

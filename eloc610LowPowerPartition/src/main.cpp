@@ -75,7 +75,7 @@ static const char *TAG = "main";
 bool gMountedSDCard = false;
 
 /**
- * @brief Should inference be run on sound samples? 
+ * @brief Should inference be run on sound samples?
  * @todo Set from Bluetooth / config file
  * @note Default is to be idle at startup
  */
@@ -238,7 +238,7 @@ void printMemory()
  * @brief Receive button presses & set sound recording state
  * @todo Long button press should change AI detection state
  * @note Terminal output from this function seems to cause watchdog to timeout
- * @param args 
+ * @param args
  */
 static void IRAM_ATTR buttonISR(void *args)
 {
@@ -507,8 +507,8 @@ int save_inference_result_SD(String results_string) {
 }
 
 /**
- * @brief This callback allows a thread created in EdgeImpulse to 
- *        run the inference. Required due to namespace issues, static implementations etc.. 
+ * @brief This callback allows a thread created in EdgeImpulse to
+ *        run the inference. Required due to namespace issues, static implementations etc..
  */
 void ei_callback_func() {
     ESP_LOGV(TAG, "Func: %s", __func__);
@@ -856,7 +856,7 @@ void app_main(void) {
 
     if (checkSDCard() == ESP_OK) {
         // create a new wave file wav_writer & make sure sample rate is up to date
-        if (wav_writer.initialize(i2s_mic_Config.sample_rate, 2, NUMBER_OF_CHANNELS) != true) {
+        if (wav_writer.initialize(i2s_mic_Config.sample_rate, 2, NUMBER_OF_MIC_CHANNELS) != true) {
             ESP_LOGE(TAG, "Failed to initialize WAVFileWriter");
         }
 
@@ -916,14 +916,14 @@ void app_main(void) {
             if (1) {
                 multi_heap_info_t heapInfo;
                 heap_caps_get_info(&heapInfo, MALLOC_CAP_INTERNAL);
-                ESP_LOGI(TAG, "Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%", 
-                    heapInfo.minimum_free_bytes, heapInfo.total_free_bytes, 
+                ESP_LOGI(TAG, "Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%",
+                    heapInfo.minimum_free_bytes, heapInfo.total_free_bytes,
                     100 - (heapInfo.total_free_bytes*100) / heap_caps_get_total_size(MALLOC_CAP_INTERNAL),
                     heapInfo.largest_free_block,
                     100 - (heapInfo.largest_free_block*100) / heapInfo.total_free_bytes);
                 heap_caps_get_info(&heapInfo, MALLOC_CAP_SPIRAM);
-                ESP_LOGI(TAG, "PSRAM Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%", 
-                    heapInfo.minimum_free_bytes, heapInfo.total_free_bytes, 
+                ESP_LOGI(TAG, "PSRAM Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%",
+                    heapInfo.minimum_free_bytes, heapInfo.total_free_bytes,
                     100 - (heapInfo.total_free_bytes*100) / heap_caps_get_total_size(MALLOC_CAP_SPIRAM),
                     heapInfo.largest_free_block,
                     100 - (heapInfo.largest_free_block*100) / heapInfo.total_free_bytes);

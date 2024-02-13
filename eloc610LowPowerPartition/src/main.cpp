@@ -54,6 +54,12 @@
 
 static const char *TAG = "main";
 
+#include "esp_heap_trace.h"
+
+#define NUM_RECORDS 400
+static heap_trace_record_t trace_record[NUM_RECORDS]; // This buffer must be in internal RAM
+
+
 #ifdef EDGE_IMPULSE_ENABLED
 
     #include "EdgeImpulse.hpp"              // This file includes trumpet_inferencing.h
@@ -311,13 +317,33 @@ bool createSessionFolder()
 {
     String fname;
     //TODO: check if another session identifier based on ISO time for mat would be more helpful
-    gSessionIdentifier = getDeviceInfo().fileHeader + time_utils::getSystemTimeMS();
-    fname = "/sdcard/eloc/" + gSessionIdentifier;
+    gSessionIdentifier = getDeviceInfo().fileHeader + String(time_utils::getSystemTimeMS());
+    fname = String("/sdcard/eloc/") + gSessionIdentifier;
     ESP_LOGI(TAG, "Creating session folder %s", fname.c_str());
     mkdir(fname.c_str(), 0777);
 
+    if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
+        ESP_ERROR_CHECK( heap_trace_stop() );
+        ESP_LOGE(TAG, "Heap integrity check failed!");
+        heap_trace_dump();
+        assert(false);
+    }
+    else {
+        ESP_ERROR_CHECK( heap_trace_stop() );
+        ESP_ERROR_CHECK( heap_trace_start(HEAP_TRACE_ALL) );
+    }
     String cfg;
     printConfig(cfg);
+    if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
+        ESP_ERROR_CHECK( heap_trace_stop() );
+        ESP_LOGE(TAG, "Heap integrity check failed!");
+        heap_trace_dump();
+        assert(false);
+    }
+    else {
+        ESP_ERROR_CHECK( heap_trace_stop() );
+        ESP_ERROR_CHECK( heap_trace_start(HEAP_TRACE_ALL) );
+    }
     ESP_LOGI(TAG, "Starting session with this config:\n: %s", cfg.c_str());
     fname += "/" + gSessionIdentifier + ".config";
     FILE *f = fopen(fname.c_str(), "w+");
@@ -329,6 +355,16 @@ bool createSessionFolder()
 
     fprintf(f, "%s", cfg.c_str());
     fclose(f);
+    if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
+        ESP_ERROR_CHECK( heap_trace_stop() );
+        ESP_LOGE(TAG, "Heap integrity check failed!");
+        heap_trace_dump();
+        assert(false);
+    }
+    else {
+        ESP_ERROR_CHECK( heap_trace_stop() );
+        ESP_ERROR_CHECK( heap_trace_start(HEAP_TRACE_ALL) );
+    }
 
     session_folder_created = true;
 
@@ -402,6 +438,16 @@ esp_err_t checkSDCard() {
 void start_sound_recording() {
     if (session_folder_created == false) {
         session_folder_created = createSessionFolder();
+    }
+    if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
+        ESP_ERROR_CHECK( heap_trace_stop() );
+        ESP_LOGE(TAG, "Heap integrity check failed!");
+        heap_trace_dump();
+        assert(false);
+    }
+    else {
+        ESP_ERROR_CHECK( heap_trace_stop() );
+        ESP_ERROR_CHECK( heap_trace_start(HEAP_TRACE_ALL) );
     }
 
     // Start thread to continuously write to wav file & when sufficient data is collected finish the file
@@ -611,6 +657,8 @@ void app_main(void) {
     ESP_LOGI(TAG, "\nSETUP--start\n");
     initArduino();
     ESP_LOGI(TAG, "initArduino done");
+    ESP_ERROR_CHECK( heap_trace_init_standalone(trace_record, NUM_RECORDS) );
+    ESP_ERROR_CHECK( heap_trace_start(HEAP_TRACE_ALL) );
 
     printPartitionInfo();  // So if reboots, always boot into the bluetooth partition
 
@@ -757,6 +805,10 @@ void app_main(void) {
     }
 #endif
 
+    ESP_ERROR_CHECK( heap_trace_stop() );
+    ESP_LOGI(TAG, "Heap Dump init");
+    heap_trace_dump();
+
 #ifdef EDGE_IMPULSE_ENABLED
 
     auto s = edgeImpulse.get_aiModel();
@@ -765,6 +817,7 @@ void app_main(void) {
     edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
 
     if (1) {
+        ESP_ERROR_CHECK( heap_trace_start(HEAP_TRACE_ALL) );
         // Run stored audio samples through the model to test it
         // Use non-continuous process for this
         ESP_LOGI(TAG, "Testing model against pre-recorded sample data...");
@@ -828,6 +881,9 @@ void app_main(void) {
 
         // Free buffers as the buffer size for continuous & non-continuous differs
         edgeImpulse.free_buffers();
+        ESP_ERROR_CHECK( heap_trace_stop() );
+        ESP_LOGI(TAG, "Heap Dump AI init");
+        heap_trace_dump();
     }
 
     #ifdef AI_CONTINUOUS_INFERENCE
@@ -889,6 +945,7 @@ void app_main(void) {
     // This might be redundant, set directly in ElocCommands.cpp
     auto new_mode =  WAVFileWriter::Mode::disabled;
 
+    ESP_ERROR_CHECK( heap_trace_start(HEAP_TRACE_ALL) );
     while (true) {
         if (xQueueReceive(rec_req_evt_queue, &new_mode, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG, "Received new wav writer mode");
@@ -928,31 +985,78 @@ void app_main(void) {
                     heapInfo.largest_free_block,
                     100 - (heapInfo.largest_free_block*100) / heapInfo.total_free_bytes);
                 if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
+                    ESP_ERROR_CHECK( heap_trace_stop() );
                     ESP_LOGE(TAG, "Heap integrity check failed!");
+                    heap_trace_dump();
+                    assert(false);
+                }
+                else {
+                    ESP_ERROR_CHECK( heap_trace_stop() );
+                    ESP_ERROR_CHECK( heap_trace_start(HEAP_TRACE_ALL) );
                 }
             }
+        }                
+        if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
+            ESP_ERROR_CHECK( heap_trace_stop() );
+            ESP_LOGE(TAG, "Heap integrity check failed!");
+            heap_trace_dump();
+            assert(false);
         }
+                else {
+                    ESP_ERROR_CHECK( heap_trace_stop() );
+                    ESP_ERROR_CHECK( heap_trace_start(HEAP_TRACE_ALL) );
+                }
 
         // Need to start I2S?
         // Note: Once started continues to run..
         if ((wav_writer.get_mode() != WAVFileWriter::Mode::disabled || ai_run_enable != false) &&
             input.is_i2s_installed_and_started() == false) {
             // Keep trying until successful
-            if (input.install_and_start() == ESP_OK) {
+            if (input.install_and_start() == ESP_OK) {                
+                if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
+                    ESP_ERROR_CHECK( heap_trace_stop() );
+                    ESP_LOGE(TAG, "Heap integrity check failed!");
+                    heap_trace_dump();
+                    assert(false);
+                }
                 delay(300);
-                input.zero_dma_buffer(I2S_DEFAULT_PORT);
-                input.start_read_task(sample_buffer_size/ sizeof(signed short));
+                input.zero_dma_buffer(I2S_DEFAULT_PORT);                
+                if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
+                    ESP_ERROR_CHECK( heap_trace_stop() );
+                    ESP_LOGE(TAG, "Heap integrity check failed!");
+                    heap_trace_dump();
+                    assert(false);
+                }
+                input.start_read_task(sample_buffer_size/ sizeof(signed short));                
+                if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
+                    ESP_ERROR_CHECK( heap_trace_stop() );
+                    ESP_LOGE(TAG, "Heap integrity check failed!");
+                    heap_trace_dump();
+                    assert(false);
+                }
             }
         }
 
         // Start a new recording?
         if (wav_writer.wav_recording_in_progress == false &&
             wav_writer.get_mode() == WAVFileWriter::Mode::continuous &&
-            checkSDCard() == ESP_OK) {
+            checkSDCard() == ESP_OK) {                
+                if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
+                    ESP_ERROR_CHECK( heap_trace_stop() );
+                    ESP_LOGE(TAG, "Heap integrity check failed!");
+                    heap_trace_dump();
+                    assert(false);
+                }
             start_sound_recording();
         }
 
-        #ifdef EDGE_IMPULSE_ENABLED
+        #ifdef EDGE_IMPULSE_ENABLED                
+                if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
+                    ESP_ERROR_CHECK( heap_trace_stop() );
+                    ESP_LOGE(TAG, "Heap integrity check failed!");
+                    heap_trace_dump();
+                    assert(false);
+                }
 
         if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);

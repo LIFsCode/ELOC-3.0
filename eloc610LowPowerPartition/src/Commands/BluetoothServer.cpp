@@ -53,6 +53,7 @@
 
 #include "Battery.hpp"
 
+#include "esp_heap_trace.h"
 
 static const char *TAG = "BluetoothServer";
 
@@ -236,7 +237,16 @@ void wait_for_bt_command() {
                     // TODO: Add cmd response with error message and code
                 }
                 bt_sendResponse(cmdResponse);
-                cmdBuffer.clear();
+                cmdBuffer.clear();                
+                if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
+                    ESP_ERROR_CHECK( heap_trace_stop() );
+                    ESP_LOGE(TAG, "Heap integrity check failed!");
+                    heap_trace_dump();
+                    assert(false);
+                }
+                else {
+                    ESP_LOGE(TAG, "Heap integrity check OK after BT done!");
+                }
             }
         }
     } else {

@@ -81,7 +81,7 @@ static heap_trace_record_t trace_record[NUM_RECORDS]; // This buffer must be in 
 bool gMountedSDCard = false;
 
 /**
- * @brief Should inference be run on sound samples? 
+ * @brief Should inference be run on sound samples?
  * @todo Set from Bluetooth / config file
  * @note Default is to be idle at startup
  */
@@ -244,7 +244,7 @@ void printMemory()
  * @brief Receive button presses & set sound recording state
  * @todo Long button press should change AI detection state
  * @note Terminal output from this function seems to cause watchdog to timeout
- * @param args 
+ * @param args
  */
 static void IRAM_ATTR buttonISR(void *args)
 {
@@ -553,14 +553,14 @@ int save_inference_result_SD(String results_string) {
 }
 
 /**
- * @brief This callback allows a thread created in EdgeImpulse to 
- *        run the inference. Required due to namespace issues, static implementations etc.. 
+ * @brief This callback allows a thread created in EdgeImpulse to
+ *        run the inference. Required due to namespace issues, static implementations etc..
  */
 void ei_callback_func() {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
     if (ai_run_enable == true &&
-        edgeImpulse.get_status() == edgeImpulse.Status::running) {
+        edgeImpulse.get_status() == EdgeImpulse::Status::running) {
         bool m = edgeImpulse.microphone_inference_record();
         // Blocking function - unblocks when buffer is full
         if (!m) {
@@ -936,7 +936,7 @@ void app_main(void) {
         #endif  // AI_CONTINUOUS_INFERENCE
 
         input.register_ei_inference(&edgeImpulse.getInference(), EI_CLASSIFIER_FREQUENCY);
-        edgeImpulse.set_status(edgeImpulse.Status::running);
+        edgeImpulse.set_status(EdgeImpulse::Status::running);
         edgeImpulse.start_ei_thread(ei_callback_func);
     #endif
 
@@ -973,14 +973,14 @@ void app_main(void) {
             if (1) {
                 multi_heap_info_t heapInfo;
                 heap_caps_get_info(&heapInfo, MALLOC_CAP_INTERNAL);
-                ESP_LOGI(TAG, "Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%", 
-                    heapInfo.minimum_free_bytes, heapInfo.total_free_bytes, 
+                ESP_LOGI(TAG, "Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%",
+                    heapInfo.minimum_free_bytes, heapInfo.total_free_bytes,
                     100 - (heapInfo.total_free_bytes*100) / heap_caps_get_total_size(MALLOC_CAP_INTERNAL),
                     heapInfo.largest_free_block,
                     100 - (heapInfo.largest_free_block*100) / heapInfo.total_free_bytes);
                 heap_caps_get_info(&heapInfo, MALLOC_CAP_SPIRAM);
-                ESP_LOGI(TAG, "PSRAM Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%", 
-                    heapInfo.minimum_free_bytes, heapInfo.total_free_bytes, 
+                ESP_LOGI(TAG, "PSRAM Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%",
+                    heapInfo.minimum_free_bytes, heapInfo.total_free_bytes,
                     100 - (heapInfo.total_free_bytes*100) / heap_caps_get_total_size(MALLOC_CAP_SPIRAM),
                     heapInfo.largest_free_block,
                     100 - (heapInfo.largest_free_block*100) / heapInfo.total_free_bytes);
@@ -995,7 +995,7 @@ void app_main(void) {
                     ESP_ERROR_CHECK( heap_trace_start(HEAP_TRACE_ALL) );
                 }
             }
-        }                
+        }
         if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
             ESP_ERROR_CHECK( heap_trace_stop() );
             ESP_LOGE(TAG, "Heap integrity check failed!");
@@ -1012,7 +1012,7 @@ void app_main(void) {
         if ((wav_writer.get_mode() != WAVFileWriter::Mode::disabled || ai_run_enable != false) &&
             input.is_i2s_installed_and_started() == false) {
             // Keep trying until successful
-            if (input.install_and_start() == ESP_OK) {                
+            if (input.install_and_start() == ESP_OK) {
                 if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
                     ESP_ERROR_CHECK( heap_trace_stop() );
                     ESP_LOGE(TAG, "Heap integrity check failed!");
@@ -1020,14 +1020,14 @@ void app_main(void) {
                     assert(false);
                 }
                 delay(300);
-                input.zero_dma_buffer(I2S_DEFAULT_PORT);                
+                input.zero_dma_buffer(I2S_DEFAULT_PORT);
                 if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
                     ESP_ERROR_CHECK( heap_trace_stop() );
                     ESP_LOGE(TAG, "Heap integrity check failed!");
                     heap_trace_dump();
                     assert(false);
                 }
-                input.start_read_task(sample_buffer_size/ sizeof(signed short));                
+                input.start_read_task(sample_buffer_size/ sizeof(signed short));
                 if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
                     ESP_ERROR_CHECK( heap_trace_stop() );
                     ESP_LOGE(TAG, "Heap integrity check failed!");
@@ -1040,7 +1040,7 @@ void app_main(void) {
         // Start a new recording?
         if (wav_writer.wav_recording_in_progress == false &&
             wav_writer.get_mode() == WAVFileWriter::Mode::continuous &&
-            checkSDCard() == ESP_OK) {                
+            checkSDCard() == ESP_OK) {
                 if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
                     ESP_ERROR_CHECK( heap_trace_stop() );
                     ESP_LOGE(TAG, "Heap integrity check failed!");
@@ -1050,7 +1050,7 @@ void app_main(void) {
             start_sound_recording();
         }
 
-        #ifdef EDGE_IMPULSE_ENABLED                
+        #ifdef EDGE_IMPULSE_ENABLED
                 if (!heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true)) {
                     ESP_ERROR_CHECK( heap_trace_stop() );
                     ESP_LOGE(TAG, "Heap integrity check failed!");
@@ -1060,12 +1060,12 @@ void app_main(void) {
 
         if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);
-            auto ei_status = edgeImpulse.get_status() == edgeImpulse.Status::running ? "running" : "not running";
+            auto ei_status = edgeImpulse.get_status() == EdgeImpulse::Status::running ? "running" : "not running";
             ESP_LOGI(TAG, "EI current status = %s", ei_status);
 
-            if (ai_run_enable == false && edgeImpulse.get_status() == edgeImpulse.Status::running) {
-                edgeImpulse.set_status(edgeImpulse.Status::not_running);
-            } else if (ai_run_enable == true && edgeImpulse.get_status() == edgeImpulse.Status::not_running) {
+            if (ai_run_enable == false && edgeImpulse.get_status() == EdgeImpulse::Status::running) {
+                edgeImpulse.set_status(EdgeImpulse::Status::not_running);
+            } else if (ai_run_enable == true && edgeImpulse.get_status() == EdgeImpulse::Status::not_running) {
                 if (edgeImpulse.start_ei_thread(ei_callback_func) != ESP_OK) {
                     delay(500);
                 }

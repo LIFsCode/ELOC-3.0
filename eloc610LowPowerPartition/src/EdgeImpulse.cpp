@@ -187,6 +187,7 @@ void EdgeImpulse::ei_thread() {
       }
     }  // if (xTaskNotifyWait())
   }
+    ESP_LOGI(TAG, "deleting task");
 
   vTaskDelete(NULL);
 }

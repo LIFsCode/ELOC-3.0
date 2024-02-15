@@ -40,7 +40,7 @@ class I2SMEMSSampler : public I2SSampler {
     */
     size_t i2s_samples_to_read;
 
-    /** 
+    /**
      * Stop read thread by setting to false
     */
     bool enable_read = true;
@@ -52,12 +52,12 @@ class I2SMEMSSampler : public I2SSampler {
     int read() override;
 
     /**
-     * 
+     *
     */
     virtual void start_read_thread();
 
     /**
-     * 
+     *
     */
     static void start_read_thread_wrapper(void * _this);
 
@@ -95,7 +95,7 @@ class I2SMEMSSampler : public I2SSampler {
     /**
      * @brief Register an external WAVFileWriter
      * @note This object will fill the WAVFileWriter buffer during reads
-     * 
+     *
      * @param writer WAVFileWriter object
      * @return true success
      */
@@ -103,7 +103,7 @@ class I2SMEMSSampler : public I2SSampler {
 
     /**
      * @brief Deregister or remove the WAVFileWriter
-     * @return true 
+     * @return true
      * @return false writer not previously registered
      */
     virtual bool deregister_wavFileWriter();
@@ -111,7 +111,7 @@ class I2SMEMSSampler : public I2SSampler {
     /**
      * @brief Register a edge impulse inference structure
      * @note This object will fill the inference buffer during reads
-     * 
+     *
      * @param ext_inference the Edge Impulse inference structure
      * @param ext_ei_sampling_freq the sampling frequency of the Edge Impulse model
      * @return true success

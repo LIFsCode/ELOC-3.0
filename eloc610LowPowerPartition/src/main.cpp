@@ -557,10 +557,11 @@ int save_inference_result_SD(String results_string) {
  *        run the inference. Required due to namespace issues, static implementations etc..
  */
 void ei_callback_func() {
-    ESP_LOGV(TAG, "Func: %s", __func__);
+    ESP_LOGI(TAG, "Func: %s", __func__);
 
     if (ai_run_enable == true &&
         edgeImpulse.get_status() == EdgeImpulse::Status::running) {
+        ESP_LOGI(TAG, "Running inference");
         bool m = edgeImpulse.microphone_inference_record();
         // Blocking function - unblocks when buffer is full
         if (!m) {
@@ -649,6 +650,8 @@ void ei_callback_func() {
             #endif  // AI_CONTINUOUS_INFERENCE
             }
     }  // ai_run_enable
+
+    ESP_LOGI(TAG, "Inference complete");
 }
 
 #endif
@@ -936,8 +939,8 @@ void app_main(void) {
         #endif  // AI_CONTINUOUS_INFERENCE
 
         input.register_ei_inference(&edgeImpulse.getInference(), EI_CLASSIFIER_FREQUENCY);
-        edgeImpulse.set_status(EdgeImpulse::Status::running);
-        edgeImpulse.start_ei_thread(ei_callback_func);
+        // edgeImpulse.set_status(EdgeImpulse::Status::running);
+        // edgeImpulse.start_ei_thread(ei_callback_func);
     #endif
 
     auto loopCnt = 0;
@@ -1060,13 +1063,16 @@ void app_main(void) {
 
         if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);
-            auto ei_status = edgeImpulse.get_status() == EdgeImpulse::Status::running ? "running" : "not running";
+            auto ei_status = (edgeImpulse.get_status() == EdgeImpulse::Status::running ? "running" : "not running");
             ESP_LOGI(TAG, "EI current status = %s (%d)", ei_status, static_cast<int>(edgeImpulse.get_status()));
 
-            if (ai_run_enable == false && edgeImpulse.get_status() == EdgeImpulse::Status::running) {
+            if (ai_run_enable == false && (edgeImpulse.get_status() == EdgeImpulse::Status::running)) {
+                ESP_LOGI(TAG, "Stopping EI thread");
                 edgeImpulse.set_status(EdgeImpulse::Status::not_running);
-            } else if (ai_run_enable == true && edgeImpulse.get_status() == EdgeImpulse::Status::not_running) {
+            } else if (ai_run_enable == true && (edgeImpulse.get_status() == EdgeImpulse::Status::not_running)) {
+                ESP_LOGI(TAG, "Starting EI thread");
                 if (edgeImpulse.start_ei_thread(ei_callback_func) != ESP_OK) {
+                    ESP_LOGE(TAG, "Failed to start EI thread");
                     delay(500);
                 }
             }

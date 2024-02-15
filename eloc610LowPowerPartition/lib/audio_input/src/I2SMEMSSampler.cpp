@@ -293,7 +293,9 @@ int I2SMEMSSampler::read()
                     }
 
                     inference->buf_ready = 1;
-                    if (ei_TaskHandler != NULL)
+                    // TODO:(OOHehir): Need access to edgeImpulse->status to check if running
+                    // Perhaps through inference struct
+                    if (ai_run_enable && ei_TaskHandler != NULL)
                         xTaskNotify(ei_TaskHandler, (0), eNoAction);
                     }
 

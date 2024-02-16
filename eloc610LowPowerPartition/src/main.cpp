@@ -81,8 +81,8 @@ static heap_trace_record_t trace_record[NUM_RECORDS]; // This buffer must be in 
 bool gMountedSDCard = false;
 
 /**
- * @brief Should inference be run on sound samples?
- * @todo Set from Bluetooth / config file
+ * @brief This bool is used to set the REQUESTED state of the AI inference
+ *        The ACTUAL state is reflected by inference->status_running
  * @note Default is to be idle at startup
  */
 bool ai_run_enable = false;
@@ -947,6 +947,7 @@ void app_main(void) {
 
     // This might be redundant, set directly in ElocCommands.cpp
     auto new_mode =  WAVFileWriter::Mode::disabled;
+    auto change_ai_run_enable = false;
 
     ESP_ERROR_CHECK( heap_trace_start(HEAP_TRACE_ALL) );
     while (true) {
@@ -1061,18 +1062,21 @@ void app_main(void) {
                     assert(false);
                 }
 
-        if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
-            ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);
+        if (xQueueReceive(rec_ai_evt_queue, &change_ai_run_enable, pdMS_TO_TICKS(500))) {
+            ESP_LOGI(TAG, "Received AI run enable = %d", change_ai_run_enable);
             auto ei_status = (edgeImpulse.get_status() == EdgeImpulse::Status::running ? "running" : "not running");
             ESP_LOGI(TAG, "EI current status = %s (%d)", ei_status, static_cast<int>(edgeImpulse.get_status()));
 
-            if (ai_run_enable == false && (edgeImpulse.get_status() == EdgeImpulse::Status::running)) {
+            if (change_ai_run_enable == false && (edgeImpulse.get_status() == EdgeImpulse::Status::running)) {
                 ESP_LOGI(TAG, "Stopping EI thread");
+                ai_run_enable = false;
                 edgeImpulse.set_status(EdgeImpulse::Status::not_running);
-            } else if (ai_run_enable == true && (edgeImpulse.get_status() == EdgeImpulse::Status::not_running)) {
+            } else if (change_ai_run_enable == true && (edgeImpulse.get_status() == EdgeImpulse::Status::not_running)) {
                 ESP_LOGI(TAG, "Starting EI thread");
+                ai_run_enable = true;
                 if (edgeImpulse.start_ei_thread(ei_callback_func) != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to start EI thread");
+                    // Should this be retried?
                     delay(500);
                 }
             }

@@ -41,7 +41,7 @@ void EdgeImpulse::output_inferencing_settings() {
 bool EdgeImpulse::buffers_setup(uint32_t n_samples) {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
-    status = Status::not_running;
+    // status = Status::not_running;
 
     // Check that n_samples is correct, should be EI_CLASSIFIER_RAW_SAMPLE_COUNT
     assert(EI_CLASSIFIER_RAW_SAMPLE_COUNT == n_samples);
@@ -76,8 +76,9 @@ bool EdgeImpulse::buffers_setup(uint32_t n_samples) {
     inference.buf_count = 0;
     inference.n_samples = n_samples;
     inference.buf_ready = 0;
+    inference.status_running = false;
 
-    status = Status::running;
+    // status = Status::running;
 
     return true;
 }
@@ -188,7 +189,7 @@ void EdgeImpulse::ei_thread() {
     }  // if (xTaskNotifyWait())
   }
     ESP_LOGI(TAG, "deleting task");
-
+    inference.status_running = false;
   vTaskDelete(NULL);
 }
 
@@ -200,6 +201,7 @@ esp_err_t EdgeImpulse::start_ei_thread(std::function<void()> _callback) {
   ESP_LOGV(TAG, "Func: %s", __func__);
 
   status = Status::running;
+  inference.status_running = true;
   detectingTime_secs = 0;
 
   this->callback = _callback;
@@ -209,6 +211,7 @@ esp_err_t EdgeImpulse::start_ei_thread(std::function<void()> _callback) {
   if (ret != pdPASS) {
     ESP_LOGE(TAG, "Failed to create ei_thread");
     status = Status::not_running;
+    inference.status_running = false;
     return ret;
   }
 

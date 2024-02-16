@@ -5,7 +5,7 @@
 
 static const char *TAG = "I2SMEMSSampler";
 
-extern bool ai_run_enable;
+//extern bool ai_run_enable;
 
 I2SMEMSSampler::I2SMEMSSampler() {
 }
@@ -284,19 +284,20 @@ int I2SMEMSSampler::read()
                     skip_current = 1;
 
                     if (inference->buf_count >= inference->n_samples) {
-                    inference->buf_select ^= 1;
-                    inference->buf_count = 0;
+                        inference->buf_select ^= 1;
+                        inference->buf_count = 0;
 
-                    // If running inference & buffer overrun => flag
-                    if (ai_run_enable && inference->buf_ready == 1) {
-                        inference_buffer_overrun = true;
-                    }
+                        // If running inference & buffer overrun => flag
+                        if (inference->status_running == true && inference->buf_ready == 1) {
+                            inference_buffer_overrun = true;
+                        }
 
-                    inference->buf_ready = 1;
-                    // TODO:(OOHehir): Need access to edgeImpulse->status to check if running
-                    // Perhaps through inference struct
-                    if (ai_run_enable && ei_TaskHandler != NULL)
-                        xTaskNotify(ei_TaskHandler, (0), eNoAction);
+                        inference->buf_ready = 1;
+                        // TODO(OOHehir): Need access to edgeImpulse->status to check if running
+                        if (inference->status_running == true && (ei_TaskHandler != NULL)) {
+                            ESP_LOGI(TAG, "Notifying inference task");
+                            xTaskNotify(ei_TaskHandler, (0), eNoAction);
+                        }
                     }
 
                 } else {

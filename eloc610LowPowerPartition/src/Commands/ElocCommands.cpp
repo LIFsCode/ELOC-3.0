@@ -39,6 +39,8 @@
 #include "config.h"
 #include "utils/macros.hpp"
 #include "utils/logging.hpp"
+#include "utils/ffsutils.h"
+#include "utils/ScopeGuard.hpp"
 
 
 
@@ -444,6 +446,61 @@ void cmd_GetBattery(CmdParser *cmdParser) {
     return;
 }
 
+void cmd_GetSdCardSpeedTest(CmdParser *cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    const char* size = cmdParser->getValueFromKey("size");
+    int TEST_FILE_SIZE = (512 * 1024); // 512 kByte
+    if (size) {
+        TEST_FILE_SIZE = atoi(size);
+    }
+    uint8_t *buf = (uint8_t*) malloc(64 * 1024);   /* malloc will not reset all bytes to zero, so it is a random data */
+    if (!buf) {
+        const char* errMsg = "Failed to allocate buffer!";
+        ESP_LOGE(TAG, "%s", errMsg);
+        resp.setError(ESP_ERR_NO_MEM, errMsg);
+      return;
+    }
+    if (TEST_FILE_SIZE < 0) {
+      ESP_LOGI("SD_TEST", "Total file size same as block size");
+    }
+    else {
+      ESP_LOGI("SD_TEST", "Total file size %d",  TEST_FILE_SIZE);
+    }
+
+    // set current task to highest priority to minimize sideeffects on performance measurement
+    vTaskPrioritySet( NULL, configMAX_PRIORITIES - 1);
+    static const int NUM_TESTS = 7;
+    ffsutil::sdTestSpeed_t results[NUM_TESTS];
+    results[0] = ffsutil::TestSDFile("/sdcard/test_1k.bin", buf, 1024, TEST_FILE_SIZE);
+    results[1] = ffsutil::TestSDFile("/sdcard/test_2k.bin", buf, 2 * 1024, TEST_FILE_SIZE);
+    results[2] = ffsutil::TestSDFile("/sdcard/test_4k.bin", buf, 4 * 1024, TEST_FILE_SIZE);
+    results[3] = ffsutil::TestSDFile("/sdcard/test_8k.bin", buf, 8 * 1024, TEST_FILE_SIZE);
+    results[4] = ffsutil::TestSDFile("/sdcard/test_16k.bin", buf, 16 * 1024, TEST_FILE_SIZE);
+    results[5] = ffsutil::TestSDFile("/sdcard/test_32k.bin", buf, 32 * 1024, TEST_FILE_SIZE);
+    results[6] = ffsutil::TestSDFile("/sdcard/test_64k.bin", buf, 64 * 1024, TEST_FILE_SIZE);
+
+    // reset the task priority
+    vTaskPrioritySet( NULL, TASK_PRIO_CMD);
+    free(buf);
+    ESP_LOGI("SD_TEST", "Done.");
+
+    StaticJsonDocument<1024> doc;
+    JsonArray resultList = doc.createNestedArray("results");
+    for (int i = 0; i < NUM_TESTS; i++ ) {
+        JsonObject res = resultList.createNestedObject();
+        res["blkSize"]     = results[i].blockSize;
+        res["write[kB/s]"] = results[i].writeSpeedKBs;
+        res["read[kB/s]"]  = results[i].readSpeedKBs;
+    }
+
+    String& payload = resp.getPayload();
+    if (serializeJsonPretty(doc, payload) == 0) {
+        ESP_LOGE(TAG, "Failed serialize JSON config!");
+    }
+    resp.setResultSuccess(payload);
+    return;
+}
+
 bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     bool success = true;
     success &= cmdCallback.addCmd("setConfig", &cmd_SetConfig, "Write config key as json, e.g. setConfig#cfg={\"device\":{\"location\":\"not_set\"}}");
@@ -454,7 +511,8 @@ bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     success &= cmdCallback.addCmd("setRecordMode", &cmd_SetRecordMode, "Enable/disable recording. If used without arguments, current mode is toggled(on/off). Otherwise set recording to specified mode, e.g. setRecordMode#mode=recordOff_DetectOn");
     success &= cmdCallback.addCmd("setLogPersistent", &cmd_SetLogPersistent, "Configure the logging messages to be stored on a rotating log file on SD carde.g. setLogPersitent#cfg={\"logToSdCard\":\"true\",\"filename\":\"/sdcard/log/eloc.log\",\"maxFiles\":6,\"maxFileSize\":1024}");
     success &= cmdCallback.addCmd("setBattery", &cmd_SetBattery, "Set battery calibration values. Mode otions: \"clear\", \"add\", cal in the format {\"<esp meas voltage>\" : <real voltage>} e.g. setBattery#mode=add#cal={\"3.0\":3.1}");
-    success &= cmdCallback.addCmd("getBattery", &cmd_GetBattery, "read the battery calibration or the raw (uncalibrated voltage). Mode otions: \"raw\", \"cal\"");
+    success &= cmdCallback.addCmd("getBattery", &cmd_GetBattery, "read the battery calibration or the raw (uncalibrated voltage). Mode options: \"raw\", \"cal\"");
+success &= cmdCallback.addCmd("getSdSpeedTest", &cmd_GetSdCardSpeedTest, "write and read a blocks (1k - 64k) of data to/from the sd card and check the speed. Additinoal option \"size\", size of overall file (default 512 kByte), -1 means file size = block size, e.g. getSdSpeedTest#size=524288");
 
     if (!success) {
         ESP_LOGE(TAG, "Failed to add all BT commands!");

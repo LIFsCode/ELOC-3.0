@@ -73,8 +73,8 @@ static const char *TAG = "main";
 #endif
 
 /**
- * @brief Should inference be run on sound samples?
- * @todo Set from Bluetooth / config file
+ * @brief This bool is used to set the REQUESTED state of the AI inference
+ *        The ACTUAL state is reflected by inference->status_running
  * @note Default is to be idle at startup
  */
 bool ai_run_enable = false;
@@ -291,33 +291,6 @@ void printPartitionInfo()
     }
 }
 
-
-/**
- * Set device time?
-*/
-void setTime(long epoch, int ms) {
-    ESP_LOGV(TAG, "Func: %s", __func__);
-
-    /*
-    setTime(atol(seconds.c_str())+(TIMEZONE_OFFSET*60L*60L),  (atol(milliseconds.c_str()))*1000    );
-    //timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
-    // timestamps coming in from android are always GMT (minus 7 hrs)
-    // if I not add timezone then timeobject is off
-    // so timeobject does not seem to be adding timezone to system time.
-    // timestamps are in gmt+0, so timestamp convrters
-
-    struct timeval tv_now;
-    gettimeofday(&tv_now, NULL);
-    int64_t time_us = (     (int64_t)tv_now.tv_sec      * 1000000L) + (int64_t)tv_now.tv_usec;
-    time_us=time_us/1000;
-    */
-
-    struct timeval tv;
-    tv.tv_sec = epoch;  // epoch time (seconds)
-    tv.tv_usec = ms;   // microseconds
-    settimeofday(&tv, NULL);
-}
-
 /**
  * @brief Set initial time
  * @note If time is not set the getLocalTime() will stuck for 5 ms due to invalid timestamp
@@ -339,8 +312,8 @@ bool createSessionFolder()
 {
     String fname;
     //TODO: check if another session identifier based on ISO time for mat would be more helpful
-    gSessionIdentifier = getDeviceInfo().fileHeader + time_utils::getSystemTimeMS();
-    fname = "/sdcard/eloc/" + gSessionIdentifier;
+    gSessionIdentifier = getDeviceInfo().fileHeader + String(time_utils::getSystemTimeMS());
+    fname = String("/sdcard/eloc/") + gSessionIdentifier;
     ESP_LOGI(TAG, "Creating session folder %s", fname.c_str());
     mkdir(fname.c_str(), 0777);
 
@@ -361,33 +334,6 @@ bool createSessionFolder()
     session_folder_created = true;
 
     return true;
-}
-
-/**
- * @brief Get wall clock time & date
- * @return String
-*/
-String getProperDateTime()
-{
-    String year = String(timeObject.getYear());
-    String month = String(timeObject.getMonth());
-    String day = String(timeObject.getDay());
-    String hour = String(timeObject.getHour(true));
-    String minute = String(timeObject.getMinute());
-    String second = String(timeObject.getSecond());
-    // String millis = String(timeObject.getMillis());
-    if (month.length() == 1)
-        month = "0" + month;
-    if (day.length() == 1)
-        day = "0" + day;
-    if (hour.length() == 1)
-        hour = "0" + hour;
-    if (minute.length() == 1)
-        minute = "0" + minute;
-    if (second.length() == 1)
-        second = "0" + second;
-
-    return (year + "-" + month + "-" + day + " " + hour + ":" + minute + ":" + second);
 }
 
 void doDeepSleep()
@@ -496,7 +442,7 @@ int create_inference_result_file_SD() {
     }
 
     // Column headers
-    file_string += "\n\nYear-Month-Day Hour:Min:Sec";
+    file_string += "\n\nHour:Min:Sec Day, Month Date Year";
 
     for (auto i = 0; i < EI_CLASSIFIER_NN_OUTPUT_COUNT; i++) {
         file_string += " ,";
@@ -532,7 +478,7 @@ int save_inference_result_SD(String results_string) {
         return -1;
     }
 
-    String file_string = getProperDateTime() + " " + results_string;
+    String file_string = timeObject.getTimeDate(false) + " " + results_string;
 
     fputs(file_string.c_str(), fp_result);
     fclose(fp_result);
@@ -548,7 +494,8 @@ void ei_callback_func() {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
     if (ai_run_enable == true &&
-        edgeImpulse.get_status() == edgeImpulse.Status::running) {
+        edgeImpulse.get_status() == EdgeImpulse::Status::running) {
+        ESP_LOGV(TAG, "Running inference");
         bool m = edgeImpulse.microphone_inference_record();
         // Blocking function - unblocks when buffer is full
         if (!m) {
@@ -637,6 +584,8 @@ void ei_callback_func() {
             #endif  // AI_CONTINUOUS_INFERENCE
             }
     }  // ai_run_enable
+
+    ESP_LOGV(TAG, "Inference complete");
 }
 
 #endif
@@ -914,14 +863,15 @@ void app_main(void) {
         #endif  // AI_CONTINUOUS_INFERENCE
 
         input.register_ei_inference(&edgeImpulse.getInference(), EI_CLASSIFIER_FREQUENCY);
-        edgeImpulse.set_status(edgeImpulse.Status::running);
-        edgeImpulse.start_ei_thread(ei_callback_func);
+        // edgeImpulse.set_status(EdgeImpulse::Status::running);
+        // edgeImpulse.start_ei_thread(ei_callback_func);
     #endif
 
     auto loopCnt = 0;
 
     // This might be redundant, set directly in ElocCommands.cpp
     auto new_mode =  WAVFileWriter::Mode::disabled;
+    auto change_ai_run_enable = false;
 
     while (true) {
         if (xQueueReceive(rec_req_evt_queue, &new_mode, pdMS_TO_TICKS(500))) {
@@ -990,10 +940,16 @@ void app_main(void) {
             auto ei_status = edgeImpulse.get_status() == edgeImpulse.Status::running ? "running" : "not running";
             ESP_LOGI(TAG, "EI current status = %s", ei_status);
 
-            if (ai_run_enable == false && edgeImpulse.get_status() == edgeImpulse.Status::running) {
-                edgeImpulse.set_status(edgeImpulse.Status::not_running);
-            } else if (ai_run_enable == true && edgeImpulse.get_status() == edgeImpulse.Status::not_running) {
+            if (change_ai_run_enable == false && (edgeImpulse.get_status() == EdgeImpulse::Status::running)) {
+                ESP_LOGI(TAG, "Stopping EI thread");
+                ai_run_enable = false;
+                edgeImpulse.set_status(EdgeImpulse::Status::not_running);
+            } else if (change_ai_run_enable == true && (edgeImpulse.get_status() == EdgeImpulse::Status::not_running)) {
+                ESP_LOGI(TAG, "Starting EI thread");
+                ai_run_enable = true;
                 if (edgeImpulse.start_ei_thread(ei_callback_func) != ESP_OK) {
+                    ESP_LOGE(TAG, "Failed to start EI thread");
+                    // Should this be retried?
                     delay(500);
                 }
             }

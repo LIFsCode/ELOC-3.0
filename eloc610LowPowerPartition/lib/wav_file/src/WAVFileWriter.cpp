@@ -1,3 +1,4 @@
+#include <limits>
 #include "esp_log.h"
 #include "WAVFileWriter.h"
 
@@ -181,6 +182,8 @@ void WAVFileWriter::start_write_thread() {
   ESP_LOGV(TAG, "Func: %s", __func__);
 
   static auto old_secs_written = 0;
+  static uint32_t slowestWriteSpeed  = std::numeric_limits<uint32_t>::max(); // set to max
+  static int64_t longestWriteMs  = std::numeric_limits<uint32_t>::max(); // set to max
 
   if (m_fp != nullptr) {
     ESP_LOGE(TAG, "File pointer is not NULL");
@@ -197,18 +200,25 @@ void WAVFileWriter::start_write_thread() {
                           NULL /* pulNotificationValue */,
                           portMAX_DELAY /* xTicksToWait*/) == pdTRUE) {
       if (this->buf_ready) {
+        int64_t start_time = esp_timer_get_time();
         if (m_fp == nullptr) {
           ESP_LOGE(TAG, "enable_wav_file_write enabled & file pointer == nullptr");
         } else {
           this->write();
         }
+        int64_t end_time = esp_timer_get_time();
+        int64_t writeDurationMs =  (end_time - start_time)/1000;
+        // gives the speed in KByte/s (size in Byte, time in ms)
+        uint32_t speed = sizeof(int16_t) * buffer_size_in_samples / writeDurationMs;
+        if (speed < slowestWriteSpeed) slowestWriteSpeed = speed;
+        if ( writeDurationMs > longestWriteMs) longestWriteMs = writeDurationMs;
 
         // Recalculate every time to avoid rounding errors
         recording_time_file_sec = m_file_size / (sizeof(int16_t) * m_sample_rate);
 
         // Limit output to once every 5 secs
         if (recording_time_file_sec % 5 == 0 && recording_time_file_sec != old_secs_written) {
-          ESP_LOGI(TAG, "WAV file size bytes: %u, secs: %u", m_file_size, recording_time_file_sec);
+          ESP_LOGI(TAG, "WAV file size bytes: %u, secs: %u, WritePerf: %d KB/s, WriteTime: %lld ms, WorstCase: %d KB/s, %lld ms", m_file_size, recording_time_file_sec, speed, writeDurationMs, slowestWriteSpeed, longestWriteMs);
           old_secs_written = recording_time_file_sec;
         }
 

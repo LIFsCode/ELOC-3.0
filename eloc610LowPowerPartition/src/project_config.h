@@ -17,42 +17,42 @@
                 -DBOARD=WROVER_KIT
 
           & the resulting peripherals are defined, with any associated settings, in this file. e.g:
- * 
+ *
  *
  * Default board would be the latest, this gets build if no BOARD is defined in platform.ini
  * #ifndef BOARD
  *  #define BOARD ELOC_3_2
  * #endif
- * 
+ *
  * #ifdef ELOC_3_2
  *  define all pins here...
- * 
+ *
  *  define all peripherals here..eg
  *  #define I2S_MIC_ICS-43434
- * 
+ *
  * #endif // ELOC_3_2
- * 
- * 
+ *
+ *
  * #ifdef ELOC_3_1
  *  #define I2S_MIC_SPH0645
  *  etc..
  * #endif // ELOC_3_1
- * 
+ *
  * #ifdef WROVER_KIT
  *  etc..
  * #endif // WROVER_KIT
- * 
- * 
+ *
+ *
  * Here define all peripheral settings, e.g.
  * #ifdef I2S_MIC_ICS-43434
- *  #define I2S_BITS_PER_SAMPLE 24        
+ *  #define I2S_BITS_PER_SAMPLE 24
  *  #define I2S_SAMPLE_RATE_MIN 4000
  *  #define I2S_SAMPLE_RATE_MAX 51600
  *  #define I2S_DEFAULT_VOLUME 4
  * #endif // I2S_MIC_ICS-43434
- * 
- * 
- * 
+ *
+ *
+ *
  */
 
 // #define USE_SPI_VERSION
@@ -120,7 +120,7 @@
         #define I2S_SAMPLE_RATE_MAX 51600               // Not certain from datasheet
 
         /**
-         * @deprecated?  
+         * @deprecated?
          * I2S_DEFAULT_BIT_SHIFT replaced by combination of I2S_BITS_PER_SAMPLE & I2S_DEFAULT_VOLUME
          */
         #define I2S_DEFAULT_BIT_SHIFT 14                // Default bit shift for this mic
@@ -130,25 +130,25 @@
          * @note Default volume shift for this mic. -ve value decrease volume, +ve increase. 0 neutral
          *       e.g. value of +1 doubles volume, value of -1 halves volume
          *       change in steps of 1
-         * 
+         *
          *       Set a default as -3 which matches volume of SPH0645 in previous code
         */
         #define I2S_DEFAULT_VOLUME -3
 
-        /** 
+        /**
          * @brief Enable/ disable automatic gain feature in @file I2SMEMSSampler.cpp
          *        This feature adjust volume for optimum performance
-         * @note: Currently causes distortion on SD card recording! 
-         * @todo: fix 
-         */ 
+         * @note: Currently causes distortion on SD card recording!
+         * @todo: fix
+         */
         // #define ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
 
         /**
          * @brief Use Teleplot extension to visualize waveform in @file I2SMEMSampler.cpp
          * @link https://marketplace.visualstudio.com/items?itemName=alexnesnes.teleplot
-         * 
+         *
          * @note: This is a debug feature and will cause significant serial output!
-         */              
+         */
         //  #define VISUALIZE_WAVEFORM
 
         /**
@@ -183,6 +183,10 @@
 
 
 /////////////////////////////////// AI Related configurations ///////////////////////////////////
+
+// TODO(OOHehir): remove this
+#define EDGE_IMPULSE_ENABLED
+
 /**
  * @note A value threshold of 0.8 is used to determine if target sound has been detected
  * @todo Make this configurable via Bluetooth?

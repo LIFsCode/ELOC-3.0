@@ -5,7 +5,7 @@
 
 static const char *TAG = "I2SMEMSSampler";
 
-// extern bool ai_run_enable;
+//extern bool ai_run_enable;
 
 I2SMEMSSampler::I2SMEMSSampler() {
 }
@@ -293,9 +293,9 @@ int I2SMEMSSampler::read()
                         }
 
                         inference->buf_ready = 1;
-                        if (inference->status_running == true && ei_TaskHandler != nullptr) {
+                        if (inference->status_running == true && ei_TaskHandler != NULL) {
+                            ESP_LOGV(TAG, "Notifying inference task");
                             xTaskNotify(ei_TaskHandler, (0), eNoAction);
-                            ESP_LOGI(TAG, "Notifying EI Task");
                         }
                     }
 

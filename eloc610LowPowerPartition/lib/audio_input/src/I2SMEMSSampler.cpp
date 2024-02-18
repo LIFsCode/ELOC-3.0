@@ -293,9 +293,11 @@ int I2SMEMSSampler::read()
                         }
 
                         inference->buf_ready = 1;
+
                         if (inference->status_running == true && (ei_TaskHandler != NULL)) {
                             ESP_LOGI(TAG, "Notifying inference task");
                             xTaskNotify(ei_TaskHandler, (0), eNoAction);
+
                         }
                     }
 

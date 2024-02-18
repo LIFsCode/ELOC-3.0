@@ -172,12 +172,12 @@ static CmdAdvCallback<MAX_COMMANDS> cmdCallback;
 void cmd_GetHelp(CmdParser* cmdParser) {
     CmdResponse& resp = CmdResponse::getInstance();
     String& help = resp.getPayload(); // write directly to output buffer to avoid reallocation
-    
+
     const CmdParserString* cmdStr;
     const CmdParserString* helpMsg;
     size_t numCmds = cmdCallback.getHelp(cmdStr, helpMsg);
 
-    StaticJsonDocument<512> doc;
+    StaticJsonDocument<1024> doc;
 
     JsonArray commands = doc.createNestedArray("commands");
 
@@ -242,7 +242,7 @@ void wait_for_bt_command() {
     } else {
         sentSettings = false;
         // if bluetoothOffTimeoutMs <=0 it is ignored per definition, if no LIS3DH is detected for BT wakeup, BT is continously on
-        if ((getConfig().bluetoothOffTimeoutSeconds >= 0) && ElocSystem::GetInstance().hasLIS3DH()) { 
+        if ((getConfig().bluetoothOffTimeoutSeconds >= 0) && ElocSystem::GetInstance().hasLIS3DH()) {
             int timeDiff = esp_timer_get_time()/1000/1000 - lastBtConnectionTimeS;
             if (timeDiff >= getConfig().bluetoothOffTimeoutSeconds) {
                 ESP_LOGI(TAG, "%d seconds without bluetooth connection, exceeding max. of %d sec! Shutting down Bluetooth.", timeDiff, getConfig().bluetoothOffTimeoutSeconds);
@@ -279,9 +279,9 @@ void wakeup_task (void *pvParameters)
             ElocSystem::GetInstance().getLIS3DH().lis3dh_get_int_click_source (&click_src);
 
 
-            // in case of click detection interrupt   
+            // in case of click detection interrupt
             if (click_src.active)
-               ESP_LOGI(TAG, "LIS3DH %s\n", 
+               ESP_LOGI(TAG, "LIS3DH %s\n",
                       click_src.s_click ? "single click" : "double click");
 
             float voltage = Battery::GetInstance().getVoltage();
@@ -320,7 +320,7 @@ esp_err_t BluetoothServerSetup(bool installGpioIsr) {
     BtCommands::initCommands(cmdCallback);
 
     /** --- INTERRUPT CONFIGURATION PART ---- */
-    
+
     // Interrupt configuration has to be done before the sensor is set
     // into measurement mode to avoid losing interrupts
 
@@ -362,7 +362,7 @@ esp_err_t BluetoothServerSetup(bool installGpioIsr) {
 
     // LAST STEP: Finally set scale and mode to start measurements
     lis3dh.lis3dh_set_config(lis3dh_config);
-    
+
     //lis3dh.lis3dh_set_scale(lis3dh_scale_2_g);
     //lis3dh.lis3dh_set_mode (lis3dh_odr_400, lis3dh_high_res, true, true, true);
 

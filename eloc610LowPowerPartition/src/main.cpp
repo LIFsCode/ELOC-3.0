@@ -958,10 +958,10 @@ void app_main(void) {
 
         #ifdef EDGE_IMPULSE_ENABLED
 
-        if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
-            ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);
-            auto ei_status = edgeImpulse.get_status() == edgeImpulse.Status::running ? "running" : "not running";
-            ESP_LOGI(TAG, "EI current status = %s", ei_status);
+        if (xQueueReceive(rec_ai_evt_queue, &change_ai_run_enable, pdMS_TO_TICKS(500))) {
+            ESP_LOGI(TAG, "Received AI run enable = %d", change_ai_run_enable);
+            auto ei_status = (edgeImpulse.get_status() == EdgeImpulse::Status::running ? "running" : "not running");
+            ESP_LOGI(TAG, "EI current status = %s (%d)", ei_status, static_cast<int>(edgeImpulse.get_status()));
 
             if (change_ai_run_enable == false && (edgeImpulse.get_status() == EdgeImpulse::Status::running)) {
                 ESP_LOGI(TAG, "Stopping EI thread");

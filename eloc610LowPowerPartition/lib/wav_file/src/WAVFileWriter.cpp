@@ -1,8 +1,10 @@
 #include <limits>
 #include "esp_log.h"
 #include "WAVFileWriter.h"
+#include "SDCardSDIO.h"
 
 static const char *TAG = "WAVFileWriter";
+extern SDCardSDIO sd_card;
 
 WAVFileWriter::WAVFileWriter()
 {
@@ -143,6 +145,18 @@ String WAVFileWriter::createFilename() {
 bool WAVFileWriter::open_file() {
     m_fp = nullptr;
 
+    if (sd_card.isMounted() == false) {
+        ESP_LOGE(TAG, "SD Card is not mounted");
+        return false;
+    } else {
+        float sdCardFreeSpaceGB = sd_card.freeSpaceGB();
+
+        if (sdCardFreeSpaceGB < 0.1) {
+            ESP_LOGE(TAG, "SD Card is full");
+            return false;
+        }
+    }
+
     auto fname = createFilename();
     m_fp = fopen(fname.c_str(), "wb");
 
@@ -248,7 +262,6 @@ void WAVFileWriter::start_write_thread() {
   wav_recording_in_progress = false;
   vTaskDelete(NULL);
 }
-
 
 bool WAVFileWriter::finish()
 {

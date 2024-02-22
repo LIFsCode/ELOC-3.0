@@ -60,3 +60,7 @@ target_unit_tests  test_both_demo            PASSED    00:00:21.701
 target_unit_tests  test_target_edge-impulse  PASSED    00:00:21.608
 ====================================================================== 5 test cases: 5 succeeded in 00:01:31.234 ======================================================================
  ```
+
+
+ ### Mock Class
+ A mock class is contained in lib/mock. This could be added upon over time to mock components for testing.

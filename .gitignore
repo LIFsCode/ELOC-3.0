@@ -1,3 +1,6 @@
 eloc610LowPowerPartition/sdkconfig
 eloc610LowPowerPartition/sdkconfig.esp32dev
 eloc610LowPowerPartition/compile_commands.json
+*\log.html
+*\output.xml
+*\report.html

@@ -184,9 +184,6 @@
 
 /////////////////////////////////// AI Related configurations ///////////////////////////////////
 
-// TODO(OOHehir): remove this
-#define EDGE_IMPULSE_ENABLED
-
 /**
  * @note A value threshold of 0.8 is used to determine if target sound has been detected
  * @todo Make this configurable via Bluetooth?

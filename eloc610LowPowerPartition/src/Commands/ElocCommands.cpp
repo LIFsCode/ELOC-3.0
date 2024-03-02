@@ -119,8 +119,7 @@ void printStatus(String& buf) {
     RecState recState = calcRecordingState();
     addEnum(recordingState, recState);
 
-
-    session["recordingTime[h]"]    = round((wav_writer.get_recording_time_total_sec() / (60 * 60.f)), 2);
+    session["recordingTime[h]"]    = round((wav_writer.get_recordingTimeSinceLastStarted_usec() / 1000.f / 1000.f / 60.f / 60.f), 2);
     JsonObject ai = session.createNestedObject("detection");
     ai["state"]                   = ai_run_enable;
     // first set to defaults in case edge impulse is not included in binary
@@ -128,14 +127,14 @@ void printStatus(String& buf) {
     ai["detectedEvents"]          = 0;
     ai["aiModel"]                 = "";
 #ifdef EDGE_IMPULSE_ENABLED
-    ai["detectingTime[h]"]        = round((edgeImpulse.get_totalDetectingTime_hr()), 2);
+    ai["detectingTime[h]"]        = round((edgeImpulse.get_totalDetectingTime_secs() / 60.f / 60.f), 2);
     ai["detectedEvents"]          = edgeImpulse.get_detectedEvents();
     ai["aiModel"]                 = EI_CLASSIFIER_PROJECT_NAME;
 #endif
     JsonObject device = doc.createNestedObject("device");
     device["firmware"]                   = gFirmwareVersion;
-    device["Uptime[h]"]                  = round(((esp_timer_get_time() / 1000000) / (60 * 60.f)), 2);
-    device["totalRecordingTime[h]"]      = round((wav_writer.get_recording_time_total_sec()/ (60 * 60.f)), 2);
+    device["Uptime[h]"]                  = round((esp_timer_get_time() / 1000.f / 1000.f / 60.f / 60.f), 2);
+    device["totalRecordingTime[h]"]      = round((wav_writer.get_recording_time_total_sec() / 60.f / 60.f), 2);
 
     float sdCardSizeGB = 0;
     float sdCardFreeSpaceGB = 0;

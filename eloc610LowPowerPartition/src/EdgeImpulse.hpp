@@ -15,6 +15,7 @@
 #include <functional>  // std::function
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "ei_inference.h"  // inference_t
 #include "project_config.h"
 #include "freertos/FreeRTOS.h"
@@ -58,12 +59,20 @@ class EdgeImpulse {
     std::function<void()> callback;
 
     /**
-     * @brief Detecting time since last activated
+     * @brief Record the usec seconds since boot (from esp_timer.h) when
+     *        started & use to calculate the time since last activated
+     */
+    int64_t detectingStartTime_usec = 0;
+
+    /**
+     * @brief Represents the time the device has been in detection mode
+     *        since detecting was started the last time.
      */
     uint32_t detectingTime_secs = 0;
 
     /**
-     * @brief Detecting time time since boot
+     * @brief Represents the total time the ELOC was in detecting-mode since boot.
+     *        ( = Total ELOC runtime since boot - time the device was not detecting)
      */
     uint32_t totalDetectingTime_secs = 0;
 
@@ -204,21 +213,24 @@ class EdgeImpulse {
     esp_err_t start_ei_thread(std::function<void()> callback);
 
     /**
-     * @brief Get the detectingTime
+     * @brief Get the detectingTime in seconds
      * @note This is the time since last activated
-     * @return float
+     * @return uint32_t
      */
-    float get_detectingTime_hr() const {
-        return detectingTime_secs / 3600.0;
+    uint32_t get_detectingTime_secs() const {
+        return detectingTime_secs;
     }
 
     /**
-     * @brief Get the totalDetectingTime
+     * @brief Get the totalDetectingTime in seconds
      * @note  This is the total time since boot
-     * @return float
+     * @note  To avoid round errors this is only updated when inference ends
+     *        Therefore when getting this value while inference
+     *        is running must add current detectingTime_secs
+     * @return uint32_t
      */
-    float get_totalDetectingTime_hr() const {
-        return totalDetectingTime_secs / 3600.f;
+    uint32_t get_totalDetectingTime_secs() const {
+        return totalDetectingTime_secs + detectingTime_secs;
     }
 
     /**

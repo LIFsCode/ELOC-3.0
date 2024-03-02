@@ -47,6 +47,18 @@ class WAVFileWriter
   const int mode_int[3] = {0, 1, 2};
 
   /**
+   * @brief Record the useconds since boot (from esp_timer.h) when recording
+   *        started & use to calculate recording_time_total_sec
+   */
+  int64_t recordingStartTime_usec = 0;
+
+  /**
+   * @brief Holds the useconds since recording last started
+   *        Used to calculate recording_time_file_sec
+   */
+  int64_t recordingTimeSinceLastStarted_usec = 0;
+
+  /**
    * @brief Recording time of current file
    * @note uint32_t time in secs
    */
@@ -174,16 +186,20 @@ class WAVFileWriter
   void set_mode(enum Mode value) { mode = value; }
 
   /**
-   * @brief Get the recording time file sec object
-   *
+   * @brief Time since recording last started
+   * @return int64_t useconds
    */
-  uint32_t get_recording_time_file_sec() { return recording_time_file_sec; }
+  int64_t get_recordingTimeSinceLastStarted_usec() { return recordingTimeSinceLastStarted_usec; }
 
   /**
-   * @brief Get the recording time total sec object
-   *
+   * @brief Recording time since boot
+   * @note This is only updated when a file is finished (to avoid rounding errors)
+   *       Therefore need to add current recording interval
+   * @return uint32_t seconds
    */
-  uint32_t get_recording_time_total_sec() { return recording_time_total_sec; }
+  uint32_t get_recording_time_total_sec() {
+        return (recording_time_total_sec + static_cast<int>(recordingTimeSinceLastStarted_usec / 1000 / 1000));
+  }
 
   /**
    * @brief Destroy the WAVFileWriter object

@@ -166,8 +166,6 @@ EI_IMPULSE_ERROR EdgeImpulse::run_classifier(signal_t *signal, ei_impulse_result
 void EdgeImpulse::ei_thread() {
   ESP_LOGV(TAG, "Func: %s", __func__);
 
-  static auto last_SystemTimeSecs = time_utils::getSystemTimeSecs();
-
   while (status == Status::running) {
     if (xTaskNotifyWait(
                           0 /* ulBitsToClearOnEntry */,
@@ -179,16 +177,17 @@ void EdgeImpulse::ei_thread() {
         callback();
 
         // Update times
-        auto change_SystemTimeSecs = time_utils::getSystemTimeSecs() - last_SystemTimeSecs;
-        detectingTime_secs += change_SystemTimeSecs;
-        totalDetectingTime_secs += change_SystemTimeSecs;
-        last_SystemTimeSecs = time_utils::getSystemTimeSecs();
+        detectingTime_secs = (esp_timer_get_time() - detectingStartTime_usec) / 1000000;
         ESP_LOGV(TAG, "detectingTime_secs: %d", detectingTime_secs);
         ESP_LOGV(TAG, "totalDetectingTime_secs: %d", totalDetectingTime_secs);
       }
     }  // if (xTaskNotifyWait())
   }
   ESP_LOGI(TAG, "deleting task");
+
+  // To avoid round errors only update on exit
+  totalDetectingTime_secs += (esp_timer_get_time() - detectingStartTime_usec) / 1000000;
+  detectingTime_secs = 0;
   inference.status_running = false;
   vTaskDelete(NULL);
 }
@@ -202,6 +201,7 @@ esp_err_t EdgeImpulse::start_ei_thread(std::function<void()> _callback) {
 
   status = Status::running;
   inference.status_running = true;
+  detectingStartTime_usec = esp_timer_get_time();
   detectingTime_secs = 0;
 
   this->callback = _callback;

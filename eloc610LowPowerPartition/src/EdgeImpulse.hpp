@@ -135,7 +135,7 @@ class EdgeImpulse {
 
     /**
      * @brief Get the ei running status object
-     * 
+     *
      * @return true running
      * @return false not running
      */
@@ -145,7 +145,7 @@ class EdgeImpulse {
 
     /**
      * @brief Set the ei running status object
-     * 
+     *
      * @param newStatus true or false
      */
     void set_status(enum Status newStatus) {
@@ -155,7 +155,7 @@ class EdgeImpulse {
     /**
      * @brief Get the Inference object
      * @deprecated ??
-     * @return inference_t& 
+     * @return inference_t&
      */
     inference_t &getInference() {
         return inference;
@@ -169,36 +169,36 @@ class EdgeImpulse {
 
     /**
      * @brief Start a continuous inferencing task
-     * 
-     * @param signal 
-     * @param result 
-     * @return EI_IMPULSE_ERROR 
+     *
+     * @param signal
+     * @param result
+     * @return EI_IMPULSE_ERROR
      */
     EI_IMPULSE_ERROR run_classifier_continuous(ei::signal_t *signal, ei_impulse_result_t *result);
 
     /**
      * @brief Start a non-continuous inferencing task
-     * 
-     * @param signal 
-     * @param result 
-     * @return EI_IMPULSE_ERROR 
+     *
+     * @param signal
+     * @param result
+     * @return EI_IMPULSE_ERROR
      */
     EI_IMPULSE_ERROR run_classifier(ei::signal_t *signal, ei_impulse_result_t *result);
 
     /**
-     * @brief Start a continuous inferencing thread 
+     * @brief Start a continuous inferencing thread
      */
     void ei_thread();
 
     /**
      * @brief Wrapper for ei_thread()
-     * @param _this 
+     * @param _this
      */
     static void start_ei_thread_wrapper(void *_this);
 
     /**
      * @brief Start a continuous inferencing task
-     * 
+     *
      * @return ESP_OK on success
      */
     esp_err_t start_ei_thread(std::function<void()> callback);
@@ -206,7 +206,7 @@ class EdgeImpulse {
     /**
      * @brief Get the detectingTime
      * @note This is the time since last activated
-     * @return float 
+     * @return float
      */
     float get_detectingTime_hr() const {
         return detectingTime_secs / 3600.0;
@@ -215,22 +215,22 @@ class EdgeImpulse {
     /**
      * @brief Get the totalDetectingTime
      * @note  This is the total time since boot
-     * @return float 
+     * @return float
      */
     float get_totalDetectingTime_hr() const {
-        return totalDetectingTime_secs / 3600.0;
+        return totalDetectingTime_secs / 3600.f;
     }
 
     /**
      * @brief Get the version of the Edge Impulse model
      * @note This is made of concatenated values found in model_metadata.h
-     * @return string 
+     * @return string
      */
     String get_aiModel() const;
 
     /**
      * @brief Increment counter when characteristic sound detected
-     * 
+     *
      */
     void increment_detectedEvents() {
         detectedEvents++;
@@ -238,8 +238,8 @@ class EdgeImpulse {
 
     /**
      * @brief Getter for detectedEvents
-     * 
-     * @return uint32_t 
+     *
+     * @return uint32_t
      */
     uint32_t get_detectedEvents() const {return detectedEvents;}
 
@@ -247,7 +247,7 @@ class EdgeImpulse {
      * @brief Wrapper to access the ei classifier inferencing categories object
      * @note This is found in model_metadata.h
      * @param i index
-     * @return const char* 
+     * @return const char*
      */
     const char* get_ei_classifier_inferencing_categories(int i) const;
 };

@@ -11,7 +11,7 @@
 #include "WAVFile.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "../../../src/project_config.h"
+#include "../../../include/project_config.h"
 
 extern TaskHandle_t i2s_TaskHandler;
 extern String gSessionIdentifier;
@@ -109,7 +109,7 @@ class WAVFileWriter
    * @param buffers pointer array to 2 buffers, 1 active, 1 inactive
    * @note In order to optimize write times the buffer_size_in_samples
    *       should be a multiple of 512 bytes (SD card block size)
-   * 
+   *
    *     The buffer_size_in_samples is calculated as follows (this is a sensible default):
    *     =  int((sample_rate * buffer_time) / 512) * 512;
    */
@@ -130,7 +130,7 @@ class WAVFileWriter
   /**
    * @brief Construct a new WAVFileWriter object
    * @param sample_rate I2S sample rate
-   * @param buffer_time Buffer size required (seconds) 
+   * @param buffer_time Buffer size required (seconds)
    * @param ch_count number of channels
    */
   bool initialize(int sample_rate, int buffer_time, int ch_count = 1);
@@ -150,20 +150,20 @@ class WAVFileWriter
 
   /**
    * @brief Get the mode object
-   * @return enum Mode 
+   * @return enum Mode
    */
   enum Mode get_mode() { return mode; }
 
   /**
    * @brief Get the mode string
-   * @return const char* 
+   * @return const char*
    */
   const char *get_mode_str() { return mode_str[(int)mode]; }
 
   /**
    * @brief Get the mode int object
-   * 
-   * @return const int 
+   *
+   * @return const int
    */
   int get_mode_int() { return mode_int[(int)mode]; }
 
@@ -175,13 +175,13 @@ class WAVFileWriter
 
   /**
    * @brief Get the recording time file sec object
-   * 
+   *
    */
   uint32_t get_recording_time_file_sec() { return recording_time_file_sec; }
 
   /**
    * @brief Get the recording time total sec object
-   * 
+   *
    */
   uint32_t get_recording_time_total_sec() { return recording_time_total_sec; }
 
@@ -211,9 +211,9 @@ class WAVFileWriter
 
   /**
    * @brief Get the enable wav file write object
-   * 
-   * @return true 
-   * @return false not saving the file anymore 
+   *
+   * @return true
+   * @return false not saving the file anymore
    */
   bool get_enable_wav_file_write() {return enable_wav_file_write;}
 
@@ -228,7 +228,7 @@ class WAVFileWriter
    * @note This will swap the buffers and set buf_ready
    * @deprecated Not required?
    * @return true success
-   * @return false 
+   * @return false
    */
   bool buffer_is_full();
 

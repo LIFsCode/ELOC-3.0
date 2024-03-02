@@ -120,23 +120,22 @@ void printStatus(String& buf) {
     addEnum(recordingState, recState);
 
 
-    session["recordingTime[h]"]    = (float)wav_writer.get_recording_time_total_sec() / 1000 / 1000 / 60 / 60;
+    session["recordingTime[h]"]    = round((wav_writer.get_recording_time_total_sec() / (60 * 60.f)), 2);
     JsonObject ai = session.createNestedObject("detection");
     ai["state"]                   = ai_run_enable;
-    // first set to defaults in case edge impuse is not included in binary
+    // first set to defaults in case edge impulse is not included in binary
     ai["detectingTime[h]"]        = 0.0;
     ai["detectedEvents"]          = 0;
     ai["aiModel"]                 = "";
 #ifdef EDGE_IMPULSE_ENABLED
-    ai["detectingTime[h]"]        = edgeImpulse.get_totalDetectingTime_hr();
+    ai["detectingTime[h]"]        = round((edgeImpulse.get_totalDetectingTime_hr()), 2);
     ai["detectedEvents"]          = edgeImpulse.get_detectedEvents();
     ai["aiModel"]                 = EI_CLASSIFIER_PROJECT_NAME;
 #endif
     JsonObject device = doc.createNestedObject("device");
     device["firmware"]                   = gFirmwareVersion;
-    device["Uptime[h]"]                  = (float)esp_timer_get_time() / 1000 / 1000 / 60 / 60;
-    device["totalRecordingTime[h]"]      = ((float)wav_writer.get_recording_time_total_sec() +
-                                            (float)wav_writer.get_recording_time_file_sec()) / 1000 / 1000 / 60 / 60;
+    device["Uptime[h]"]                  = round(((esp_timer_get_time() / 1000000) / (60 * 60.f)), 2);
+    device["totalRecordingTime[h]"]      = round((wav_writer.get_recording_time_total_sec()/ (60 * 60.f)), 2);
 
     float sdCardSizeGB = 0;
     float sdCardFreeSpaceGB = 0;
@@ -144,11 +143,10 @@ void printStatus(String& buf) {
     if (sd_card.isMounted()) {
         sdCardSizeGB = sd_card.getCapacityMB()/1024;
         sdCardFreeSpaceGB = sd_card.freeSpaceGB();
-
     }
-    device["SdCardSize[GB]"]             = round(sdCardSizeGB,2);
-    device["SdCardFreeSpace[GB]"]        = round(sdCardFreeSpaceGB,2);
-    device["SdCardFreeSpace[%]"]         = round(sdCardFreeSpaceGB/sdCardSizeGB*100.0,2);
+    device["SdCardSize[GB]"]             = round(sdCardSizeGB, 2);
+    device["SdCardFreeSpace[GB]"]        = round(sdCardFreeSpaceGB, 2);
+    device["SdCardFreeSpace[%]"]         = round(sdCardFreeSpaceGB/sdCardSizeGB*100.0, 2);
 
     if (serializeJsonPretty(doc, buf) == 0) {
         ESP_LOGE(TAG, "Failed serialize JSON config!");

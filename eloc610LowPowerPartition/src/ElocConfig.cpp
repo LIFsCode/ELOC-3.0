@@ -122,7 +122,7 @@ static const elocConfig_T C_ElocConfig_Default {
         .logToSdCard = true,
         .filename = "/sdcard/log/eloc.log",
         .maxFiles = 10,
-        .maxFileSize = 5*1024,
+        .maxFileSize = 5*1024*1024,
     },
     .IntruderConfig = {
         .detectEnable = false,

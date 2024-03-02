@@ -18,7 +18,7 @@
       "logToSdCard": true,
       "filename": "/sdcard/log/eloc.log",
       "maxFiles": 10,
-      "maxFileSize": 5120
+      "maxFileSize": 5242880
     },
     "intruderCfg": {
       "enable": false,

@@ -620,11 +620,6 @@ void app_main(void) {
 
     printPartitionInfo();  // So if reboots, always boot into the bluetooth partition
 
-    ESP_LOGI(TAG, "\n"
-                  "------------------------- ELOC Recorder -------------------------\n"
-                  "-- VERSION: %s\n"
-                  "-----------------------------------------------------------------\n",
-             VERSIONTAG);
 
 #ifdef EDGE_IMPULSE_ENABLED
     ESP_LOGI(TAG, "Edge Impulse framework enabled");
@@ -726,9 +721,6 @@ void app_main(void) {
 
     readConfig();
 
-    ESP_LOGI(TAG, "Setting up Battery...");
-    Battery::GetInstance();
-
     // Setup persistent logging only if SD card is mounted
     if (sd_card.isMounted()) {
         const logConfig_t& cfg = getConfig().logConfig;
@@ -737,6 +729,14 @@ void app_main(void) {
             ESP_LOGE(TAG, "Failed to initialize logging subsystem with %s", esp_err_to_name(err));
         }
     }
+    ESP_LOGI(TAG, "\n"
+                  "------------------------- ELOC Recorder -------------------------\n"
+                  "-- VERSION: %s\n"
+                  "-----------------------------------------------------------------\n",
+             VERSIONTAG);
+
+    ESP_LOGI(TAG, "Setting up Battery...");
+    Battery::GetInstance();
 
     // check if a firmware update is triggered via SD card
     checkForFirmwareUpdateFile();

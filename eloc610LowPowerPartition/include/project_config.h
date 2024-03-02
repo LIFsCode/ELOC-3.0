@@ -218,6 +218,7 @@
 #define TASK_PRIO_AI 7
 #define TASK_PRIO_I2S 10
 #define TASK_PRIO_CMD 1
+#define TASK_PRIO_UART_TEST 2
 
 // define specific CPU Cores for critical tasks
 // setting tasks fixed to a core, makes sure the AI will have a separate core as it will be the most time consuming operation
@@ -225,5 +226,14 @@
 #define TASK_I2S_CORE 0
 #define TASK_WAV_CORE 0
 #define TASK_AI_CORE 1
+#define TASK_UART_TEST_CORE 0
+
+/////////////////////////////////// Test UART configurations ///////////////////////////////////
+/**
+ * This UART is used to inject commands to the device
+ * For test purposes only
+*/
+
+#define ENABLE_TEST_UART
 
 #endif  // _PROJECT_CONFIG_H_

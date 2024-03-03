@@ -22,8 +22,6 @@
 #include "utils/time_utils.hpp"
 #include "../lib/edge-impulse/src/model-parameters/model_metadata.h"
 
-extern TaskHandle_t ei_TaskHandler;
-
 #ifndef PIO_UNIT_TESTING
     // For unit testing
     #include <I2SMEMSSampler.h>
@@ -198,10 +196,11 @@ class EdgeImpulse {
 
     /**
      * @brief Start a continuous inferencing task
-     * 
+     * @param taskHandle outputs a handle to the created task (set to NULL if unsed)
+     * @param callback callback function to call once a data buffer is ready
      * @return ESP_OK on success
      */
-    esp_err_t start_ei_thread(std::function<void()> callback);
+    esp_err_t start_ei_thread(TaskHandle_t* taskHandle, std::function<void()> callback);
 
     /**
      * @brief Get the detectingTime

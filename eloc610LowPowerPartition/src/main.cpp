@@ -945,7 +945,7 @@ void app_main(void) {
                 elocProcessing.getEdgeImpulse().set_status(EdgeImpulse::Status::not_running);
             } else if (ai_run_enable == true && (elocProcessing.getEdgeImpulse().get_status() == EdgeImpulse::Status::not_running)) {
                 ESP_LOGI(TAG, "Starting EI thread");
-                if (elocProcessing.getEdgeImpulse().start_ei_thread(ei_callback_func) != ESP_OK) {
+                if (elocProcessing.getEdgeImpulse().start_ei_thread(&ei_TaskHandler, ei_callback_func) != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to start EI thread");
                     // Should this be retried?
                     delay(500);

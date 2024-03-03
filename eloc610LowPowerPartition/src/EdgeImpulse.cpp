@@ -197,7 +197,7 @@ void EdgeImpulse::start_ei_thread_wrapper(void *_this) {
   reinterpret_cast<EdgeImpulse *>(_this)->ei_thread();
 }
 
-esp_err_t EdgeImpulse::start_ei_thread(std::function<void()> _callback) {
+esp_err_t EdgeImpulse::start_ei_thread(TaskHandle_t* taskHandle, std::function<void()> _callback) {
   ESP_LOGV(TAG, "Func: %s", __func__);
 
   status = Status::running;
@@ -206,7 +206,7 @@ esp_err_t EdgeImpulse::start_ei_thread(std::function<void()> _callback) {
 
   this->callback = _callback;
 
-  int ret = xTaskCreatePinnedToCore(this->start_ei_thread_wrapper, "ei_thread", 1024 * 4, this, TASK_PRIO_AI, &ei_TaskHandler, TASK_AI_CORE);
+  int ret = xTaskCreatePinnedToCore(this->start_ei_thread_wrapper, "ei_thread", 1024 * 4, this, TASK_PRIO_AI, taskHandle, TASK_AI_CORE);
 
   if (ret != pdPASS) {
     ESP_LOGE(TAG, "Failed to create ei_thread");

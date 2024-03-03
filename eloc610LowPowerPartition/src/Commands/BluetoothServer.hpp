@@ -34,8 +34,6 @@
 esp_err_t BluetoothServerSetup(bool installGpioIsr);
 
 
-// Control sound recording
-extern WAVFileWriter wav_writer;
 
 #endif // BLUETOOTHSERVER_HPP_
 

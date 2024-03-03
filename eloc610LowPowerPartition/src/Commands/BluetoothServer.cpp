@@ -50,6 +50,7 @@
 #include "ElocConfig.hpp"
 #include "ElocSystem.hpp"
 #include "ElocStatus.hpp"
+#include "ElocProcessFactory.hpp"
 
 #include "Battery.hpp"
 
@@ -197,7 +198,7 @@ void wait_for_bt_command() {
 
     String serialIN;
 
-    if (wav_writer.get_mode() != WAVFileWriter::Mode::disabled &&
+    if (elocProcessing.getWavWriter().get_mode() != WAVFileWriter::Mode::disabled &&
         !getConfig().bluetoothEnableDuringRecord) {
         btwrite("recording");
         btwrite(""); btwrite("");

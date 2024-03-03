@@ -1,10 +1,10 @@
 /*
- * Created on Sun Nov 05 2023
+ * Created on Sun Mar 03 2024
  *
  * Project: International Elephant Project (Wildlife Conservation International)
  *
  * The MIT License (MIT)
- * Copyright (c) 2023 Fabian Lindner
+ * Copyright (c) 2024 Fabian Lindner
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -21,25 +21,21 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-
-#ifndef ELOCSTATUS_HPP_
-#define ELOCSTATUS_HPP_
-
-#include <stdint.h>
-#include "WString.h"
-#include "WAVFileWriter.h"
-
-//TODO: All these variables are shared across multiple tasks and must be guarded with mutexes
+#include "ElocProcessFactory.hpp"
+#include "project_config.h"
 
 
-/* Recording specific status indicators */
-extern bool ai_run_enable;
+ElocProcessFactory::ElocProcessFactory():
+    mInput(), 
+#ifdef EDGE_IMPULSE_ENABLED
+    mEdgeImpulse(I2S_DEFAULT_SAMPLE_RATE),
+#endif
+    mWav_writer()
+{
+}
 
+ElocProcessFactory::~ElocProcessFactory()
+{
+}
 
-extern int64_t gTotalUPTimeSinceReboot;  //esp_timer_get_time returns 64-bit time since startup, in microseconds.
-extern int64_t gTotalRecordTimeSinceReboot;
-extern int64_t gSessionRecordTime;
-extern String gSessionIdentifier;
-
-
-#endif // ELOCSTATUS_HPP_
+ElocProcessFactory elocProcessing;

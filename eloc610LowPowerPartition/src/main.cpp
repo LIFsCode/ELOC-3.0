@@ -51,23 +51,23 @@
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
 #include "utils/time_utils.hpp"
+#include "ElocProcessFactory.hpp"
+
 
 static const char *TAG = "main";
 
 #ifdef EDGE_IMPULSE_ENABLED
 
-    #include "EdgeImpulse.hpp"              // This file includes trumpet_inferencing.h
     #include "edge-impulse-sdk/dsp/numpy_types.h"
     #include "test_samples.h"
 
-    EdgeImpulse edgeImpulse(I2S_DEFAULT_SAMPLE_RATE);
 
     String ei_results_filename;
 
     // BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers
     //       but all EdgeImpulse stuff got encapsulated within a class, which does not match
     int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
-       return edgeImpulse.microphone_audio_signal_get_data(offset, length, out_ptr);
+       return elocProcessing.getEdgeImpulse().microphone_audio_signal_get_data(offset, length, out_ptr);
     }
 
 #endif
@@ -111,8 +111,6 @@ bool session_folder_created = false;
     SDCardSDIO sd_card;
 #endif
 
-I2SMEMSSampler input;
-WAVFileWriter wav_writer;
 QueueHandle_t rec_req_evt_queue = nullptr;  // wav recording queue
 QueueHandle_t rec_ai_evt_queue = nullptr;   // AI inference queue
 TaskHandle_t i2s_TaskHandler = nullptr;     // Task handler from I2S to wav writer
@@ -180,11 +178,11 @@ void testInput()
         i2s_mic_Config.sample_rate = i;
         i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL;
 
-        input.init(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-        input.install_and_start();
+        elocProcessing.getInput().init(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+        elocProcessing.getInput().install_and_start();
         delay(100);
         ESP_LOGI(TAG, "Clockrate: %f", i2s_get_clk(I2S_NUM_0));
-        input.uninstall();
+        elocProcessing.getInput().uninstall();
         delay(100);
     }
 
@@ -245,10 +243,10 @@ void printMemory()
  */
 static void IRAM_ATTR buttonISR(void *args)
 {
-    if (wav_writer.get_mode() == WAVFileWriter::Mode::disabled) {
-        wav_writer.set_mode(WAVFileWriter::Mode::continuous);
+    if (elocProcessing.getWavWriter().get_mode() == WAVFileWriter::Mode::disabled) {
+        elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::continuous);
     } else {
-        wav_writer.set_mode(WAVFileWriter::Mode::disabled);
+        elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::disabled);
     }
 
     /**
@@ -408,7 +406,7 @@ void start_sound_recording() {
     }
 
     // Start thread to continuously write to wav file & when sufficient data is collected finish the file
-    wav_writer.start_wav_write_task(getConfig().secondsPerFile);
+    elocProcessing.getWavWriter().start_wav_write_task(getConfig().secondsPerFile);
 }
 
 #ifdef EDGE_IMPULSE_ENABLED
@@ -469,7 +467,7 @@ int create_inference_result_file_SD() {
 
     for (auto i = 0; i < EI_CLASSIFIER_NN_OUTPUT_COUNT; i++) {
         file_string += " ,";
-        file_string += edgeImpulse.get_ei_classifier_inferencing_categories(i);
+        file_string += elocProcessing.getEdgeImpulse().get_ei_classifier_inferencing_categories(i);
     }
 
     file_string += "\n";
@@ -517,9 +515,9 @@ void ei_callback_func() {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
     if (ai_run_enable == true &&
-        edgeImpulse.get_status() == EdgeImpulse::Status::running) {
+        elocProcessing.getEdgeImpulse().get_status() == EdgeImpulse::Status::running) {
         ESP_LOGV(TAG, "Running inference");
-        bool m = edgeImpulse.microphone_inference_record();
+        bool m = elocProcessing.getEdgeImpulse().microphone_inference_record();
         // Blocking function - unblocks when buffer is full
         if (!m) {
             ESP_LOGE(TAG, "ERR: Failed to record audio...");
@@ -541,9 +539,9 @@ void ei_callback_func() {
         ei_impulse_result_t result = {0};
 
         #ifdef AI_CONTINUOUS_INFERENCE
-            EI_IMPULSE_ERROR r = edgeImpulse.run_classifier_continuous(&signal, &result);
+            EI_IMPULSE_ERROR r = elocProcessing.getEdgeImpulse().run_classifier_continuous(&signal, &result);
         #else
-            EI_IMPULSE_ERROR r = edgeImpulse.run_classifier(&signal, &result);
+            EI_IMPULSE_ERROR r = elocProcessing.getEdgeImpulse().run_classifier(&signal, &result);
         #endif  // AI_CONTINUOUS_INFERENCE
 
         ESP_LOGI(TAG, "Cycles taken to run inference = %d", (cpu_hal_get_cycle_count() - startCounter));
@@ -577,18 +575,18 @@ void ei_callback_func() {
 
                     if ((strcmp(result.classification[ix].label, "background") != 0) &&
                         result.classification[ix].value > AI_RESULT_THRESHOLD) {
-                        edgeImpulse.increment_detectedEvents();
+                        elocProcessing.getEdgeImpulse().increment_detectedEvents();
                         target_sound_detected = true;
                         // Start recording??
-                        if (wav_writer.wav_recording_in_progress == false &&
-                            wav_writer.get_mode() == WAVFileWriter::Mode::single &&
+                        if (elocProcessing.getWavWriter().wav_recording_in_progress == false &&
+                            elocProcessing.getWavWriter().get_mode() == WAVFileWriter::Mode::single &&
                             checkSDCard() == ESP_OK) {
                             start_sound_recording();
                         }
                     }
                 }
 
-                // ESP_LOGI(TAG, "detectedEvents = %d", edgeImpulse.get_detectedEvents());
+                // ESP_LOGI(TAG, "detectedEvents = %d", elocProcessing.getEdgeImpulse().get_detectedEvents());
 
                 file_str += "\n";
                 // Only save results & wav file if classification value exceeds a threshold
@@ -765,10 +763,10 @@ void app_main(void) {
 
 #ifdef EDGE_IMPULSE_ENABLED
 
-    auto s = edgeImpulse.get_aiModel();
+    auto s = elocProcessing.getEdgeImpulse().get_aiModel();
     ESP_LOGI(TAG, "Edge impulse model version: %s", s.c_str());
-    edgeImpulse.output_inferencing_settings();
-    edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+    elocProcessing.getEdgeImpulse().output_inferencing_settings();
+    elocProcessing.getEdgeImpulse().buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
 
     if (1) {
         // Run stored audio samples through the model to test it
@@ -797,7 +795,7 @@ void app_main(void) {
             for (auto test_sample_count = 0, inference_buffer_count = 0; (test_sample_count < TEST_SAMPLE_LENGTH) &&
                     (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT); test_sample_count++) {
                 if (skip_current >= ei_skip_rate) {
-                    edgeImpulse.inference.buffers[0][inference_buffer_count++] = test_array[i][test_sample_count];
+                    elocProcessing.getEdgeImpulse().inference.buffers[0][inference_buffer_count++] = test_array[i][test_sample_count];
                     skip_current = 1;
                 } else {
                     skip_current++;
@@ -806,11 +804,11 @@ void app_main(void) {
 
             // Mark buffer as ready
             // Mark active buffer as inference.buffers[1], inference run on inactive buffer
-            edgeImpulse.inference.buf_select = 1;
-            edgeImpulse.inference.buf_count = 0;
-            edgeImpulse.inference.buf_ready = 1;
+            elocProcessing.getEdgeImpulse().inference.buf_select = 1;
+            elocProcessing.getEdgeImpulse().inference.buf_count = 0;
+            elocProcessing.getEdgeImpulse().inference.buf_ready = 1;
 
-            EI_IMPULSE_ERROR r = edgeImpulse.run_classifier(&signal, &result);
+            EI_IMPULSE_ERROR r = elocProcessing.getEdgeImpulse().run_classifier(&signal, &result);
             if (r != EI_IMPULSE_OK) {
                 ESP_LOGW(TAG, "ERR: Failed to run classifier (%d)", r);
                 return;
@@ -833,13 +831,13 @@ void app_main(void) {
         }
 
         // Free buffers as the buffer size for continuous & non-continuous differs
-        edgeImpulse.free_buffers();
+        elocProcessing.getEdgeImpulse().free_buffers();
     }
 
     #ifdef AI_CONTINUOUS_INFERENCE
-        edgeImpulse.buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
+        elocProcessing.getEdgeImpulse().buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
     #else
-        edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+        elocProcessing.getEdgeImpulse().buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
     #endif  // AI_CONTINUOUS_INFERENCE
 
     #endif  // EDGE_IMPULSE_ENABLED
@@ -857,23 +855,23 @@ void app_main(void) {
     /**
      * @note Using MicUseTimingFix == true or false doesn't seem to effect ICS-43434 mic
      */
-    input.init(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,
+    elocProcessing.getInput().init(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,
                                getConfig().listenOnly, getMicInfo().MicUseTimingFix);
 
     if (checkSDCard() == ESP_OK) {
         // create a new wave file wav_writer & make sure sample rate is up to date
-        if (wav_writer.initialize(i2s_mic_Config.sample_rate, 2, NUMBER_OF_CHANNELS) != true) {
+        if (elocProcessing.getWavWriter().initialize(i2s_mic_Config.sample_rate, 2, NUMBER_OF_CHANNELS) != true) {
             ESP_LOGE(TAG, "Failed to initialize WAVFileWriter");
         }
 
         // Block until properly registered otherwise will get error later
-        while (input.register_wavFileWriter(&wav_writer) == false) {
+        while (elocProcessing.getInput().register_wavFileWriter(&elocProcessing.getWavWriter()) == false) {
             ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
             delay(5);
         }
     } else {
         ESP_LOGE(TAG, "SD card not mounted, cannot create WAVFileWriter");
-            wav_writer.set_mode(WAVFileWriter::Mode::disabled);  // Default is disabled anyway
+            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::disabled);  // Default is disabled anyway
         #ifdef EDGE_IMPULSE_ENABLED
             save_ai_results_to_sd = false;
         #endif
@@ -882,12 +880,12 @@ void app_main(void) {
     #ifdef EDGE_IMPULSE_ENABLED
         #ifdef AI_CONTINUOUS_INFERENCE
             // Init static vars
-            edgeImpulse.run_classifier_init();
+            elocProcessing.getEdgeImpulse().run_classifier_init();
         #endif  // AI_CONTINUOUS_INFERENCE
 
-        input.register_ei_inference(&edgeImpulse.getInference(), EI_CLASSIFIER_FREQUENCY);
-        // edgeImpulse.set_status(EdgeImpulse::Status::running);
-        // edgeImpulse.start_ei_thread(ei_callback_func);
+        elocProcessing.getInput().register_ei_inference(&elocProcessing.getEdgeImpulse().getInference(), EI_CLASSIFIER_FREQUENCY);
+        // elocProcessing.getEdgeImpulse().set_status(EdgeImpulse::Status::running);
+        // elocProcessing.getEdgeImpulse().start_ei_thread(ei_callback_func);
     #endif
 
     auto loopCnt = 0;
@@ -901,13 +899,13 @@ void app_main(void) {
 
             if (new_mode == WAVFileWriter::Mode::continuous) {
                 ESP_LOGI(TAG, "wav writer mode = continuous");
-                wav_writer.set_mode(new_mode);
+                elocProcessing.getWavWriter().set_mode(new_mode);
             } else if (new_mode == WAVFileWriter::Mode::single) {
                 ESP_LOGI(TAG, "wav writer mode = single");
-                wav_writer.set_mode(new_mode);
+                elocProcessing.getWavWriter().set_mode(new_mode);
             } else if (new_mode == WAVFileWriter::Mode::disabled) {
                 ESP_LOGI(TAG, "wav writer mode = disabled");
-                wav_writer.set_mode(new_mode);
+                elocProcessing.getWavWriter().set_mode(new_mode);
             } else {
                 ESP_LOGE(TAG, "wav writer mode = unknown");
             }
@@ -938,19 +936,19 @@ void app_main(void) {
 
         // Need to start I2S?
         // Note: Once started continues to run..
-        if ((wav_writer.get_mode() != WAVFileWriter::Mode::disabled || ai_run_enable != false) &&
-            input.is_i2s_installed_and_started() == false) {
+        if ((elocProcessing.getWavWriter().get_mode() != WAVFileWriter::Mode::disabled || ai_run_enable != false) &&
+            elocProcessing.getInput().is_i2s_installed_and_started() == false) {
             // Keep trying until successful
-            if (input.install_and_start() == ESP_OK) {
+            if (elocProcessing.getInput().install_and_start() == ESP_OK) {
                 delay(300);
-                input.zero_dma_buffer(I2S_DEFAULT_PORT);
-                input.start_read_task(sample_buffer_size/ sizeof(signed short));
+                elocProcessing.getInput().zero_dma_buffer(I2S_DEFAULT_PORT);
+                elocProcessing.getInput().start_read_task(sample_buffer_size/ sizeof(signed short));
             }
         }
 
         // Start a new recording?
-        if (wav_writer.wav_recording_in_progress == false &&
-            wav_writer.get_mode() == WAVFileWriter::Mode::continuous &&
+        if (elocProcessing.getWavWriter().wav_recording_in_progress == false &&
+            elocProcessing.getWavWriter().get_mode() == WAVFileWriter::Mode::continuous &&
             checkSDCard() == ESP_OK) {
             start_sound_recording();
         }
@@ -959,15 +957,15 @@ void app_main(void) {
 
         if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);
-            auto ei_status = (edgeImpulse.get_status() == EdgeImpulse::Status::running ? "running" : "not running");
-            ESP_LOGI(TAG, "EI current status = %s (%d)", ei_status, static_cast<int>(edgeImpulse.get_status()));
+            auto ei_status = (elocProcessing.getEdgeImpulse().get_status() == EdgeImpulse::Status::running ? "running" : "not running");
+            ESP_LOGI(TAG, "EI current status = %s (%d)", ei_status, static_cast<int>(elocProcessing.getEdgeImpulse().get_status()));
 
-            if (ai_run_enable == false && (edgeImpulse.get_status() == EdgeImpulse::Status::running)) {
+            if (ai_run_enable == false && (elocProcessing.getEdgeImpulse().get_status() == EdgeImpulse::Status::running)) {
                 ESP_LOGI(TAG, "Stopping EI thread");
-                edgeImpulse.set_status(EdgeImpulse::Status::not_running);
-            } else if (ai_run_enable == true && (edgeImpulse.get_status() == EdgeImpulse::Status::not_running)) {
+                elocProcessing.getEdgeImpulse().set_status(EdgeImpulse::Status::not_running);
+            } else if (ai_run_enable == true && (elocProcessing.getEdgeImpulse().get_status() == EdgeImpulse::Status::not_running)) {
                 ESP_LOGI(TAG, "Starting EI thread");
-                if (edgeImpulse.start_ei_thread(ei_callback_func) != ESP_OK) {
+                if (elocProcessing.getEdgeImpulse().start_ei_thread(ei_callback_func) != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to start EI thread");
                     // Should this be retried?
                     delay(500);
@@ -986,8 +984,8 @@ void app_main(void) {
     }  // end while(true)
 
     // Should never get here
-    input.uninstall();
-    wav_writer.finish();
+    elocProcessing.getInput().uninstall();
+    elocProcessing.getWavWriter().finish();
 
     if (sd_card.isMounted()) {
         sd_card.~SDCardSDIO();

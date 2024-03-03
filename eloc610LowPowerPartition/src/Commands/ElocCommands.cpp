@@ -41,6 +41,7 @@
 #include "utils/logging.hpp"
 #include "utils/ffsutils.h"
 #include "utils/ScopeGuard.hpp"
+#include "ElocProcessFactory.hpp"
 
 
 
@@ -61,8 +62,8 @@ ENUM_MACRO (RecState, recInvalid, recordOff_detectOff, recordOn_detectOff, recor
 RecState calcRecordingState() {
     RecState recState = RecState::recInvalid;
 
-    WAVFileWriter::Mode recMode = wav_writer.get_mode();
-    ESP_LOGI("COMMANDS", "WavWriterMode = %s(%d), AI = %s", wav_writer.get_mode_str(), wav_writer.get_mode_int(), ai_run_enable ? "ON" : "OFF");
+    WAVFileWriter::Mode recMode = elocProcessing.getWavWriter().get_mode();
+    ESP_LOGI("COMMANDS", "WavWriterMode = %s(%d), AI = %s", elocProcessing.getWavWriter().get_mode_str(), elocProcessing.getWavWriter().get_mode_int(), ai_run_enable ? "ON" : "OFF");
     switch (recMode) {
         case WAVFileWriter::Mode::disabled:
             if (ai_run_enable) {
@@ -120,7 +121,7 @@ void printStatus(String& buf) {
     addEnum(recordingState, recState);
 
 
-    session["recordingTime[h]"]    = (float)wav_writer.get_recording_time_total_sec() / 1000 / 1000 / 60 / 60;
+    session["recordingTime[h]"]    = (float)elocProcessing.getWavWriter().get_recording_time_total_sec() / 1000 / 1000 / 60 / 60;
     JsonObject ai = session.createNestedObject("detection");
     ai["state"]                   = ai_run_enable;
     // first set to defaults in case edge impuse is not included in binary
@@ -128,15 +129,15 @@ void printStatus(String& buf) {
     ai["detectedEvents"]          = 0;
     ai["aiModel"]                 = "";
 #ifdef EDGE_IMPULSE_ENABLED
-    ai["detectingTime[h]"]        = edgeImpulse.get_totalDetectingTime_hr();
-    ai["detectedEvents"]          = edgeImpulse.get_detectedEvents();
+    ai["detectingTime[h]"]        = elocProcessing.getEdgeImpulse().get_totalDetectingTime_hr();
+    ai["detectedEvents"]          = elocProcessing.getEdgeImpulse().get_detectedEvents();
     ai["aiModel"]                 = EI_CLASSIFIER_PROJECT_NAME;
 #endif
     JsonObject device = doc.createNestedObject("device");
     device["firmware"]                   = gFirmwareVersion;
     device["Uptime[h]"]                  = (float)esp_timer_get_time() / 1000 / 1000 / 60 / 60;
-    device["totalRecordingTime[h]"]      = ((float)wav_writer.get_recording_time_total_sec() +
-                                            (float)wav_writer.get_recording_time_file_sec()) / 1000 / 1000 / 60 / 60;
+    device["totalRecordingTime[h]"]      = ((float)elocProcessing.getWavWriter().get_recording_time_total_sec() +
+                                            (float)elocProcessing.getWavWriter().get_recording_time_file_sec()) / 1000 / 1000 / 60 / 60;
 
     float sdCardSizeGB = 0;
     float sdCardFreeSpaceGB = 0;
@@ -305,17 +306,17 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
     if (!req_mode) {
         ESP_LOGI(TAG, "setRecordMode requested <none>");
 
-        auto wav_write_mode = wav_writer.get_mode();
+        auto wav_write_mode = elocProcessing.getWavWriter().get_mode();
         /**
          * If no explicit mode is set, recording mode is toggled, no change to AI mode
          * @warning This is debug feature, shouldn't be generally used
          */
         if (wav_write_mode == WAVFileWriter::Mode::disabled) {
             new_mode = ai_run_enable ? RecState::recordOn_detectOn : RecState::recordOn_detectOff;
-            wav_writer.set_mode(WAVFileWriter::Mode::continuous);
+            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::continuous);
         } else {
             new_mode = ai_run_enable ? RecState::recordOff_detectOn : RecState::recordOff_detectOff;
-            wav_writer.set_mode(WAVFileWriter::Mode::disabled);
+            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::disabled);
         }
     } else {
         ESP_LOGI(TAG, "setRecordMode requested %s", req_mode);
@@ -324,23 +325,23 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
         if (!strcasecmp(req_mode, "recordOn_DetectOFF")) {
             new_mode = RecState::recordOn_detectOff;
             new_ai_mode = false;
-            wav_writer.set_mode(WAVFileWriter::Mode::continuous);
+            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::continuous);
         } else if (!strcasecmp(req_mode, "recordOn_DetectOn")) {
             new_mode = RecState::recordOn_detectOn;
             new_ai_mode = true;
-            wav_writer.set_mode(WAVFileWriter::Mode::continuous);
+            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::continuous);
         } else if (!strcasecmp(req_mode, "recordOff_DetectOn")) {
             new_mode = RecState::recordOff_detectOn;
             new_ai_mode = true;
-            wav_writer.set_mode(WAVFileWriter::Mode::disabled);
+            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::disabled);
         } else if (!strcasecmp(req_mode, "recordOff_DetectOff")) {
             new_mode = RecState::recordOff_detectOff;
             new_ai_mode = false;
-            wav_writer.set_mode(WAVFileWriter::Mode::disabled);
+            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::disabled);
         } else if (!strcasecmp(req_mode, "recordOnEvent")) {
             new_mode = RecState::recordOnEvent;
             new_ai_mode = true;
-            wav_writer.set_mode(WAVFileWriter::Mode::single);
+            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::single);
         } else {
             char errMsg[64];
             snprintf(errMsg, sizeof(errMsg), "Invalid mode %s", req_mode);
@@ -364,7 +365,7 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
     }
 
     ESP_LOGI(TAG, "setRecordMode now %s(%d)", toString(new_mode), static_cast<int>(new_mode));
-    ESP_LOGI(TAG, "wav_writer mode = %s", wav_writer.get_mode_str());
+    ESP_LOGI(TAG, "wav_writer mode = %s", elocProcessing.getWavWriter().get_mode_str());
     if (ai_mode_change) {
         ESP_LOGI(TAG, "ai mode = %s", new_ai_mode ? "ON" : "OFF");
     }

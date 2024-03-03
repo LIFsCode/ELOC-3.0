@@ -1,10 +1,10 @@
 /*
- * Created on Sun Nov 05 2023
+ * Created on Sun Mar 03 2024
  *
  * Project: International Elephant Project (Wildlife Conservation International)
  *
  * The MIT License (MIT)
- * Copyright (c) 2023 Fabian Lindner
+ * Copyright (c) 2024 Fabian Lindner
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -21,25 +21,43 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#ifndef ELOCPROCESSFACTORY_HPP_
+#define ELOCPROCESSFACTORY_HPP_
 
-#ifndef ELOCSTATUS_HPP_
-#define ELOCSTATUS_HPP_
-
-#include <stdint.h>
-#include "WString.h"
+#ifdef EDGE_IMPULSE_ENABLED
+    #include "EdgeImpulse.hpp"              // This file includes trumpet_inferencing.h
+#endif
+#include "I2SMEMSSampler.h"
 #include "WAVFileWriter.h"
 
-//TODO: All these variables are shared across multiple tasks and must be guarded with mutexes
+class ElocProcessFactory
+{
+private:
+    I2SMEMSSampler mInput;
+#ifdef EDGE_IMPULSE_ENABLED
+    EdgeImpulse mEdgeImpulse;
+#endif
+    WAVFileWriter mWav_writer;
+
+    /* data */
+public:
+    ElocProcessFactory(/* args */);
+    ~ElocProcessFactory();
+
+    WAVFileWriter& getWavWriter() { // todo make this const
+        return mWav_writer;
+    }
+    I2SMEMSSampler& getInput() {// todo make this const
+        return mInput;
+    }
+    EdgeImpulse& getEdgeImpulse() {// todo make this const
+        return mEdgeImpulse;
+    }
 
 
-/* Recording specific status indicators */
-extern bool ai_run_enable;
+};
+
+extern ElocProcessFactory elocProcessing;
 
 
-extern int64_t gTotalUPTimeSinceReboot;  //esp_timer_get_time returns 64-bit time since startup, in microseconds.
-extern int64_t gTotalRecordTimeSinceReboot;
-extern int64_t gSessionRecordTime;
-extern String gSessionIdentifier;
-
-
-#endif // ELOCSTATUS_HPP_
+#endif // ELOCPROCESSFACTORY_HPP_

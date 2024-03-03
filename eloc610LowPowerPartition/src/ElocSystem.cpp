@@ -37,6 +37,7 @@
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
 #include "Battery.hpp"
+#include "ElocProcessFactory.hpp"
 
 //TODO move sd card into ELOC system
 extern SDCardSDIO sd_card;
@@ -310,7 +311,7 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
     status.batteryLow = Battery::GetInstance().isLow();
     status.btEnabled = btEnabled;
     status.btConnected = btConnected;
-    status.recMode = wav_writer.get_mode();
+    status.recMode = elocProcessing.getWavWriter().get_mode();
     status.ai_run_enable = ai_run_enable;
     status.sdCardMounted = sd_card.isMounted();
     status.intruderDetected = mIntruderDetected;

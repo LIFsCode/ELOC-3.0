@@ -170,25 +170,6 @@ void delay(int ms)
     vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
-void testInput()
-{
-    ESP_LOGV(TAG, "Func: %s", __func__);
-
-    for (uint32_t i = 1000; i < 34000; i = i + 2000) {
-        i2s_mic_Config.sample_rate = i;
-        i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL;
-
-        elocProcessing.getInput().init(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
-        elocProcessing.getInput().install_and_start();
-        delay(100);
-        ESP_LOGI(TAG, "Clockrate: %f", i2s_get_clk(I2S_NUM_0));
-        elocProcessing.getInput().uninstall();
-        delay(100);
-    }
-
-    delay(100);
-}
-
 void resetESP32()
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
@@ -849,8 +830,7 @@ void app_main(void) {
     /** Setup Power Management */
     ElocSystem::GetInstance().pm_configure();
 
-    if (getConfig().testI2SClockInput)
-        testInput();
+    elocProcessing.testInput();
 
     /**
      * @note Using MicUseTimingFix == true or false doesn't seem to effect ICS-43434 mic

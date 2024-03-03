@@ -23,7 +23,12 @@
 
 #include "ElocProcessFactory.hpp"
 #include "project_config.h"
+#include "config.h"
+#include "ElocConfig.hpp"
 
+ElocProcessFactory elocProcessing;
+
+static const char* TAG = "ElocProcessing";
 
 ElocProcessFactory::ElocProcessFactory():
     mInput(), 
@@ -38,4 +43,33 @@ ElocProcessFactory::~ElocProcessFactory()
 {
 }
 
-ElocProcessFactory elocProcessing;
+esp_err_t ElocProcessFactory::begin() { 
+    
+
+    return ESP_OK; 
+}
+
+esp_err_t ElocProcessFactory::end() { 
+    return ESP_OK;
+}
+
+void ElocProcessFactory::testInput() {
+
+    if (!getConfig().testI2SClockInput) return;
+
+    ESP_LOGV(TAG, "Func: %s", __func__);
+
+    for (uint32_t i = 1000; i < 34000; i = i + 2000) {
+        i2s_mic_Config.sample_rate = i;
+        i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL;
+
+        mInput.init(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+        mInput.install_and_start();
+        delay(100);
+        ESP_LOGI(TAG, "Samplesrate %d Hz --> Clockrate: %f", i, i2s_get_clk(I2S_NUM_0));
+        mInput.uninstall();
+        delay(100);
+    }
+
+    delay(100);
+}

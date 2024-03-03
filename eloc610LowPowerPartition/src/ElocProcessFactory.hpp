@@ -24,6 +24,8 @@
 #ifndef ELOCPROCESSFACTORY_HPP_
 #define ELOCPROCESSFACTORY_HPP_
 
+#include "esp_err.h"
+
 #ifdef EDGE_IMPULSE_ENABLED
     #include "EdgeImpulse.hpp"              // This file includes trumpet_inferencing.h
 #endif
@@ -53,6 +55,12 @@ public:
     EdgeImpulse& getEdgeImpulse() {// todo make this const
         return mEdgeImpulse;
     }
+
+    esp_err_t begin();
+
+    esp_err_t end();
+
+    void testInput();
 
 
 };

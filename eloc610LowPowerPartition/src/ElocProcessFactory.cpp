@@ -21,10 +21,13 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "ElocProcessFactory.hpp"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "project_config.h"
 #include "config.h"
 #include "ElocConfig.hpp"
+
+#include "ElocProcessFactory.hpp"
 
 ElocProcessFactory elocProcessing;
 
@@ -35,8 +38,14 @@ ElocProcessFactory::ElocProcessFactory():
 #ifdef EDGE_IMPULSE_ENABLED
     mEdgeImpulse(I2S_DEFAULT_SAMPLE_RATE),
 #endif
-    mWav_writer()
+    mWav_writer(),
+    mCurrentState(RecState::recordOff_detectOff),
+    mReq_evt_queue(nullptr)
 {
+    mReq_evt_queue = xQueueCreate(10, sizeof(RecState));
+    assert(mReq_evt_queue != nullptr);
+    xQueueReset(mReq_evt_queue);
+
 }
 
 ElocProcessFactory::~ElocProcessFactory()
@@ -45,6 +54,11 @@ ElocProcessFactory::~ElocProcessFactory()
 
 esp_err_t ElocProcessFactory::begin() { 
     
+    /**
+     * @note Using MicUseTimingFix == true or false doesn't seem to effect ICS-43434 mic
+     */
+    mInput.init(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,
+                               getConfig().listenOnly, getMicInfo().MicUseTimingFix);
 
     return ESP_OK; 
 }
@@ -72,4 +86,12 @@ void ElocProcessFactory::testInput() {
     }
 
     delay(100);
+}
+
+BaseType_t ElocProcessFactory::queueNewMode(RecState newMode) {
+    return xQueueSend(mReq_evt_queue, &newMode, (TickType_t)0);
+}
+
+BaseType_t ElocProcessFactory::queueNewModeISR(RecState newMode) {
+    return xQueueSendFromISR(mReq_evt_queue, &newMode, (TickType_t)0);
 }

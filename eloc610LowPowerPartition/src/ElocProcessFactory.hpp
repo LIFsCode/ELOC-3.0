@@ -32,6 +32,15 @@
 #include "I2SMEMSSampler.h"
 #include "WAVFileWriter.h"
 
+#define ENUM_MACRO(name, v0, v1, v2, v3, v4, v5)\
+    enum class name { v0, v1, v2, v3, v4, v5};\
+    constexpr const char *name##Strings[] = {  #v0, #v1, #v2, #v3, #v4, #v5}; \
+    constexpr const char *toString(name value) {  return name##Strings[static_cast<int>(value)]; }
+
+ENUM_MACRO (RecState, recInvalid, recordOff_detectOff, recordOn_detectOff, recordOn_detectOn, recordOff_detectOn, recordOnEvent);
+#undef ENUM_MACRO
+
+
 class ElocProcessFactory
 {
 private:
@@ -41,6 +50,8 @@ private:
 #endif
     WAVFileWriter mWav_writer;
 
+    RecState mCurrentState;
+    QueueHandle_t mReq_evt_queue;
     /* data */
 public:
     ElocProcessFactory(/* args */);
@@ -60,8 +71,18 @@ public:
 
     esp_err_t end();
 
+
+
     void testInput();
 
+    RecState getState() const {
+        return mCurrentState;
+    }
+
+    BaseType_t checkForNewMode(TickType_t xTicksToWait);
+
+    BaseType_t queueNewMode(RecState newMode);
+    BaseType_t queueNewModeISR(RecState newMode);
 
 };
 

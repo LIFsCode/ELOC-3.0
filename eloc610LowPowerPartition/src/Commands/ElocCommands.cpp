@@ -51,13 +51,6 @@
 extern ESP32Time timeObject;
 extern SDCardSDIO sd_card;
 
-#define ENUM_MACRO(name, v0, v1, v2, v3, v4, v5)\
-    enum class name { v0, v1, v2, v3, v4, v5};\
-    constexpr const char *name##Strings[] = {  #v0, #v1, #v2, #v3, #v4, #v5}; \
-    constexpr const char *toString(name value) {  return name##Strings[static_cast<int>(value)]; }
-
-ENUM_MACRO (RecState, recInvalid, recordOff_detectOff, recordOn_detectOff, recordOn_detectOn, recordOff_detectOn, recordOnEvent);
-
 
 RecState calcRecordingState() {
     RecState recState = RecState::recInvalid;

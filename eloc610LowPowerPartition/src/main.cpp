@@ -387,7 +387,7 @@ void start_sound_recording() {
     }
 
     // Start thread to continuously write to wav file & when sufficient data is collected finish the file
-    elocProcessing.getWavWriter().start_wav_write_task(getConfig().secondsPerFile);
+    elocProcessing.getWavWriter().start_wav_write_task(&i2s_TaskHandler ,getConfig().secondsPerFile);
 }
 
 #ifdef EDGE_IMPULSE_ENABLED

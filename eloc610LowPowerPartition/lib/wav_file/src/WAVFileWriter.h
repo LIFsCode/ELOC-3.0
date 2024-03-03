@@ -13,7 +13,6 @@
 #include "freertos/task.h"
 #include "../../../include/project_config.h"
 
-extern TaskHandle_t i2s_TaskHandler;
 extern String gSessionIdentifier;
 extern ESP32Time timeObject;
 
@@ -260,9 +259,10 @@ class WAVFileWriter
   /**
    * @brief Wrapper to start thread to write out to wav file
    * @note This will start a thread that runs until enable_wav_file_write == false
+   * @param taskHandle outputs a handle to the created task (set to NULL if unsed)
    * @param secondsPerFile seconds per file to write
   */
-  int start_wav_write_task(int secondsPerFile);
+  int start_wav_write_task(TaskHandle_t* taskHandle, int secondsPerFile);
 };
 
 #endif  // __WAVFILEWRITER_H__

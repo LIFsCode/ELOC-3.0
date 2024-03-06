@@ -57,6 +57,7 @@
 static const char *TAG = "BluetoothServer";
 
 static const char BT_RESP_TERMINATION = 0x04;
+static const uint32_t BT_CMD_VERSION = 1;
 
 static BluetoothSerial SerialBT;
 
@@ -138,7 +139,7 @@ void sendSettings() {
     SerialBT.print("{\"device\" : ");
     SerialBT.print("\"ELOC 3.0\"");
     SerialBT.print(", \"cmdVersion\" : ");
-    SerialBT.print("1");
+    SerialBT.print(BT_CMD_VERSION);
     SerialBT.println("}");
     SerialBT.print(BT_RESP_TERMINATION);
 

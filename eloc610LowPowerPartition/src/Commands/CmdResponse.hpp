@@ -36,6 +36,7 @@ private:
         String Payload;
         String ErrMsg;
         String Cmd;
+        int32_t ID;
     }ReturnValue_t;
     ReturnValue_t mReturnValue;
     CmdResponse();;
@@ -46,7 +47,7 @@ public:
         return instance;
     };
     void clear();
-    void newCmd(const char* cmd);
+    void newCmd(const char* cmd, const char* id = nullptr);
     void setResult(esp_err_t errCode) {
         return setError(errCode, esp_err_to_name(errCode));
     }

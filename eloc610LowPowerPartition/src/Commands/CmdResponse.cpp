@@ -37,11 +37,18 @@ void CmdResponse::clear()
     mReturnValue.ErrCode = ESP_FAIL; // set to generic fail will be cleared on valid result
     mReturnValue.Payload.clear();
     mReturnValue.Cmd.clear();
+    mReturnValue.ID = -1;
     mReturnValue.ErrMsg.clear();
 };
-void CmdResponse::newCmd(const char* cmd) {
+void CmdResponse::newCmd(const char* cmd, const char* id) {
     this->clear();
     mReturnValue.Cmd = cmd;
+    if (id != nullptr) {
+        mReturnValue.ID = strtol (id,NULL,0);
+    }
+    else {
+        mReturnValue.ID = -1;
+    }
 }
 
 void CmdResponse::setError(esp_err_t errCode, const char* errMsg)

@@ -258,4 +258,7 @@ class EdgeImpulse {
     const char* get_ei_classifier_inferencing_categories(int i) const;
 };
 
+void ei_callback_func();
+void test_inference();
+
 #endif  //  ELOC610LOWPOWERPARTITION_SRC_EDGEIMPULSE_HPP_

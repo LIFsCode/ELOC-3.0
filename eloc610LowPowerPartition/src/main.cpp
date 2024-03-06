@@ -56,21 +56,6 @@
 
 static const char *TAG = "main";
 
-#ifdef EDGE_IMPULSE_ENABLED
-
-    #include "edge-impulse-sdk/dsp/numpy_types.h"
-    #include "test_samples.h"
-
-
-    String ei_results_filename;
-
-    // BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers
-    //       but all EdgeImpulse stuff got encapsulated within a class, which does not match
-    int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
-       return elocProcessing.getEdgeImpulse().microphone_audio_signal_get_data(offset, length, out_ptr);
-    }
-
-#endif
 
 bool gMountedSDCard = false;
 
@@ -211,7 +196,12 @@ void printMemory()
     ESP_LOGI(TAG, "\n\n\n\n");
 }
 
+#ifdef EDGE_IMPULSE_ENABLED
 
+
+    String ei_results_filename;
+
+#endif
 
 
 /**
@@ -485,108 +475,7 @@ int save_inference_result_SD(String results_string) {
 
     return 0;
 }
-
-/**
- * @brief This callback allows a thread created in EdgeImpulse to
- *        run the inference. Required due to namespace issues, static implementations etc..
- */
-void ei_callback_func() {
-    ESP_LOGV(TAG, "Func: %s", __func__);
-
-    if (ai_run_enable == true &&
-        elocProcessing.getEdgeImpulse().get_status() == EdgeImpulse::Status::running) {
-        ESP_LOGV(TAG, "Running inference");
-        bool m = elocProcessing.getEdgeImpulse().microphone_inference_record();
-        // Blocking function - unblocks when buffer is full
-        if (!m) {
-            ESP_LOGE(TAG, "ERR: Failed to record audio...");
-            // Give up on this inference, come back next time
-            return;
-        }
-
-        auto startCounter = cpu_hal_get_cycle_count();
-
-        ei::signal_t signal;
-
-        #ifdef AI_CONTINUOUS_INFERENCE
-            signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
-        #else
-            signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
-        #endif  // AI_CONTINUOUS_INFERENCE
-
-        signal.get_data = &microphone_audio_signal_get_data;
-        ei_impulse_result_t result = {0};
-
-        #ifdef AI_CONTINUOUS_INFERENCE
-            EI_IMPULSE_ERROR r = elocProcessing.getEdgeImpulse().run_classifier_continuous(&signal, &result);
-        #else
-            EI_IMPULSE_ERROR r = elocProcessing.getEdgeImpulse().run_classifier(&signal, &result);
-        #endif  // AI_CONTINUOUS_INFERENCE
-
-        ESP_LOGI(TAG, "Cycles taken to run inference = %d", (cpu_hal_get_cycle_count() - startCounter));
-
-        if (r != EI_IMPULSE_OK) {
-            ESP_LOGE(TAG, "ERR: Failed to run classifier (%d)", r);
-            // Give up on this inference, come back next time
-            return;
-        }
-
-        auto target_sound_detected = false;
-
-        #ifdef AI_CONTINUOUS_INFERENCE
-            if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))  // NOLINT
-        #else
-            // Non-continuous, always print
-            if (1)  // NOLINT
-        #endif  //  AI_CONTINUOUS_INFERENCE
-            {
-                ESP_LOGI(TAG, "(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
-                        result.timing.dsp, result.timing.classification, result.timing.anomaly);
-
-                String file_str;
-
-                for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
-                    ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
-
-                    // Build string to save to inference results file
-                    file_str += ", ";
-                    file_str += result.classification[ix].value;
-
-                    if ((strcmp(result.classification[ix].label, "background") != 0) &&
-                        result.classification[ix].value > AI_RESULT_THRESHOLD) {
-                        elocProcessing.getEdgeImpulse().increment_detectedEvents();
-                        target_sound_detected = true;
-                        // Start recording??
-                        if (elocProcessing.getWavWriter().wav_recording_in_progress == false &&
-                            elocProcessing.getWavWriter().get_mode() == WAVFileWriter::Mode::single &&
-                            checkSDCard() == ESP_OK) {
-                            start_sound_recording();
-                        }
-                    }
-                }
-
-                // ESP_LOGI(TAG, "detectedEvents = %d", elocProcessing.getEdgeImpulse().get_detectedEvents());
-
-                file_str += "\n";
-                // Only save results & wav file if classification value exceeds a threshold
-                if (save_ai_results_to_sd == true &&
-                    checkSDCard() == ESP_OK &&
-                    target_sound_detected == true) {
-                    save_inference_result_SD(file_str);
-                }
-
-            #if EI_CLASSIFIER_HAS_ANOMALY == 1
-                ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
-            #endif  // EI_CLASSIFIER_HAS_ANOMALY
-
-            #ifdef AI_CONTINUOUS_INFERENCE
-                print_results = 0;
-            #endif  // AI_CONTINUOUS_INFERENCE
-            }
-    }  // ai_run_enable
-
-    ESP_LOGV(TAG, "Inference complete");
-}
+void ei_callback_func();
 
 #endif
 
@@ -745,73 +634,8 @@ void app_main(void) {
     auto s = elocProcessing.getEdgeImpulse().get_aiModel();
     ESP_LOGI(TAG, "Edge impulse model version: %s", s.c_str());
     elocProcessing.getEdgeImpulse().output_inferencing_settings();
-    elocProcessing.getEdgeImpulse().buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
 
-    if (1) {
-        // Run stored audio samples through the model to test it
-        // Use non-continuous process for this
-        ESP_LOGI(TAG, "Testing model against pre-recorded sample data...");
-
-        static_assert((EI_CLASSIFIER_RAW_SAMPLE_COUNT <= TEST_SAMPLE_LENGTH),
-                       "TEST_SAMPLE_LENGTH must be at least equal to EI_CLASSIFIER_RAW_SAMPLE_COUNT");
-
-        if (EI_CLASSIFIER_RAW_SAMPLE_COUNT < TEST_SAMPLE_LENGTH) {
-            ESP_LOGI(TAG, "TEST_SAMPLE length is greater than the Edge Impulse model length, applying down-sampling");
-        }
-
-        ei::signal_t signal;
-        signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
-        signal.get_data = &microphone_audio_signal_get_data;
-        ei_impulse_result_t result = {0};
-
-        // Artificially fill buffer with test data
-        auto ei_skip_rate = TEST_SAMPLE_LENGTH / EI_CLASSIFIER_RAW_SAMPLE_COUNT;
-        auto skip_current = ei_skip_rate;   // Make sure to fill first sample, then start skipping if needed
-
-        for (auto i = 0; i < test_array_size; i++) {
-            ESP_LOGI(TAG, "Running test category: %s", test_array_categories[i]);
-
-            for (auto test_sample_count = 0, inference_buffer_count = 0; (test_sample_count < TEST_SAMPLE_LENGTH) &&
-                    (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT); test_sample_count++) {
-                if (skip_current >= ei_skip_rate) {
-                    elocProcessing.getEdgeImpulse().inference.buffers[0][inference_buffer_count++] = test_array[i][test_sample_count];
-                    skip_current = 1;
-                } else {
-                    skip_current++;
-                }
-            }
-
-            // Mark buffer as ready
-            // Mark active buffer as inference.buffers[1], inference run on inactive buffer
-            elocProcessing.getEdgeImpulse().inference.buf_select = 1;
-            elocProcessing.getEdgeImpulse().inference.buf_count = 0;
-            elocProcessing.getEdgeImpulse().inference.buf_ready = 1;
-
-            EI_IMPULSE_ERROR r = elocProcessing.getEdgeImpulse().run_classifier(&signal, &result);
-            if (r != EI_IMPULSE_OK) {
-                ESP_LOGW(TAG, "ERR: Failed to run classifier (%d)", r);
-                return;
-            }
-
-            // print the predictions
-            ESP_LOGI(TAG, "Test model predictions:");
-            ESP_LOGI(TAG, "    (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
-                    result.timing.dsp, result.timing.classification, result.timing.anomaly);
-            for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
-                ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
-
-                if (strcmp(result.classification[ix].label, "trumpet") == 0 &&
-                    strcmp(test_array_categories[i], "trumpet") == 0) {
-                    if (result.classification[ix].value < AI_RESULT_THRESHOLD) {
-                        ESP_LOGW(TAG, "Test of trumpet sample appears to be poor, check model!");
-                    }
-                }
-            }
-        }
-
-        // Free buffers as the buffer size for continuous & non-continuous differs
-        elocProcessing.getEdgeImpulse().free_buffers();
-    }
+    test_inference();
 
     #ifdef AI_CONTINUOUS_INFERENCE
         elocProcessing.getEdgeImpulse().buffers_setup(EI_CLASSIFIER_SLICE_SIZE);

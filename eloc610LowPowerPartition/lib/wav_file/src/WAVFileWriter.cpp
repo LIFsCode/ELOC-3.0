@@ -260,7 +260,10 @@ void WAVFileWriter::start_write_thread() {
   }
 
   wav_recording_in_progress = false;
+  //TODO: Check if this must be protected by a vTaskSuspendAll() & xTaskResumeAll()
+  mTaskHandle = nullptr;
   vTaskDelete(NULL);
+
 }
 
 bool WAVFileWriter::finish()

@@ -190,6 +190,8 @@ void EdgeImpulse::ei_thread() {
   }
   ESP_LOGI(TAG, "deleting task");
   inference.status_running = false;
+  //TODO: Check if this must be protected by a vTaskSuspendAll() & xTaskResumeAll()
+  mTaskHandle = nullptr;
   vTaskDelete(NULL);
 }
 

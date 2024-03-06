@@ -113,8 +113,6 @@ bool session_folder_created = false;
 
 QueueHandle_t rec_req_evt_queue = nullptr;  // wav recording queue
 QueueHandle_t rec_ai_evt_queue = nullptr;   // AI inference queue
-TaskHandle_t i2s_TaskHandler = nullptr;     // Task handler from I2S to wav writer
-TaskHandle_t ei_TaskHandler = nullptr;      // Task handler from I2S to AI inference
 
 void writeSettings(String settings);
 void doDeepSleep();
@@ -387,7 +385,7 @@ void start_sound_recording() {
     }
 
     // Start thread to continuously write to wav file & when sufficient data is collected finish the file
-    elocProcessing.getWavWriter().start_wav_write_task(&i2s_TaskHandler ,getConfig().secondsPerFile);
+    elocProcessing.getWavWriter().start_wav_write_task(getConfig().secondsPerFile);
 }
 
 #ifdef EDGE_IMPULSE_ENABLED
@@ -845,7 +843,7 @@ void app_main(void) {
         }
 
         // Block until properly registered otherwise will get error later
-        while (elocProcessing.getInput().register_wavFileWriter(&elocProcessing.getWavWriter()) == false) {
+        while (elocProcessing.getInput().register_wavFileWriter(&elocProcessing.getWavWriter(), elocProcessing.getWavWriter().getTaskHandle()) == false) {
             ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
             delay(5);
         }
@@ -863,7 +861,7 @@ void app_main(void) {
             elocProcessing.getEdgeImpulse().run_classifier_init();
         #endif  // AI_CONTINUOUS_INFERENCE
 
-        elocProcessing.getInput().register_ei_inference(&elocProcessing.getEdgeImpulse().getInference(), EI_CLASSIFIER_FREQUENCY);
+        elocProcessing.getInput().register_ei_inference(&elocProcessing.getEdgeImpulse().getInference(), EI_CLASSIFIER_FREQUENCY, elocProcessing.getEdgeImpulse().getTaskHandle());
         // elocProcessing.getEdgeImpulse().set_status(EdgeImpulse::Status::running);
         // elocProcessing.getEdgeImpulse().start_ei_thread(ei_callback_func);
     #endif
@@ -945,7 +943,7 @@ void app_main(void) {
                 elocProcessing.getEdgeImpulse().set_status(EdgeImpulse::Status::not_running);
             } else if (ai_run_enable == true && (elocProcessing.getEdgeImpulse().get_status() == EdgeImpulse::Status::not_running)) {
                 ESP_LOGI(TAG, "Starting EI thread");
-                if (elocProcessing.getEdgeImpulse().start_ei_thread(&ei_TaskHandler, ei_callback_func) != ESP_OK) {
+                if (elocProcessing.getEdgeImpulse().start_ei_thread(ei_callback_func) != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to start EI thread");
                     // Should this be retried?
                     delay(500);

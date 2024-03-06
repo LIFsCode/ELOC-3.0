@@ -42,6 +42,8 @@ class EdgeImpulse {
     enum class Status { not_running = 0, running = 1};
 
  private:
+    TaskHandle_t mTaskHandle = nullptr;
+
     bool debug_nn = false;  // Set this to true to see e.g. features generated from the raw signal
     Status status = Status::not_running;
 
@@ -196,11 +198,16 @@ class EdgeImpulse {
 
     /**
      * @brief Start a continuous inferencing task
-     * @param taskHandle outputs a handle to the created task (set to NULL if unsed)
      * @param callback callback function to call once a data buffer is ready
      * @return ESP_OK on success
      */
-    esp_err_t start_ei_thread(TaskHandle_t* taskHandle, std::function<void()> callback);
+    esp_err_t start_ei_thread(std::function<void()> callback);
+
+    /**
+     * @brief Get a pointer to the Task Handle object of the created task
+     * @return const TaskHandle_t* 
+     */
+    const TaskHandle_t* getTaskHandle();
 
     /**
      * @brief Get the detectingTime

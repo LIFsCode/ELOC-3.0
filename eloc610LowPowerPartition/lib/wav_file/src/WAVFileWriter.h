@@ -35,6 +35,7 @@ class WAVFileWriter
   int m_sample_rate = 16000;          // I2S sample rate, reasonable default
   bool enable_wav_file_write = true;  // Write to wav file while true
   int secondsPerFile = 60;            // Seconds per file to write
+  TaskHandle_t mTaskHandle = nullptr;
 
   /**
    * @brief Mode of operation
@@ -262,7 +263,13 @@ class WAVFileWriter
    * @param taskHandle outputs a handle to the created task (set to NULL if unsed)
    * @param secondsPerFile seconds per file to write
   */
-  int start_wav_write_task(TaskHandle_t* taskHandle, int secondsPerFile);
+  int start_wav_write_task(int secondsPerFile);
+
+  /**
+   * @brief Get a pointer to the Task Handle object of the created task
+   * @return const TaskHandle_t* 
+   */
+  const TaskHandle_t* getTaskHandle();
 };
 
 #endif  // __WAVFILEWRITER_H__

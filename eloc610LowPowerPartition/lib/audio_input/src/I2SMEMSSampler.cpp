@@ -60,8 +60,13 @@ esp_err_t I2SMEMSSampler::zero_dma_buffer(i2s_port_t i2sPort) {
     return ret;
 }
 
-bool I2SMEMSSampler::register_wavFileWriter(WAVFileWriter *ext_writer) {
+bool I2SMEMSSampler::register_wavFileWriter(WAVFileWriter *ext_writer, const TaskHandle_t* taskHandle) {
     writer = ext_writer;
+    assert(taskHandle != nullptr);
+    //TODO: currently the wav writer gets registered before the task is created --> this should be changed 
+    // the the below asset included
+    // assert(*taskHandle != nullptr); 
+    mWriterTaskHandle = taskHandle;
 
     if (writer == nullptr) {
         ESP_LOGE(TAG, "register_wavFileWriter() - WAVFileWriter not registered");
@@ -77,12 +82,18 @@ bool I2SMEMSSampler::deregister_wavFileWriter() {
         return false;
     } else {
         writer = nullptr;
+        mWriterTaskHandle = nullptr;
         return true;
     }
 }
 
-bool I2SMEMSSampler::register_ei_inference(inference_t *ext_inference, int ext_ei_sampling_freq) {
+bool I2SMEMSSampler::register_ei_inference(inference_t *ext_inference, int ext_ei_sampling_freq, const TaskHandle_t* taskHandle) {
     ESP_LOGV(TAG, "Func: %s", __func__);
+    assert(taskHandle != nullptr);
+    //TODO: currently the wav writer gets registered before the task is created --> this should be changed 
+    // the the below asset included
+    //assert(*taskHandle != nullptr);
+    mInferenceTaskHandle = taskHandle;
 
     inference = ext_inference;
     ei_sampling_freq = ext_ei_sampling_freq;
@@ -267,8 +278,8 @@ int I2SMEMSSampler::read()
                     // Note: Trying to write to SD card here causes poor performance
 
                     // Wake up the write thread
-                    if (writer->get_enable_wav_file_write() == true && i2s_TaskHandler != NULL)
-                        xTaskNotify(i2s_TaskHandler, (0), eNoAction);
+                    if (writer->get_enable_wav_file_write() == true && *mWriterTaskHandle != NULL)
+                        xTaskNotify(*mWriterTaskHandle, (0), eNoAction);
                 }
             }
 
@@ -293,9 +304,9 @@ int I2SMEMSSampler::read()
                         }
 
                         inference->buf_ready = 1;
-                        if (inference->status_running == true && ei_TaskHandler != NULL) {
+                        if (inference->status_running == true && *mInferenceTaskHandle != NULL) {
                             ESP_LOGV(TAG, "Notifying inference task");
-                            xTaskNotify(ei_TaskHandler, (0), eNoAction);
+                            xTaskNotify(*mInferenceTaskHandle, (0), eNoAction);
                         }
                     }
 

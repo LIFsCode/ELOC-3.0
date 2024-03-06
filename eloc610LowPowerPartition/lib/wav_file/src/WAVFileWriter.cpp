@@ -304,7 +304,7 @@ void WAVFileWriter::start_wav_writer_wrapper(void *_this)
   reinterpret_cast<WAVFileWriter *>(_this)->start_write_thread();
 }
 
-int WAVFileWriter::start_wav_write_task(TaskHandle_t* taskHandle, int secondsPerFile)
+int WAVFileWriter::start_wav_write_task(int secondsPerFile)
 {
   ESP_LOGV(TAG, "Func: %s, secondsPerFile = %d", __func__, secondsPerFile);
 
@@ -318,7 +318,7 @@ int WAVFileWriter::start_wav_write_task(TaskHandle_t* taskHandle, int secondsPer
   this->secondsPerFile = secondsPerFile;
 
   int ret = xTaskCreatePinnedToCore(this->start_wav_writer_wrapper, "wav_writer",
-                                    1024 * 4, this, TASK_PRIO_WAV, taskHandle, TASK_WAV_CORE);
+                                    1024 * 4, this, TASK_PRIO_WAV, &mTaskHandle, TASK_WAV_CORE);
 
   if (ret != pdPASS) {
     ESP_LOGE(TAG, "Failed to create wav file writer task");
@@ -328,3 +328,9 @@ int WAVFileWriter::start_wav_write_task(TaskHandle_t* taskHandle, int secondsPer
 
   return 0;
 }
+
+const TaskHandle_t* WAVFileWriter::getTaskHandle() {
+  // TODO check if this requires a mutex (shouldn't be needd)
+  return &mTaskHandle;
+}
+

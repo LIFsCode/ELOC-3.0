@@ -5,9 +5,6 @@
 #include "../../../include/ei_inference.h"
 #include "../../../include/project_config.h"
 
-extern TaskHandle_t i2s_TaskHandler;
-extern TaskHandle_t ei_TaskHandler;
-
 
 class I2SMEMSSampler : public I2SSampler {
  private:
@@ -16,6 +13,7 @@ class I2SMEMSSampler : public I2SSampler {
     int  mBitShift = I2S_DEFAULT_BIT_SHIFT;  // TODO: depreciated?? Using I2S_DEFAULT_BIT_SHIFT + I2S_DEFAULT_VOLUME instead from config.h
     bool mListenOnly = false;
     WAVFileWriter *writer = nullptr;
+    const TaskHandle_t* mWriterTaskHandle = nullptr;
 
     int32_t *raw_samples = nullptr;
 
@@ -34,6 +32,7 @@ class I2SMEMSSampler : public I2SSampler {
     // ei_skip_rate = 4
     int ei_skip_rate = 1;
     inference_t *inference;
+    const TaskHandle_t* mInferenceTaskHandle = nullptr;
 
     /**
      * The number of SAMPLES (i.e. not bytes) to read in the read() thread
@@ -99,7 +98,7 @@ class I2SMEMSSampler : public I2SSampler {
      * @param writer WAVFileWriter object
      * @return true success
      */
-    virtual bool register_wavFileWriter(WAVFileWriter *writer);
+    virtual bool register_wavFileWriter(WAVFileWriter *writer, const TaskHandle_t* taskHandle);
 
     /**
      * @brief Deregister or remove the WAVFileWriter
@@ -116,7 +115,7 @@ class I2SMEMSSampler : public I2SSampler {
      * @param ext_ei_sampling_freq the sampling frequency of the Edge Impulse model
      * @return true success
     */
-    virtual bool register_ei_inference(inference_t *ext_inference, int ext_ei_sampling_freq);
+    virtual bool register_ei_inference(inference_t *ext_inference, int ext_ei_sampling_freq, const TaskHandle_t* taskHandle);
 
     /**
      *

@@ -57,7 +57,7 @@
 static const char *TAG = "BluetoothServer";
 
 static const char BT_RESP_TERMINATION = 0x04;
-static const uint32_t BT_CMD_VERSION = 1;
+static const uint32_t BT_CMD_VERSION = 2;
 
 static BluetoothSerial SerialBT;
 
@@ -153,7 +153,9 @@ void bt_sendResponse(const CmdResponse& cmdResponse) {
     // SerialBT.
     if (SerialBT.connected()) {
         //TODO: check if this can be done via ArduinoJSON without too much stack usage overhead
-        SerialBT.print("{\"ecode\" : ");
+        SerialBT.print("{\"id\" : ");
+        SerialBT.print(cmdResponse.getReturnValue().ID);
+        SerialBT.print(", \"ecode\" : ");
         SerialBT.print(cmdResponse.getReturnValue().ErrCode);
         SerialBT.print(", \"error\" : \"");
         SerialBT.print(cmdResponse.getReturnValue().ErrMsg);
@@ -226,7 +228,8 @@ void wait_for_bt_command() {
             {
                 const char* cmd = cmdParser.getCommand();
                 CmdResponse& cmdResponse = CmdResponse::getInstance();
-                cmdResponse.newCmd(cmd);
+                const char* id = cmdParser.getValueFromKey("id");
+                cmdResponse.newCmd(cmd, id);
                 // search command in store and call function
                 // ignore return value "false" if command was not found
                 if (!cmdCallback.processCmd(&cmdParser))

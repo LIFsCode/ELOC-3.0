@@ -73,7 +73,7 @@
 #endif
 /* Headers below help us bundle the DFP model with EIM in single binary */
 #include "memryx-model/memryx-model.h"
-#include "utils/model_header_utils.h"
+#include "model_header_utils.h"
 
 /* Result delivered by memryx simulator contains 3 fields, indexes for print */
 #define MX_SIM_RES_OUTPUTS 0

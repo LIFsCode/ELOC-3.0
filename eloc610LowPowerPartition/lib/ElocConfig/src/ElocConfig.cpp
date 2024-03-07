@@ -30,8 +30,8 @@
 #include <FS.h>
 #include "SPIFFS.h"
 
-#include "utils/ffsutils.h"
-#include "utils/jsonutils.hpp"
+#include "ffsutils.h"
+#include "jsonutils.hpp"
 #include "config.h"
 #include "ElocConfig.hpp"
 #include "SDCardSDIO.h"

@@ -28,8 +28,8 @@
 #include "esp_log.h"
 #include "esp_err.h"
 
-#include "utils/ffsutils.h"
-#include "utils/RotateFile.hpp"
+#include "ffsutils.h"
+#include "RotateFile.hpp"
 
 #include "ArduinoJson.h"
 
@@ -81,7 +81,7 @@ esp_err_t esp_log_to_scard(bool enable) {
         ESP_LOGI(TAG, "  ***Redirecting log output BACK to only UART0 (not to the SPIFFS log file anymore)");
         logFile.close();
         // reset permanent error if disabled, allows to be rechecked if reenabled
-        static_fatal_error = false; 
+        static_fatal_error = false;
         esp_log_set_vprintf(&vprintf);
         ESP_LOGI(TAG, "this should not be on sd card");
     }

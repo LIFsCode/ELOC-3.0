@@ -48,7 +48,7 @@
 #include "edge-impulse-sdk/classifier/ei_model_types.h"
 
 #include "onnx-model/tidl-model.h"
-#include "utils/model_header_utils.h"
+#include "model_header_utils.h"
 
 #define TI_PREPROC_DEFAULT_WIDTH 320
 #define TI_PREPROC_DEFAULT_HEIGHT 240

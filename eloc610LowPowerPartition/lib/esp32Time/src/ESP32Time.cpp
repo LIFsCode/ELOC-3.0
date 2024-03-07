@@ -89,235 +89,255 @@ tm ESP32Time::getTimeStruct(){
     @brief  get the time and date as an Arduino String object
     @param  mode
             true = Long date format
-			false = Short date format
+            false = Short date format
 */
 String ESP32Time::getDateTime(bool mode){
-	struct tm timeinfo = getTimeStruct();
-	char s[51];
-	if (mode)
-	{
-		strftime(s, 50, "%A, %B %d %Y %H:%M:%S", &timeinfo);
-	}
-	else
-	{
-		strftime(s, 50, "%a, %b %d %Y %H:%M:%S", &timeinfo);
-	}
-	return String(s);
+    struct tm timeinfo = getTimeStruct();
+    char s[51];
+    if (mode)
+    {
+        strftime(s, 50, "%A, %B %d %Y %H:%M:%S", &timeinfo);
+    }
+    else
+    {
+        strftime(s, 50, "%a, %b %d %Y %H:%M:%S", &timeinfo);
+    }
+    return String(s);
 }
 
 /*!
     @brief  get the time and date in format 2024-01-25_18_09_01
 */
 String ESP32Time::getDateTimeFilename() {
-	struct tm timeinfo = getTimeStruct();
-	char s[51];
-	strftime(s, 50, "%F_%H_%M_%S", &timeinfo);
-	return String(s);
+    struct tm timeinfo = getTimeStruct();
+    char s[51];
+    strftime(s, 50, "%F_%H_%M_%S", &timeinfo);
+    return String(s);
 }
 
 /*!
     @brief  get the time and date as an Arduino String object
     @param  mode
             true = Long date format
-			false = Short date format, e.g.	16:01:12 Fri, Feb 02 2024
+            false = Short date format, e.g.	16:01:12 Fri, Feb 02 2024
 */
 String ESP32Time::getTimeDate(bool mode){
-	struct tm timeinfo = getTimeStruct();
-	char s[51];
-	if (mode)
-	{
-		strftime(s, 50, "%H:%M:%S %A, %B %d %Y", &timeinfo);
-	}
-	else
-	{
-		strftime(s, 50, "%H:%M:%S %a, %b %d %Y", &timeinfo);
-	}
-	return String(s);
+    struct tm timeinfo = getTimeStruct();
+    char s[51];
+    if (mode)
+    {
+        strftime(s, 50, "%H:%M:%S %A, %B %d %Y", &timeinfo);
+    }
+    else
+    {
+        strftime(s, 50, "%H:%M:%S %a, %b %d %Y", &timeinfo);
+    }
+    return String(s);
 }
 
 /*!
     @brief  get the time as an Arduino String object
 */
 String ESP32Time::getTime(){
-	struct tm timeinfo = getTimeStruct();
-	char s[51];
-	strftime(s, 50, "%H:%M:%S", &timeinfo);
-	return String(s);
+    struct tm timeinfo = getTimeStruct();
+    char s[51];
+    strftime(s, 50, "%H:%M:%S", &timeinfo);
+    return String(s);
 }
 
 /*!
     @brief  get the time as an Arduino String object with the specified format
-	@param	format
-			time format
-			http://www.cplusplus.com/reference/ctime/strftime/
+    @param	format
+            time format
+            http://www.cplusplus.com/reference/ctime/strftime/
 */
 String ESP32Time::getTime(String format){
-	struct tm timeinfo = getTimeStruct();
-	char s[128];
-	char c[128];
-	format.toCharArray(c, 127);
-	strftime(s, 127, c, &timeinfo);
-	return String(s);
+    struct tm timeinfo = getTimeStruct();
+    char s[128];
+    char c[128];
+    format.toCharArray(c, 127);
+    strftime(s, 127, c, &timeinfo);
+    return String(s);
 }
 
 /*!
     @brief  get the date as an Arduino String object
     @param  mode
             true = Long date format
-			false = Short date format
+            false = Short date format
 */
 String ESP32Time::getDate(bool mode){
-	struct tm timeinfo = getTimeStruct();
-	char s[51];
-	if (mode)
-	{
-		strftime(s, 50, "%A, %B %d %Y", &timeinfo);
-	}
-	else
-	{
-		strftime(s, 50, "%a, %b %d %Y", &timeinfo);
-	}
-	return String(s);
+    struct tm timeinfo = getTimeStruct();
+    char s[51];
+    if (mode)
+    {
+        strftime(s, 50, "%A, %B %d %Y", &timeinfo);
+    }
+    else
+    {
+        strftime(s, 50, "%a, %b %d %Y", &timeinfo);
+    }
+    return String(s);
 }
 
 /*!
     @brief  get the current milliseconds as long
 */
 long ESP32Time::getMillis(){
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	return tv.tv_usec/1000;
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_usec/1000;
 }
 
 /*!
     @brief  get the current microseconds as long
 */
 long ESP32Time::getMicros(){
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	return tv.tv_usec;
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_usec;
 }
 
 /*!
     @brief  get the current epoch seconds as long
 */
 long ESP32Time::getEpoch(){
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	return tv.tv_sec;
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec;
 }
 
 /*!
     @brief  get the current seconds as int
 */
 int ESP32Time::getSecond(){
-	struct tm timeinfo = getTimeStruct();
-	return timeinfo.tm_sec;
+    struct tm timeinfo = getTimeStruct();
+    return timeinfo.tm_sec;
 }
 
 /*!
     @brief  get the current minutes as int
 */
 int ESP32Time::getMinute(){
-	struct tm timeinfo = getTimeStruct();
-	return timeinfo.tm_min;
+    struct tm timeinfo = getTimeStruct();
+    return timeinfo.tm_min;
 }
 
 /*!
     @brief  get the current hour as int
-	@param	mode
-			true = 24 hour mode (0-23)
-			false = 12 hour mode (0-12)
+    @param	mode
+            true = 24 hour mode (0-23)
+            false = 12 hour mode (0-12)
 */
 int ESP32Time::getHour(bool mode){
-	struct tm timeinfo = getTimeStruct();
-	if (mode)
-	{
-		return timeinfo.tm_hour;
-	}
-	else
-	{
-		int hour = timeinfo.tm_hour;
-		if (hour > 12)
-		{
-			return timeinfo.tm_hour-12;
-		}
-		else
-		{
-			return timeinfo.tm_hour;
-		}
+    struct tm timeinfo = getTimeStruct();
+    if (mode)
+    {
+        return timeinfo.tm_hour;
+    }
+    else
+    {
+        int hour = timeinfo.tm_hour;
+        if (hour > 12)
+        {
+            return timeinfo.tm_hour-12;
+        }
+        else
+        {
+            return timeinfo.tm_hour;
+        }
 
-	}
+    }
 }
 
 /*!
     @brief  return current hour am or pm
-	@param	lowercase
-			true = lowercase
-			false = uppercase
+    @param	lowercase
+            true = lowercase
+            false = uppercase
 */
 String ESP32Time::getAmPm(bool lowercase){
-	struct tm timeinfo = getTimeStruct();
-	if (timeinfo.tm_hour >= 12)
-	{
-		if (lowercase)
-		{
-			return "pm";
-		}
-		else
-		{
-			return "PM";
-		}
-	}
-	else
-	{
-		if (lowercase)
-		{
-			return "am";
-		}
-		else
-		{
-			return "AM";
-		}
-	}
+    struct tm timeinfo = getTimeStruct();
+    if (timeinfo.tm_hour >= 12)
+    {
+        if (lowercase)
+        {
+            return "pm";
+        }
+        else
+        {
+            return "PM";
+        }
+    }
+    else
+    {
+        if (lowercase)
+        {
+            return "am";
+        }
+        else
+        {
+            return "AM";
+        }
+    }
+}
+
+int64_t ESP32Time::getSystemTimeMS() {
+    // https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/system_time.html#get-current-time-in-milliseconds
+    struct timeval tv_now;
+    gettimeofday(&tv_now, NULL);
+    int64_t time_us = ((int64_t)tv_now.tv_sec * 1000000L) + (int64_t)tv_now.tv_usec;
+    time_us = time_us / 1000;
+    return (time_us);
+}
+
+String ESP32Time::getSystemTimeMS_string() {
+    // return(uint64ToString(getSystemTimeMS()));
+    return(String(getSystemTimeMS()));
+}
+
+int64_t ESP32Time::getSystemTimeSecs() {
+    struct timeval tv_now;
+    gettimeofday(&tv_now, NULL);
+    return (tv_now.tv_sec);
 }
 
 /*!
     @brief  get the current day as int (1-31)
 */
 int ESP32Time::getDay(){
-	struct tm timeinfo = getTimeStruct();
-	return timeinfo.tm_mday;
+    struct tm timeinfo = getTimeStruct();
+    return timeinfo.tm_mday;
 }
 
 /*!
     @brief  get the current day of week as int (0-6)
 */
 int ESP32Time::getDayofWeek(){
-	struct tm timeinfo = getTimeStruct();
-	return timeinfo.tm_wday;
+    struct tm timeinfo = getTimeStruct();
+    return timeinfo.tm_wday;
 }
 
 /*!
     @brief  get the current day of year as int (0-365)
 */
 int ESP32Time::getDayofYear(){
-	struct tm timeinfo = getTimeStruct();
-	return timeinfo.tm_yday;
+    struct tm timeinfo = getTimeStruct();
+    return timeinfo.tm_yday;
 }
 
 /*!
     @brief  get the current month as int (1-12)
 */
 int ESP32Time::getMonth(){
-	struct tm timeinfo = getTimeStruct();
-	return (timeinfo.tm_mon)+1;
+    struct tm timeinfo = getTimeStruct();
+    return (timeinfo.tm_mon)+1;
 }
 
 /*!
     @brief  get the current year as int
 */
 int ESP32Time::getYear(){
-	struct tm timeinfo = getTimeStruct();
-	return timeinfo.tm_year+1900;
+    struct tm timeinfo = getTimeStruct();
+    return timeinfo.tm_year+1900;
 }

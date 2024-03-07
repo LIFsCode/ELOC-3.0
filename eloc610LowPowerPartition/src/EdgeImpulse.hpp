@@ -20,7 +20,6 @@
 #include "project_config.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "utils/time_utils.hpp"
 #include "../lib/edge-impulse/src/model-parameters/model_metadata.h"
 
 extern TaskHandle_t ei_TaskHandler;

@@ -28,33 +28,34 @@
 #include <Arduino.h>
 
 class ESP32Time {
-	
-	public:
-		ESP32Time();
-		void setTime(long epoch = 1609459200, int ms = 0);	// default (1609459200) = 1st Jan 2021
-		void setTime(int sc, int mn, int hr, int dy, int mt, int yr, int ms = 0);
-		tm getTimeStruct();
-		String getTime(String format);
-		
-		String getTime();
-		String getDateTime(bool mode = false);
-		String getDateTimeFilename();
-		String getTimeDate(bool mode = false);
-		String getDate(bool mode = false);
-		String getAmPm(bool lowercase = false);
-		
-		long getEpoch();
-		long getMillis();
-		long getMicros();
-		int getSecond();
-		int getMinute();
-		int getHour(bool mode = false);
-		int getDay();
-		int getDayofWeek();
-		int getDayofYear();
-		int getMonth();
-		int getYear();
-		
+    public:
+        ESP32Time();
+        void setTime(long epoch = 1609459200, int ms = 0);	// default (1609459200) = 1st Jan 2021
+        void setTime(int sc, int mn, int hr, int dy, int mt, int yr, int ms = 0);
+        tm getTimeStruct();
+        String getTime(String format);
+
+        String getTime();
+        String getDateTime(bool mode = false);
+        String getDateTimeFilename();
+        String getTimeDate(bool mode = false);
+        String getDate(bool mode = false);
+        String getAmPm(bool lowercase = false);
+        int64_t getSystemTimeMS();
+        String getSystemTimeMS_string();
+        int64_t getSystemTimeSecs();
+
+        long getEpoch();
+        long getMillis();
+        long getMicros();
+        int getSecond();
+        int getMinute();
+        int getHour(bool mode = false);
+        int getDay();
+        int getDayofWeek();
+        int getDayofYear();
+        int getMonth();
+        int getYear();
 
 };
 

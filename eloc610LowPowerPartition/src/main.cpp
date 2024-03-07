@@ -50,7 +50,6 @@
 #include "Commands/BluetoothServer.hpp"
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
-#include "utils/time_utils.hpp"
 
 static const char *TAG = "main";
 
@@ -312,7 +311,7 @@ bool createSessionFolder()
 {
     String fname;
     //TODO: check if another session identifier based on ISO time for mat would be more helpful
-    gSessionIdentifier = getDeviceInfo().fileHeader + String(time_utils::getSystemTimeMS());
+    gSessionIdentifier = getDeviceInfo().fileHeader + timeObject.getSystemTimeMS_string();
     fname = String("/sdcard/eloc/") + gSessionIdentifier;
     ESP_LOGI(TAG, "Creating session folder %s", fname.c_str());
     mkdir(fname.c_str(), 0777);

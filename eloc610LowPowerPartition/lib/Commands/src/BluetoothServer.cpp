@@ -38,10 +38,10 @@
 #include "BluetoothSerial.h"
 #include "ESP32Time.h"
 
-#include "project_config.h"
+#include "../../../include/project_config.h"
 #include "config.h"
 #include "lis3dh.h"
-#include "utils/strutils.h"
+#include "strutils.h"
 #include "CmdAdvCallback.hpp"
 #include "CmdResponse.hpp"
 #include "ElocCommands.hpp"

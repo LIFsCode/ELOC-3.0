@@ -28,14 +28,14 @@
 #include <fstream>
 #include "config.h"
 
-#include "CPPANALOG/analogio.h"
+#include "analogio.h"
 
 #include "ArduinoJson.h"
 #include "WString.h"
 
-#include "utils/ffsutils.h"
-#include "utils/jsonutils.hpp"
-#include "utils/ScopeGuard.hpp"
+#include "ffsutils.h"
+#include "jsonutils.hpp"
+#include "ScopeGuard.hpp"
 
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
@@ -88,7 +88,7 @@ static const std::vector<socLUT_t> C_LiION_SOCs =
     {4.11,  90},
     {4.15,  95},
     {4.20, 100},
-};  
+};
 
 // from https://footprinthero.com/lifepo4-battery-voltage-charts
 static const std::vector<socLUT_t> C_LiFePo_SOCs =
@@ -104,11 +104,11 @@ static const std::vector<socLUT_t> C_LiFePo_SOCs =
     {3.33,  90},
     {3.35,  99},
     {3.40, 100},
-};    
+};
 
 const char* Battery::CAL_FILE = "/spiffs/battery.cal";
 
-Battery::Battery() : 
+Battery::Battery() :
     mSemaphore(NULL),
     mChargingEnabled(true),
     mVoltageOffset(0.0), // TODO: read voltage offset from calibration info file (if present)
@@ -164,9 +164,9 @@ Battery::~Battery()
 
 const char* Battery::getBatType() const {
     switch(mBatteryType) {
-        case BAT_LiPo: 
+        case BAT_LiPo:
             return "LiPo";
-        case BAT_LiFePo: 
+        case BAT_LiFePo:
             return "LiFePo";
         default:
              return "no Battery";
@@ -175,9 +175,9 @@ const char* Battery::getBatType() const {
 
 const bat_limits_t& Battery::getLimits() const {
     switch(mBatteryType) {
-        case BAT_LiPo: 
+        case BAT_LiPo:
             return C_LiION_LIMITS;
-        case BAT_LiFePo: 
+        case BAT_LiFePo:
             return C_LiFePo_LIMITS;
         default:
         // use LiFePo as default limits, for a save version
@@ -187,9 +187,9 @@ const bat_limits_t& Battery::getLimits() const {
 
 const std::vector<socLUT_t>& Battery::getSocLUT() const {
     switch(mBatteryType) {
-        case BAT_LiPo: 
+        case BAT_LiPo:
             return C_LiION_SOCs;
-        case BAT_LiFePo: 
+        case BAT_LiFePo:
             return C_LiFePo_SOCs;
         default:
         // use LiFePo as default limits, for a save version
@@ -205,7 +205,7 @@ esp_err_t Battery::readRawVoltage(float& voltage) {
     // add addtional delay before reading to let the voltage of the battery relax
     vTaskDelay(pdMS_TO_TICKS(150));
     voltage = 0.0;
-    float accum=0.0; 
+    float accum=0.0;
     for (int i=0;  i<AVG_WINDOW;i++) {
         if (mAdc.CheckCalFuse()) {
             accum+= static_cast<float>(mAdc.GetVoltage())/1000.0; // CppAdc1::GetVoltage returns mV
@@ -214,12 +214,12 @@ esp_err_t Battery::readRawVoltage(float& voltage) {
             accum+= mAdc.GetRaw();
         }
         if (avgIntervalMs) vTaskDelay(avgIntervalMs);
-    } 
+    }
     voltage=accum/static_cast<float>(AVG_WINDOW);
 
     // scale the voltage according to the voltage divider on ELOC 3.0 HW
     voltage = voltage * (1500.0 + 470.0) / (1500.0);
-      
+
     //ESP_LOGI(TAG, "scaled voltage =%.3fV, avg = %.3f", mVoltage, accum/static_cast<float>(AVG_WINDOW));
 
     if (mChargingEnabled) {
@@ -245,7 +245,7 @@ void Battery::updateVoltage(bool forceUpdate/* = false*/) {
     if (mBatteryType == BAT_NONE) {
         // do not read voltages if no battery is present. Prevent disabling charger when ELOC is powered
         // only via USB. In that case it would turn off if the charger is disabled.
-        return; 
+        return;
     }
     if( xSemaphoreTake( mSemaphore, pdMS_TO_TICKS(10) ) == pdTRUE ) {
         ON_SCOPE_EXIT(SemaphoreGive, mSemaphore);
@@ -287,13 +287,13 @@ void Battery::updateVoltage(bool forceUpdate/* = false*/) {
                 }
                 break;
             }
-        }  
+        }
         mVoltage = rawVoltage * scale + offset;
         ESP_LOGI(TAG, "Calibrate voltage: read %.3fV, offset %.3f, scale %3f, result %.3fV", rawVoltage, offset, scale, mVoltage);
     }
 
 }
-    //TODO: set battery 
+    //TODO: set battery
 float Battery::getVoltage() {
     updateOutdatedVoltage();
     return mVoltage;
@@ -316,7 +316,7 @@ float Battery::getSoC()
             double diffx = mVoltage - lut[i].volt;
             double diffn = lut[i+1].volt - lut[i].volt;
 
-            return lut[i].soc + ( lut[i+1].soc - lut[i].soc ) * diffx / diffn; 
+            return lut[i].soc + ( lut[i+1].soc - lut[i].soc ) * diffx / diffn;
         }
     }
 
@@ -398,7 +398,7 @@ esp_err_t Battery::loadCalFile() {
         }
         StaticJsonDocument<JSON_DOC_SIZE> doc;
         DeserializationError error = deserializeJson(doc, inputFile);
-            
+
         if (error) {
             ESP_LOGE(TAG, "Parsing %s failed with %s!", CAL_FILE, error.c_str());
         }
@@ -421,7 +421,7 @@ esp_err_t Battery::loadCalFile() {
         if (f == NULL) {
             ESP_LOGE(TAG, "Failed to create cal file %s!", CAL_FILE);
             return ESP_ERR_NO_MEM;
-        } 
+        }
         fprintf(f, "%s", "{}");
         fclose(f);
     }
@@ -436,7 +436,7 @@ esp_err_t Battery::clearCal() {
     if (f == NULL) {
         ESP_LOGE(TAG, "Failed to clear battery calibration file %s", CAL_FILE);
         return ESP_ERR_NO_MEM;
-    } 
+    }
     fprintf(f, "%s", "{}");
     fclose(f);
     return ESP_OK;
@@ -523,4 +523,3 @@ esp_err_t Battery::getRawVoltage(float& voltage) {
         return NAN;
     }
 }
-

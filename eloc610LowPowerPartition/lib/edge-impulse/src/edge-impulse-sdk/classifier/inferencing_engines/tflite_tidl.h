@@ -45,7 +45,7 @@
 #endif // not defined EI_CLASSIFIER_TFLITE_OUTPUT_DATA_TENSOR
 
 #include "tflite-model/tidl-model.h"
-#include "utils/model_header_utils.h"
+#include "model_header_utils.h"
 
 void *in_ptrs[16] = {NULL};
 void *out_ptrs[16] = {NULL};

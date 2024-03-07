@@ -30,8 +30,8 @@
 #include <FS.h>
 #include "SPIFFS.h"
 
-#include "utils/ffsutils.h"
-#include "utils/jsonutils.hpp"
+#include "ffsutils.h"
+#include "jsonutils.hpp"
 #include "config.h"
 #include "ElocConfig.hpp"
 
@@ -52,7 +52,7 @@ static const micInfo_t C_MicInfo_Default {
     .MicUseAPLL = true,
     .MicUseTimingFix = true,
     .MicChannel =
-#ifdef I2S_DEFAULT_CHANNEL_FORMAT_LEFT 
+#ifdef I2S_DEFAULT_CHANNEL_FORMAT_LEFT
         MicChannel_t::Left
 #else
         MicChannel_t::Right
@@ -143,7 +143,7 @@ const elocConfig_T& getConfig() {
 
 static const elocDeviceInfo_T C_ElocDeviceInfo_Default {
     .fileHeader = "not_set",
-    .locationCode = "unknown", 
+    .locationCode = "unknown",
     .locationAccuracy = 99,
     .nodeName = "ELOC_NONAME",
 };
@@ -160,19 +160,19 @@ extern bool gMountedSDCard;
 
 
 void loadDevideInfo(const JsonObject& device) {
-    gElocDeviceInfo.fileHeader       = device["fileHeader"]       | C_ElocDeviceInfo_Default.fileHeader; 
+    gElocDeviceInfo.fileHeader       = device["fileHeader"]       | C_ElocDeviceInfo_Default.fileHeader;
     gElocDeviceInfo.locationCode     = device["locationCode"]     | C_ElocDeviceInfo_Default.locationCode;
     gElocDeviceInfo.locationAccuracy = device["locationAccuracy"] | C_ElocDeviceInfo_Default.locationAccuracy;
     gElocDeviceInfo.nodeName         = device["nodeName"]         | C_ElocDeviceInfo_Default.nodeName;
 }
 void loadConfig(const JsonObject& config) {
-    gElocConfig.secondsPerFile                = config["secondsPerFile"]              | C_ElocConfig_Default.secondsPerFile;             
-    gElocConfig.listenOnly                    = /* TODO: unusedconfig["listenOnly"] |*/ C_ElocConfig_Default.listenOnly;            
-    gElocConfig.cpuMaxFrequencyMHZ            = config["cpuMaxFrequencyMHZ"]          | C_ElocConfig_Default.cpuMaxFrequencyMHZ;    
-    gElocConfig.cpuMinFrequencyMHZ            = config["cpuMinFrequencyMHZ"]          | C_ElocConfig_Default.cpuMinFrequencyMHZ;    
-    gElocConfig.cpuEnableLightSleep           = config["cpuEnableLightSleep"]         | C_ElocConfig_Default.cpuEnableLightSleep;   
-    gElocConfig.bluetoothEnableAtStart        = config["bluetoothEnableAtStart"]      | C_ElocConfig_Default.bluetoothEnableAtStart;  
-    gElocConfig.bluetoothEnableOnTapping      = config["bluetoothEnableOnTapping"]    | C_ElocConfig_Default.bluetoothEnableOnTapping; 
+    gElocConfig.secondsPerFile                = config["secondsPerFile"]              | C_ElocConfig_Default.secondsPerFile;
+    gElocConfig.listenOnly                    = /* TODO: unusedconfig["listenOnly"] |*/ C_ElocConfig_Default.listenOnly;
+    gElocConfig.cpuMaxFrequencyMHZ            = config["cpuMaxFrequencyMHZ"]          | C_ElocConfig_Default.cpuMaxFrequencyMHZ;
+    gElocConfig.cpuMinFrequencyMHZ            = config["cpuMinFrequencyMHZ"]          | C_ElocConfig_Default.cpuMinFrequencyMHZ;
+    gElocConfig.cpuEnableLightSleep           = config["cpuEnableLightSleep"]         | C_ElocConfig_Default.cpuEnableLightSleep;
+    gElocConfig.bluetoothEnableAtStart        = config["bluetoothEnableAtStart"]      | C_ElocConfig_Default.bluetoothEnableAtStart;
+    gElocConfig.bluetoothEnableOnTapping      = config["bluetoothEnableOnTapping"]    | C_ElocConfig_Default.bluetoothEnableOnTapping;
     gElocConfig.bluetoothEnableDuringRecord   = config["bluetoothEnableDuringRecord"] | C_ElocConfig_Default.bluetoothEnableDuringRecord;
     gElocConfig.bluetoothOffTimeoutSeconds    = config["bluetoothOffTimeoutSeconds"]  | C_ElocConfig_Default.bluetoothOffTimeoutSeconds;
 
@@ -181,7 +181,7 @@ void loadConfig(const JsonObject& config) {
     gElocConfig.logConfig.filename            = config["logConfig"]["filename"]       | C_ElocConfig_Default.logConfig.filename;
     gElocConfig.logConfig.maxFiles            = config["logConfig"]["maxFiles"]       | C_ElocConfig_Default.logConfig.maxFiles;
     gElocConfig.logConfig.maxFileSize         = config["logConfig"]["maxFileSize"]    | C_ElocConfig_Default.logConfig.maxFileSize;
-    
+
     /** Intruder config*/
     gElocConfig.IntruderConfig.detectEnable   = config["intruderCfg"]["enable"]       | C_ElocConfig_Default.IntruderConfig.detectEnable;
     gElocConfig.IntruderConfig.thresholdCnt   = config["intruderCfg"]["threshold"]    | C_ElocConfig_Default.IntruderConfig.thresholdCnt;
@@ -207,15 +207,15 @@ MicChannel_t ParseMicChannel(const char* str, MicChannel_t default_value) {
 }
 
 void loadMicInfo(const JsonObject& micInfo) {
-    gMicInfo.MicType         = micInfo["MicType"]         | C_MicInfo_Default.MicType; 
-    gMicInfo.MicBitShift     = micInfo["MicBitShift"]     | C_MicInfo_Default.MicBitShift;             
-    gMicInfo.MicSampleRate   = micInfo["MicSampleRate"]   | C_MicInfo_Default.MicSampleRate;   
-    gMicInfo.MicUseAPLL      = micInfo["MicUseAPLL"]      | C_MicInfo_Default.MicUseAPLL;             
+    gMicInfo.MicType         = micInfo["MicType"]         | C_MicInfo_Default.MicType;
+    gMicInfo.MicBitShift     = micInfo["MicBitShift"]     | C_MicInfo_Default.MicBitShift;
+    gMicInfo.MicSampleRate   = micInfo["MicSampleRate"]   | C_MicInfo_Default.MicSampleRate;
+    gMicInfo.MicUseAPLL      = micInfo["MicUseAPLL"]      | C_MicInfo_Default.MicUseAPLL;
     gMicInfo.MicUseTimingFix = micInfo["MicUseTimingFix"] | C_MicInfo_Default.MicUseTimingFix;
     gMicInfo.MicChannel = ParseMicChannel(micInfo["MicChannel"], C_MicInfo_Default.MicChannel);
 
     upateI2sConfig();
-}     
+}
 
 bool readConfigFile(const char* filename) {
 
@@ -237,20 +237,20 @@ bool readConfigFile(const char* filename) {
             return false;
         }
         fread(input, fsize, 1, f);
-            
+
         ESP_LOGI(TAG, "Read this Configuration:");
         printf(input);
 
         StaticJsonDocument<JSON_DOC_SIZE> doc;
 
         DeserializationError error = deserializeJson(doc, input, fsize);
-        
+
         if (error) {
             ESP_LOGE(TAG, "Parsing %s failed with %s!", filename, error.c_str());
         }
         JsonObject device = doc["device"];
         loadDevideInfo(device);
-        
+
         JsonObject config = doc["config"];
         loadConfig(config);
 
@@ -285,7 +285,7 @@ void readConfig() {
     printf(cfg.c_str());
 
     upateI2sConfig();
-    
+
 }
 
 void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
@@ -323,7 +323,7 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     config["battery"]["avgIntervalMs"]    = ElocConfig.batteryConfig.avgIntervalMs;
     config["battery"]["noBatteryMode"]    = ElocConfig.batteryConfig.noBatteryMode;
 
-    
+
     JsonObject micInfo = doc.createNestedObject("mic");
     micInfo["MicType"]                     = MicInfo.MicType.c_str();
     micInfo["MicBitShift"]                 = MicInfo.MicBitShift;
@@ -351,8 +351,8 @@ bool writeConfigFile(const char* filename) {
         ESP_LOGE(TAG, "Failed to open config file %s!", filename);
         return false;
         // return;
-    } 
-    
+    }
+
     String buffer;
     printConfig(buffer);
     fprintf(f, "%s", buffer.c_str());
@@ -396,7 +396,7 @@ esp_err_t updateConfig(const char* buf) {
 
     JsonObject device = doc["device"];
     loadDevideInfo(device);
-    
+
     JsonObject config = doc["config"];
     loadConfig(config);
 

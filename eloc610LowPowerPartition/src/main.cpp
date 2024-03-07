@@ -40,14 +40,14 @@
 
 #include "version.h"
 
-#include "utils/ffsutils.h"
+#include "ffsutils.h"
 #include "lis3dh.h"
 #include "Battery.hpp"
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
 #include "ElocStatus.hpp"
-#include "utils/logging.hpp"
-#include "Commands/BluetoothServer.hpp"
+#include "logging.hpp"
+#include "BluetoothServer.hpp"
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
 

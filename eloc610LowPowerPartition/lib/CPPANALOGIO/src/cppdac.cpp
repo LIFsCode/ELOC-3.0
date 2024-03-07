@@ -1,4 +1,4 @@
-#include "CPPANALOG/analogio.h"
+#include "analogio.h"
 
 namespace CPPANALOG
 {

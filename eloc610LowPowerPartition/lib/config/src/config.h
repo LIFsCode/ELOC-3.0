@@ -7,7 +7,7 @@
 #include <driver/i2s.h>
 #include <driver/adc.h>
 #include "lis3dh_types.h"
-#include "project_config.h"
+#include "../../../include/project_config.h"
 
 #ifdef USE_SDIO_VERSION
 

@@ -37,10 +37,10 @@
 #include "ElocStatus.hpp"
 #include "Battery.hpp"
 #include "config.h"
-#include "utils/macros.hpp"
-#include "utils/logging.hpp"
-#include "utils/ffsutils.h"
-#include "utils/ScopeGuard.hpp"
+#include "macros.hpp"
+#include "logging.hpp"
+#include "ffsutils.h"
+#include "ScopeGuard.hpp"
 
 
 

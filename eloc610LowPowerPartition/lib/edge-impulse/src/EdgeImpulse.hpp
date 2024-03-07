@@ -16,11 +16,11 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "ei_inference.h"  // inference_t
-#include "project_config.h"
+#include "../../../include/ei_inference.h"  // inference_t
+#include "../../../include/project_config.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "../lib/edge-impulse/src/model-parameters/model_metadata.h"
+#include "model-parameters/model_metadata.h"
 
 extern TaskHandle_t ei_TaskHandler;
 

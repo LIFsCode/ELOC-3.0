@@ -30,7 +30,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-#include "CPPANALOG/analogio.h"
+#include "analogio.h"
 #include "ElocSystem.hpp"
 #include "esp_err.h"
 
@@ -67,10 +67,10 @@ private:
     const uint32_t UPDATE_INTERVAL_MS;
     const uint32_t avgIntervalMs;
     static const char* CAL_FILE;
-    
+
     void updateOutdatedVoltage();
     esp_err_t readRawVoltage(float& voltage);
-    virtual esp_err_t setChargingEnable(bool enable); 
+    virtual esp_err_t setChargingEnable(bool enable);
     const bat_limits_t& getLimits() const;
     const std::vector<socLUT_t>&  getSocLUT() const;
     Battery();
@@ -95,7 +95,7 @@ public:
 
     void updateVoltage(bool forceUpdate = false);
 
-    virtual esp_err_t setDefaultChargeEn(bool enable); 
+    virtual esp_err_t setDefaultChargeEn(bool enable);
 
     bool isCalibrationDone() const;
     esp_err_t clearCal();

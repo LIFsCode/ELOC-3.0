@@ -22,13 +22,8 @@
  */
 #include <Arduino.h>
 #include <unity.h>
-#include <ESP32Time.h>
+#include <uart_eloc.h>
 
-#define TEST_OUTPUT GPIO_NUM_33
-
-#ifndef BUILDDATE
-#define BUILDDATE  __DATE__ " " __TIME__""
-#endif
 
 extern "C" {
 void app_main(void);
@@ -41,52 +36,40 @@ void tearDown(void) {
 }
 
 void test_init() {
-  ESP32Time timeObject;
-  struct tm tm;
-  strptime(BUILDDATE, "%b %d %Y %H:%M:%S %Y", &tm);
-  time_t timeSinceEpoch = mktime(&tm);
-  timeObject.setTime(timeSinceEpoch);
-  TEST_ASSERT_NOT_EQUAL(0, timeObject.getEpoch());
+  uart_eloc::UART_ELOC uart0;
+  TEST_ASSERT_EQUAL(ESP_OK, uart0.init(UART_NUM_0));
+
+  uart_eloc::UART_ELOC uart1;
+  TEST_ASSERT_EQUAL(ESP_OK, uart1.init(UART_NUM_1));
 }
 
-void test_accuracy_freertos() {
-  gpio_set_direction(TEST_OUTPUT, GPIO_MODE_OUTPUT);
-  bool TEST_LEVEL = 0;
-
-  // 0.50002 Hz
-  for (auto i = 0; i < 500; i++) {
-    TEST_LEVEL = !TEST_LEVEL;
-    gpio_set_level(TEST_OUTPUT, TEST_LEVEL);
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
-  }
+void test_write() {
+  uart_eloc::UART_ELOC uart0;
+  TEST_ASSERT_EQUAL(ESP_OK, uart0.init(UART_NUM_0));
+  TEST_ASSERT_EQUAL(sizeof("Hello World\n"), uart0.write_data("Hello World\n", sizeof("Hello World\n")));
 }
 
-void test_accuracy_esp32time() {
-  bool TEST_LEVEL = 0;
+void test_read() {
+  uart_eloc::UART_ELOC uart0;
+  TEST_ASSERT_EQUAL(ESP_OK, uart0.init(UART_NUM_0));
+  TEST_ASSERT_EQUAL(ESP_OK, uart0.read_input());
+}
 
-  ESP32Time timeObject;
-  struct tm tm;
-  strptime(BUILDDATE, "%b %d %Y %H:%M:%S %Y", &tm);
-  time_t timeSinceEpoch = mktime(&tm);
-  timeObject.setTime(timeSinceEpoch);
-  auto millis = timeObject.getSystemTimeMS();
-  TEST_ASSERT_NOT_EQUAL(0, timeObject.getSystemTimeMS());
-
-  // 0.50176Hz
-  for (auto i = 0; i < 500; i++) {
-    TEST_LEVEL = !TEST_LEVEL;
-    gpio_set_level(TEST_OUTPUT, TEST_LEVEL);
-    while (millis + 1000 > timeObject.getSystemTimeMS()) {
-    }
-    millis = timeObject.getSystemTimeMS();
-  }
+void test_thread() {
+  uart_eloc::UART_ELOC uart0;
+  TEST_ASSERT_EQUAL(ESP_OK, uart0.init(UART_NUM_0));
+  TEST_ASSERT_EQUAL(ESP_OK, uart0.start_thread());
+  TEST_ASSERT_EQUAL(ESP_OK, uart0.stop_thread());
 }
 
 int runUnityTests(void) {
   UNITY_BEGIN();
+
   RUN_TEST(test_init);
-  // RUN_TEST(test_accuracy_freertos);
-  // RUN_TEST(test_accuracy_esp32time);
+  RUN_TEST(test_write);
+  RUN_TEST(test_read);
+  // RUN_TEST(test_thread);
+
   return UNITY_END();
 }
 

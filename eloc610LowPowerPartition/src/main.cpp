@@ -51,6 +51,10 @@
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
 
+#ifdef ENABLE_TEST_UART
+    #include "uart_eloc.h"
+#endif
+
 static const char *TAG = "main";
 
 #ifdef EDGE_IMPULSE_ENABLED
@@ -737,6 +741,13 @@ void app_main(void) {
     if (esp_err_t err = PerfMonitor::setup()) {
         ESP_LOGI(TAG, "Performance Monitor failed with %s", esp_err_to_name(err));
     }
+#endif
+
+#ifdef ENABLE_TEST_UART
+    ESP_LOGI(TAG, "Creating UART task...");
+    uart_eloc::UART_ELOC uart_test;
+    uart_test.init(UART_NUM_0);
+    uart_test.start_thread();
 #endif
 
 #ifdef EDGE_IMPULSE_ENABLED

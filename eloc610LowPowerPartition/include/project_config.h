@@ -234,6 +234,7 @@
  * For test purposes only
 */
 
-#define ENABLE_TEST_UART
+// #define ENABLE_TEST_UART
+// #define ENABLE_UART_WAKE_FROM_SLEEP
 
 #endif  // _PROJECT_CONFIG_H_

@@ -103,6 +103,7 @@ void writeSettings(String settings);
 void doDeepSleep();
 void setTime(long epoch, int ms);
 
+
 // idf-wav-sdcard/lib/sd_card/src/SDCard.cpp   m_host.max_freq_khz = 18000;
 // https://github.com/atomic14/esp32_sdcard_audio/commit/000691f9fca074c69e5bb4fdf39635ccc5f993d4#diff-6410806aa37281ef7c073550a4065903dafce607a78dc0d4cbc72cf50bac3439
 
@@ -195,14 +196,6 @@ void printMemory()
     // heap_caps_dump_all();
     ESP_LOGI(TAG, "\n\n\n\n");
 }
-
-#ifdef EDGE_IMPULSE_ENABLED
-
-
-    String ei_results_filename;
-
-#endif
-
 
 /**
  * @brief Receive button presses & set sound recording state
@@ -378,107 +371,6 @@ void start_sound_recording() {
     elocProcessing.getWavWriter().start_wav_write_task(getConfig().secondsPerFile);
 }
 
-#ifdef EDGE_IMPULSE_ENABLED
-
-bool inference_result_file_SD_available = false;
-auto save_ai_results_to_sd = true;
-auto print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
-
-/**
- * @brief Create file to save inference results
- * @attention This function presumes SD card check has already been done
- * @note If the file doesn't exits it will be created with the following details:
- *          EI Project ID, 186372
- *          EI Project owner, EDsteve
- *          EI Project name, trumpet
- *          EI Project deploy version, 2
- * @return 0 on success, -1 on fail
- */
-int create_inference_result_file_SD() {
-    if (session_folder_created == false) {
-        session_folder_created = createSessionFolder();
-    }
-
-    ei_results_filename = "/sdcard/eloc/";
-    ei_results_filename += gSessionIdentifier;
-    ei_results_filename += "/EI-results-ID-";
-    ei_results_filename += EI_CLASSIFIER_PROJECT_ID;
-    ei_results_filename += "-DEPLOY-VER-";
-    ei_results_filename += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
-    ei_results_filename += ".csv";
-
-    if (1) {
-        ESP_LOGI(TAG, "EI results filename: %s", ei_results_filename.c_str());
-    }
-
-    FILE *fp_result = fopen(ei_results_filename.c_str(), "wb");
-    if (!fp_result) {
-        ESP_LOGE(TAG, "Failed to open file for writing");
-        return -1;
-    }
-
-    String file_string;
-
-    // Possible other details to include in file
-    if (0) {
-        file_string += "EI Project ID, ";
-        file_string += EI_CLASSIFIER_PROJECT_ID;
-        file_string += "\nEI Project owner, ";
-        file_string += EI_CLASSIFIER_PROJECT_OWNER;
-        file_string += "\nEI Project name, ";
-        file_string += EI_CLASSIFIER_PROJECT_NAME;
-        file_string += "\nEI Project deploy version, ";
-        file_string += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
-    }
-
-    // Column headers
-    file_string += "\n\nHour:Min:Sec Day, Month Date Year";
-
-    for (auto i = 0; i < EI_CLASSIFIER_NN_OUTPUT_COUNT; i++) {
-        file_string += " ,";
-        file_string += elocProcessing.getEdgeImpulse().get_ei_classifier_inferencing_categories(i);
-    }
-
-    file_string += "\n";
-
-    fputs(file_string.c_str(), fp_result);
-    fclose(fp_result);
-
-    inference_result_file_SD_available = true;
-
-    return 0;
-}
-
-/**
- * @brief This function accepts a string, prepends date & time & appends to a csv file
- * @param file_string string in csv format, e.g. 0.94, 0.06
- * @attention This function presumes SD card check has already been done
- * @return 0 on success, -1 on fail
- */
-int save_inference_result_SD(String results_string) {
-    if (inference_result_file_SD_available == false) {
-        if (create_inference_result_file_SD() != 0)
-            return -1;
-    }
-
-    FILE *fp_result = fopen(ei_results_filename.c_str(), FILE_APPEND);
-
-    if (!fp_result) {
-        ESP_LOGE(TAG, "Failed to open file for writing");
-        return -1;
-    }
-
-    String file_string = timeObject.getTimeDate(false) + " " + results_string;
-
-    fputs(file_string.c_str(), fp_result);
-    fclose(fp_result);
-
-    return 0;
-}
-void ei_callback_func();
-
-#endif
-
 void app_main(void) {
     ESP_LOGI(TAG, "\nSETUP--start\n");
     initArduino();
@@ -635,7 +527,7 @@ void app_main(void) {
     ESP_LOGI(TAG, "Edge impulse model version: %s", s.c_str());
     elocProcessing.getEdgeImpulse().output_inferencing_settings();
 
-    test_inference();
+    elocProcessing.getEdgeImpulse().test_inference();
 
     #ifdef AI_CONTINUOUS_INFERENCE
         elocProcessing.getEdgeImpulse().buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
@@ -671,11 +563,14 @@ void app_main(void) {
             ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
             delay(5);
         }
+        #ifdef EDGE_IMPULSE_ENABLED
+            elocProcessing.getEdgeImpulse().setSaveResultsToSD(true);
+        #endif
     } else {
         ESP_LOGE(TAG, "SD card not mounted, cannot create WAVFileWriter");
             elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::disabled);  // Default is disabled anyway
         #ifdef EDGE_IMPULSE_ENABLED
-            save_ai_results_to_sd = false;
+            elocProcessing.getEdgeImpulse().setSaveResultsToSD(false);
         #endif
     }
 
@@ -767,7 +662,7 @@ void app_main(void) {
                 elocProcessing.getEdgeImpulse().set_status(EdgeImpulse::Status::not_running);
             } else if (ai_run_enable == true && (elocProcessing.getEdgeImpulse().get_status() == EdgeImpulse::Status::not_running)) {
                 ESP_LOGI(TAG, "Starting EI thread");
-                if (elocProcessing.getEdgeImpulse().start_ei_thread(ei_callback_func) != ESP_OK) {
+                if (elocProcessing.getEdgeImpulse().start_ei_thread() != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to start EI thread");
                     // Should this be retried?
                     delay(500);

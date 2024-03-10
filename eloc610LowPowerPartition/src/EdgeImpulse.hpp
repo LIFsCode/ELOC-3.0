@@ -72,6 +72,10 @@ class EdgeImpulse {
      */
     uint32_t detectedEvents = 0;
 
+    bool inference_result_file_SD_available = false;
+    bool save_ai_results_to_sd = true;
+    int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
+    String ei_results_filename;
  public:
     /**
      * @brief Construct a new Edge Impulse object
@@ -198,10 +202,9 @@ class EdgeImpulse {
 
     /**
      * @brief Start a continuous inferencing task
-     * @param callback callback function to call once a data buffer is ready
      * @return ESP_OK on success
      */
-    esp_err_t start_ei_thread(std::function<void()> callback);
+    esp_err_t start_ei_thread();
 
     /**
      * @brief Get a pointer to the Task Handle object of the created task
@@ -256,9 +259,45 @@ class EdgeImpulse {
      * @return const char* 
      */
     const char* get_ei_classifier_inferencing_categories(int i) const;
+
+    /**
+     * @brief This callback allows a thread created in EdgeImpulse to
+     *        run the inference. Required due to namespace issues, static implementations etc..
+     */
+    void ei_callback_func();
+
+    void test_inference();
+
+    /**
+     * @brief Create file to save inference results
+     * @attention This function presumes SD card check has already been done
+     * @note If the file doesn't exits it will be created with the following details:
+     *          EI Project ID, 186372
+     *          EI Project owner, EDsteve
+     *          EI Project name, trumpet
+     *          EI Project deploy version, 2
+     * @return 0 on success, -1 on fail
+     */
+    int create_inference_result_file_SD();
+
+    /**
+     * @brief This function accepts a string, prepends date & time & appends to a csv file
+     * @param file_string string in csv format, e.g. 0.94, 0.06
+     * @attention This function presumes SD card check has already been done
+     * @return 0 on success, -1 on fail
+     */
+    int save_inference_result_SD(String results_string);
+
+    void setSaveResultsToSD(bool enable);
 };
 
-void ei_callback_func();
-void test_inference();
+
+namespace EdgeImpulse_Interface {
+
+    //BUGME: this is to only to compensate for the edge impulse interface which requires a non class method
+    //       
+    void setUsedEdgeImpulseInstance(EdgeImpulse& instance);
+}
+
 
 #endif  //  ELOC610LOWPOWERPARTITION_SRC_EDGEIMPULSE_HPP_

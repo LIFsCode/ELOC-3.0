@@ -46,6 +46,8 @@ ElocProcessFactory::ElocProcessFactory():
     assert(mReq_evt_queue != nullptr);
     xQueueReset(mReq_evt_queue);
 
+    EdgeImpulse_Interface::setUsedEdgeImpulseInstance(mEdgeImpulse);
+
 }
 
 ElocProcessFactory::~ElocProcessFactory()

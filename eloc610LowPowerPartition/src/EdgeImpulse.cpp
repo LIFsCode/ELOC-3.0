@@ -8,9 +8,29 @@
 #include "project_config.h"
 #include "EdgeImpulse.hpp"
 #include "trumpet_trimmed_inferencing.h"
+#include "edge-impulse-sdk/dsp/numpy_types.h"
+#include "test_samples.h"
 #include "ElocProcessFactory.hpp"
 
 static const char *TAG = "EdgeImpulse";
+
+
+namespace EdgeImpulse_Interface {
+
+    //TODO make usedEdgeImpulseInstance const
+    static EdgeImpulse* usedEdgeImpulseInstance = nullptr; 
+
+    void setUsedEdgeImpulseInstance(EdgeImpulse& instance){
+        usedEdgeImpulseInstance = &instance;
+    }
+
+    // BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers
+    //       but all EdgeImpulse stuff got encapsulated within a class, which does not match
+    static int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
+        return usedEdgeImpulseInstance->microphone_audio_signal_get_data(offset, length, out_ptr);
+    }
+}
+
 
 EdgeImpulse::EdgeImpulse(int i2s_sample_rate) {
     ESP_LOGV(TAG, "Func: %s", __func__);
@@ -177,7 +197,8 @@ void EdgeImpulse::ei_thread() {
                           portMAX_DELAY /* xTicksToWait*/) == pdTRUE) {
       if (inference.buf_ready == 1) {
         // Run classifier from main.cpp
-        callback();
+        //callback();
+        ei_callback_func();
 
         // Update times
         auto change_SystemTimeSecs = time_utils::getSystemTimeSecs() - last_SystemTimeSecs;
@@ -200,14 +221,14 @@ void EdgeImpulse::start_ei_thread_wrapper(void *_this) {
   reinterpret_cast<EdgeImpulse *>(_this)->ei_thread();
 }
 
-esp_err_t EdgeImpulse::start_ei_thread(std::function<void()> _callback) {
+esp_err_t EdgeImpulse::start_ei_thread() {
   ESP_LOGV(TAG, "Func: %s", __func__);
 
   status = Status::running;
   inference.status_running = true;
   detectingTime_secs = 0;
 
-  this->callback = _callback;
+  //this->callback = _callback;
 
   int ret = xTaskCreatePinnedToCore(this->start_ei_thread_wrapper, "ei_thread", 1024 * 4, this, TASK_PRIO_AI, &mTaskHandle, TASK_AI_CORE);
 
@@ -245,30 +266,17 @@ esp_err_t checkSDCard();
 int save_inference_result_SD(String results_string);
 void start_sound_recording();
 
-#ifdef EDGE_IMPULSE_ENABLED
-
-    #include "edge-impulse-sdk/dsp/numpy_types.h"
-    #include "test_samples.h"
-
-    // BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers
-    //       but all EdgeImpulse stuff got encapsulated within a class, which does not match
-    int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
-       return elocProcessing.getEdgeImpulse().microphone_audio_signal_get_data(offset, length, out_ptr);
-    }
-
-#endif
-
 /**
  * @brief This callback allows a thread created in EdgeImpulse to
  *        run the inference. Required due to namespace issues, static implementations etc..
  */
-void ei_callback_func() {
+void EdgeImpulse::ei_callback_func() {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
     if (ai_run_enable == true &&
-        elocProcessing.getEdgeImpulse().get_status() == EdgeImpulse::Status::running) {
+        this->get_status() == EdgeImpulse::Status::running) {
         ESP_LOGV(TAG, "Running inference");
-        bool m = elocProcessing.getEdgeImpulse().microphone_inference_record();
+        bool m = this->microphone_inference_record();
         // Blocking function - unblocks when buffer is full
         if (!m) {
             ESP_LOGE(TAG, "ERR: Failed to record audio...");
@@ -286,13 +294,13 @@ void ei_callback_func() {
             signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
         #endif  // AI_CONTINUOUS_INFERENCE
 
-        signal.get_data = &microphone_audio_signal_get_data;
+        signal.get_data = &EdgeImpulse_Interface::microphone_audio_signal_get_data;
         ei_impulse_result_t result = {0};
 
         #ifdef AI_CONTINUOUS_INFERENCE
-            EI_IMPULSE_ERROR r = elocProcessing.getEdgeImpulse().run_classifier_continuous(&signal, &result);
+            EI_IMPULSE_ERROR r = this->run_classifier_continuous(&signal, &result);
         #else
-            EI_IMPULSE_ERROR r = elocProcessing.getEdgeImpulse().run_classifier(&signal, &result);
+            EI_IMPULSE_ERROR r = this->run_classifier(&signal, &result);
         #endif  // AI_CONTINUOUS_INFERENCE
 
         ESP_LOGI(TAG, "Cycles taken to run inference = %d", (cpu_hal_get_cycle_count() - startCounter));
@@ -326,7 +334,7 @@ void ei_callback_func() {
 
                     if ((strcmp(result.classification[ix].label, "background") != 0) &&
                         result.classification[ix].value > AI_RESULT_THRESHOLD) {
-                        elocProcessing.getEdgeImpulse().increment_detectedEvents();
+                        this->increment_detectedEvents();
                         target_sound_detected = true;
                         // Start recording??
                         if (elocProcessing.getWavWriter().wav_recording_in_progress == false &&
@@ -337,7 +345,7 @@ void ei_callback_func() {
                     }
                 }
 
-                // ESP_LOGI(TAG, "detectedEvents = %d", elocProcessing.getEdgeImpulse().get_detectedEvents());
+                // ESP_LOGI(TAG, "detectedEvents = %d", this->get_detectedEvents());
 
                 file_str += "\n";
                 // Only save results & wav file if classification value exceeds a threshold
@@ -360,9 +368,9 @@ void ei_callback_func() {
     ESP_LOGV(TAG, "Inference complete");
 }
 
-void test_inference() {
+void EdgeImpulse::test_inference() {
 
-    elocProcessing.getEdgeImpulse().buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+    this->buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
 
     if (1) {
         // Run stored audio samples through the model to test it
@@ -378,7 +386,7 @@ void test_inference() {
 
         ei::signal_t signal;
         signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
-        signal.get_data = &microphone_audio_signal_get_data;
+        signal.get_data = EdgeImpulse_Interface::microphone_audio_signal_get_data;
         ei_impulse_result_t result = {0};
 
         // Artificially fill buffer with test data
@@ -391,7 +399,7 @@ void test_inference() {
             for (auto test_sample_count = 0, inference_buffer_count = 0; (test_sample_count < TEST_SAMPLE_LENGTH) &&
                     (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT); test_sample_count++) {
                 if (skip_current >= ei_skip_rate) {
-                    elocProcessing.getEdgeImpulse().inference.buffers[0][inference_buffer_count++] = test_array[i][test_sample_count];
+                    this->inference.buffers[0][inference_buffer_count++] = test_array[i][test_sample_count];
                     skip_current = 1;
                 } else {
                     skip_current++;
@@ -400,11 +408,11 @@ void test_inference() {
 
             // Mark buffer as ready
             // Mark active buffer as inference.buffers[1], inference run on inactive buffer
-            elocProcessing.getEdgeImpulse().inference.buf_select = 1;
-            elocProcessing.getEdgeImpulse().inference.buf_count = 0;
-            elocProcessing.getEdgeImpulse().inference.buf_ready = 1;
+            this->inference.buf_select = 1;
+            this->inference.buf_count = 0;
+            this->inference.buf_ready = 1;
 
-            EI_IMPULSE_ERROR r = elocProcessing.getEdgeImpulse().run_classifier(&signal, &result);
+            EI_IMPULSE_ERROR r = this->run_classifier(&signal, &result);
             if (r != EI_IMPULSE_OK) {
                 ESP_LOGW(TAG, "ERR: Failed to run classifier (%d)", r);
                 return;
@@ -427,6 +435,92 @@ void test_inference() {
         }
     }
     // Free buffers as the buffer size for continuous & non-continuous differs
-    elocProcessing.getEdgeImpulse().free_buffers();
+    this->free_buffers();
+}
+
+//TODO: remove this and set session folder in save_inference_result_SD()
+extern bool session_folder_created;
+bool createSessionFolder();
+
+int EdgeImpulse::create_inference_result_file_SD() {
+    if (session_folder_created == false) {
+        session_folder_created = createSessionFolder();
+    }
+
+    ei_results_filename = "/sdcard/eloc/";
+    ei_results_filename += gSessionIdentifier;
+    ei_results_filename += "/EI-results-ID-";
+    ei_results_filename += EI_CLASSIFIER_PROJECT_ID;
+    ei_results_filename += "-DEPLOY-VER-";
+    ei_results_filename += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
+    ei_results_filename += ".csv";
+
+    if (1) {
+        ESP_LOGI(TAG, "EI results filename: %s", ei_results_filename.c_str());
+    }
+
+    FILE *fp_result = fopen(ei_results_filename.c_str(), "wb");
+    if (!fp_result) {
+        ESP_LOGE(TAG, "Failed to open file for writing");
+        return -1;
+    }
+
+    String file_string;
+
+    // Possible other details to include in file
+    if (0) {
+        file_string += "EI Project ID, ";
+        file_string += EI_CLASSIFIER_PROJECT_ID;
+        file_string += "\nEI Project owner, ";
+        file_string += EI_CLASSIFIER_PROJECT_OWNER;
+        file_string += "\nEI Project name, ";
+        file_string += EI_CLASSIFIER_PROJECT_NAME;
+        file_string += "\nEI Project deploy version, ";
+        file_string += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
+    }
+
+    // Column headers
+    file_string += "\n\nHour:Min:Sec Day, Month Date Year";
+
+    for (auto i = 0; i < EI_CLASSIFIER_NN_OUTPUT_COUNT; i++) {
+        file_string += " ,";
+        file_string += this->get_ei_classifier_inferencing_categories(i);
+    }
+
+    file_string += "\n";
+
+    fputs(file_string.c_str(), fp_result);
+    fclose(fp_result);
+
+    inference_result_file_SD_available = true;
+
+    return 0;
+}
+
+int EdgeImpulse::save_inference_result_SD(String results_string) {
+    if (inference_result_file_SD_available == false) {
+        if (create_inference_result_file_SD() != 0)
+            return -1;
+    }
+
+    FILE *fp_result = fopen(ei_results_filename.c_str(), "a");
+
+    if (!fp_result) {
+        ESP_LOGE(TAG, "Failed to open file for writing");
+        return -1;
+    }
+
+    String file_string = timeObject.getTimeDate(false) + " " + results_string;
+
+    fputs(file_string.c_str(), fp_result);
+    fclose(fp_result);
+
+    return 0;
+}
+
+//TODO: set session folder here to make checks within create_inference_result_file_SD() obsolete
+void EdgeImpulse::setSaveResultsToSD(bool enable) {
+    save_ai_results_to_sd = enable;
+
 }
 

@@ -81,15 +81,33 @@ void tearDown(void) {}
 void test_init() {
   I2SMEMSSampler input;
   input.init(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, I2S_DEFAULT_BIT_SHIFT, false, true);
-  input.install_and_start();
+  TEST_ASSERT_EQUAL(ESP_OK, input.install_and_start());
   delay(100);
-  input.uninstall();
+  TEST_ASSERT_EQUAL(ESP_OK, input.uninstall());
   delay(100);
+}
+
+void test_sample_rates()
+{
+    I2SMEMSSampler input;
+
+    for (uint32_t i = 1000; i < 34000; i = i + 2000) {
+        i2s_mic_Config.sample_rate = i;
+        i2s_mic_Config.use_apll = true;
+        input.init(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, I2S_DEFAULT_BIT_SHIFT, false, true);
+        TEST_ASSERT_EQUAL(ESP_OK, input.install_and_start());
+        delay(100);
+        TEST_ASSERT_EQUAL(ESP_OK, input.uninstall());
+        delay(100);
+    }
+
+    delay(100);
 }
 
 int runUnityTests(void) {
   UNITY_BEGIN();
   RUN_TEST(test_init);
+  RUN_TEST(test_sample_rates);
   return UNITY_END();
 }
 

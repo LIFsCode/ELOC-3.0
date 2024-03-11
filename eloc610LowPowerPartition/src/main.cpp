@@ -179,6 +179,8 @@ void testInput()
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
+    // TODO: This is now in unit tests (test_target_audio_input). Should it be removed?
+
     for (uint32_t i = 1000; i < 34000; i = i + 2000) {
         i2s_mic_Config.sample_rate = i;
         i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL;

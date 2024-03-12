@@ -12,6 +12,7 @@
 #define EIDSP_QUANTIZE_FILTERBANK 0
 #define I2S_DATA_SCALING_FACTOR 1
 
+#include <WString.h>
 #include <functional>  // std::function
 #include "esp_err.h"
 #include "esp_log.h"

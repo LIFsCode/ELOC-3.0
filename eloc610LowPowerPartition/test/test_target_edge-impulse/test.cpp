@@ -83,7 +83,7 @@ void test_get_aiModel() {
 }
 
 void test_buffer_setup() {
-  edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+  TEST_ASSERT_TRUE(edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT));
 }
 
 void test_inference() {

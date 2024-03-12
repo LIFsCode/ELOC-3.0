@@ -117,7 +117,7 @@ WAVFileWriter wav_writer;
 QueueHandle_t rec_req_evt_queue = nullptr;  // wav recording queue
 QueueHandle_t rec_ai_evt_queue = nullptr;   // AI inference queue
 TaskHandle_t i2s_TaskHandler = nullptr;     // Task handler from I2S to wav writer
-TaskHandle_t ei_TaskHandler = nullptr;      // Task handler from I2S to AI inference
+TaskHandle_t ei_TaskHandler = nullptr;      // Task handler from I2S to AI inference TODO: Move to EdgeImpulse.cpp ??
 
 void writeSettings(String settings);
 void doDeepSleep();
@@ -760,6 +760,8 @@ void app_main(void) {
     edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
 
     if (1) {
+        // TODO: This test now moved to unit test (test_target_edge-impulse) - could remove
+
         // Run stored audio samples through the model to test it
         // Use non-continuous process for this
         ESP_LOGI(TAG, "Testing model against pre-recorded sample data...");

@@ -523,11 +523,7 @@ void app_main(void) {
 
 #ifdef EDGE_IMPULSE_ENABLED
 
-    auto s = elocProcessing.getEdgeImpulse().get_aiModel();
-    ESP_LOGI(TAG, "Edge impulse model version: %s", s.c_str());
-    elocProcessing.getEdgeImpulse().output_inferencing_settings();
-
-    elocProcessing.getEdgeImpulse().test_inference();
+    elocProcessing.testEdgeImpulse();
 
     #ifdef AI_CONTINUOUS_INFERENCE
         elocProcessing.getEdgeImpulse().buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
@@ -662,7 +658,7 @@ void app_main(void) {
                 elocProcessing.getEdgeImpulse().set_status(EdgeImpulse::Status::not_running);
             } else if (ai_run_enable == true && (elocProcessing.getEdgeImpulse().get_status() == EdgeImpulse::Status::not_running)) {
                 ESP_LOGI(TAG, "Starting EI thread");
-                if (elocProcessing.getEdgeImpulse().start_ei_thread() != ESP_OK) {
+                if (elocProcessing.getEdgeImpulse().start_ei_thread(&microphone_audio_signal_get_data<&elocProcessing>) != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to start EI thread");
                     // Should this be retried?
                     delay(500);

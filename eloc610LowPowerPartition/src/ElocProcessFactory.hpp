@@ -75,6 +75,8 @@ public:
 
     void testInput();
 
+    void testEdgeImpulse();
+
     RecState getState() const {
         return mCurrentState;
     }
@@ -88,5 +90,13 @@ public:
 
 extern ElocProcessFactory elocProcessing;
 
+//TODO: move this to .cpp file this should not be used outside of ElocProcessFactory
+
+// BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers
+//       but all EdgeImpulse stuff got encapsulated within a class, which does not match
+template <ElocProcessFactory* INST>
+int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
+    return INST->getEdgeImpulse().microphone_audio_signal_get_data(offset, length, out_ptr);
+}
 
 #endif // ELOCPROCESSFACTORY_HPP_

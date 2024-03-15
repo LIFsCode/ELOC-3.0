@@ -14,24 +14,6 @@
 
 static const char *TAG = "EdgeImpulse";
 
-
-namespace EdgeImpulse_Interface {
-
-    //TODO make usedEdgeImpulseInstance const
-    static EdgeImpulse* usedEdgeImpulseInstance = nullptr; 
-
-    void setUsedEdgeImpulseInstance(EdgeImpulse& instance){
-        usedEdgeImpulseInstance = &instance;
-    }
-
-    // BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers
-    //       but all EdgeImpulse stuff got encapsulated within a class, which does not match
-    static int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
-        return usedEdgeImpulseInstance->microphone_audio_signal_get_data(offset, length, out_ptr);
-    }
-}
-
-
 EdgeImpulse::EdgeImpulse(int i2s_sample_rate) {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
@@ -221,12 +203,20 @@ void EdgeImpulse::start_ei_thread_wrapper(void *_this) {
   reinterpret_cast<EdgeImpulse *>(_this)->ei_thread();
 }
 
-esp_err_t EdgeImpulse::start_ei_thread() {
+esp_err_t EdgeImpulse::start_ei_thread(read_func_t read_func) {
   ESP_LOGV(TAG, "Func: %s", __func__);
 
   status = Status::running;
   inference.status_running = true;
   detectingTime_secs = 0;
+
+  #ifdef AI_CONTINUOUS_INFERENCE
+    mSignal.total_length = EI_CLASSIFIER_SLICE_SIZE;
+  #else
+    mSignal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
+  #endif  // AI_CONTINUOUS_INFERENCE
+
+  mSignal.get_data = read_func;
 
   //this->callback = _callback;
 
@@ -286,21 +276,13 @@ void EdgeImpulse::ei_callback_func() {
 
         auto startCounter = cpu_hal_get_cycle_count();
 
-        ei::signal_t signal;
 
-        #ifdef AI_CONTINUOUS_INFERENCE
-            signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
-        #else
-            signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
-        #endif  // AI_CONTINUOUS_INFERENCE
-
-        signal.get_data = &EdgeImpulse_Interface::microphone_audio_signal_get_data;
         ei_impulse_result_t result = {0};
 
         #ifdef AI_CONTINUOUS_INFERENCE
-            EI_IMPULSE_ERROR r = this->run_classifier_continuous(&signal, &result);
+            EI_IMPULSE_ERROR r = this->run_classifier_continuous(&mSignal, &result);
         #else
-            EI_IMPULSE_ERROR r = this->run_classifier(&signal, &result);
+            EI_IMPULSE_ERROR r = this->run_classifier(&mSignal, &result);
         #endif  // AI_CONTINUOUS_INFERENCE
 
         ESP_LOGI(TAG, "Cycles taken to run inference = %d", (cpu_hal_get_cycle_count() - startCounter));
@@ -368,7 +350,7 @@ void EdgeImpulse::ei_callback_func() {
     ESP_LOGV(TAG, "Inference complete");
 }
 
-void EdgeImpulse::test_inference() {
+void EdgeImpulse::test_inference(read_func_t read_func) {
 
     this->buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
 
@@ -386,7 +368,7 @@ void EdgeImpulse::test_inference() {
 
         ei::signal_t signal;
         signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
-        signal.get_data = EdgeImpulse_Interface::microphone_audio_signal_get_data;
+        signal.get_data = read_func;
         ei_impulse_result_t result = {0};
 
         // Artificially fill buffer with test data

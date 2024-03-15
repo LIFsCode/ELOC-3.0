@@ -31,6 +31,10 @@
 #include "edge-impulse-sdk/dsp/numpy_types.h"
 #include "edge-impulse-sdk/classifier/ei_classifier_types.h"  // Need for typedef struct ei_signal_t* signal;
 
+// this is the read interface function for ei::signal_t
+typedef std::function<int(size_t offset, size_t length, float *out_ptr)> read_func_t;
+
+
 class EdgeImpulse {
  public:
     /**
@@ -56,6 +60,12 @@ class EdgeImpulse {
      *        This is required due to namespace issues, static implementations etc..
      */
     std::function<void()> callback;
+
+    /**
+     * @brief This function is used by the ei::signal_t interface to read 
+     *        data from the inference buffer
+     */
+    ei::signal_t mSignal;
 
     /**
      * @brief Detecting time since last activated
@@ -202,9 +212,12 @@ class EdgeImpulse {
 
     /**
      * @brief Start a continuous inferencing task
+     * @param read_func pointer to a function to retrieve data from a inference audio buffer
+     *                  intended to be set using microphone_audio_signal_get_data<EdgeImpulse* INST> template
+     *                  ei::signal_t requires a non class member method this is the way to compensate this
      * @return ESP_OK on success
      */
-    esp_err_t start_ei_thread();
+    esp_err_t start_ei_thread(read_func_t read_func);
 
     /**
      * @brief Get a pointer to the Task Handle object of the created task
@@ -266,7 +279,7 @@ class EdgeImpulse {
      */
     void ei_callback_func();
 
-    void test_inference();
+    void test_inference(read_func_t read_func);
 
     /**
      * @brief Create file to save inference results
@@ -291,12 +304,11 @@ class EdgeImpulse {
     void setSaveResultsToSD(bool enable);
 };
 
-
-namespace EdgeImpulse_Interface {
-
-    //BUGME: this is to only to compensate for the edge impulse interface which requires a non class method
-    //       
-    void setUsedEdgeImpulseInstance(EdgeImpulse& instance);
+// BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers
+//       but all EdgeImpulse stuff got encapsulated within a class, which does not match
+template <EdgeImpulse* INST>
+int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
+    return INST->microphone_audio_signal_get_data(offset, length, out_ptr);
 }
 
 

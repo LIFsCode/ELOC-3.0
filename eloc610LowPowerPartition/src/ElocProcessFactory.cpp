@@ -31,6 +31,9 @@
 
 ElocProcessFactory elocProcessing;
 
+
+static const read_func_t read_func = &microphone_audio_signal_get_data<&elocProcessing>;
+
 static const char* TAG = "ElocProcessing";
 
 ElocProcessFactory::ElocProcessFactory():
@@ -45,8 +48,6 @@ ElocProcessFactory::ElocProcessFactory():
     mReq_evt_queue = xQueueCreate(10, sizeof(RecState));
     assert(mReq_evt_queue != nullptr);
     xQueueReset(mReq_evt_queue);
-
-    EdgeImpulse_Interface::setUsedEdgeImpulseInstance(mEdgeImpulse);
 
 }
 
@@ -88,6 +89,14 @@ void ElocProcessFactory::testInput() {
     }
 
     delay(100);
+}
+
+void ElocProcessFactory::testEdgeImpulse() {
+    auto s = elocProcessing.getEdgeImpulse().get_aiModel();
+    ESP_LOGI(TAG, "Edge impulse model version: %s", s.c_str());
+    elocProcessing.getEdgeImpulse().output_inferencing_settings();
+
+    elocProcessing.getEdgeImpulse().test_inference(read_func);
 }
 
 BaseType_t ElocProcessFactory::queueNewMode(RecState newMode) {

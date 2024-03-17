@@ -46,13 +46,34 @@ class ElocProcessFactory
 private:
     I2SMEMSSampler mInput;
 #ifdef EDGE_IMPULSE_ENABLED
+public:
     EdgeImpulse mEdgeImpulse;
 #endif
+private:
     WAVFileWriter mWav_writer;
 
     RecState mCurrentState;
+    uint32_t mLastDetectedEvents = 0;
     QueueHandle_t mReq_evt_queue;
     /* data */
+    /**
+     * @brief The size of the buffer for I2SMEMSampler to store the sound samples
+     *        Appears to be a magic number!
+     *        This value is used in both continuous & non-continuous inferencing examples from Edge Impulse
+     *        Happens to be twice the dma_buf_len of 512
+     */
+    const uint32_t sample_buffer_size = sizeof (signed short) * 1024;
+
+    String mSessionFolder;
+    bool session_folder_created = false;
+
+    /**
+     * @brief Create session folder on SD card & save config file
+    */
+    bool createSessionFolder();
+
+
+
 public:
     ElocProcessFactory(/* args */);
     ~ElocProcessFactory();
@@ -67,11 +88,16 @@ public:
         return mEdgeImpulse;
     }
 
-    esp_err_t begin();
+    esp_err_t begin(RecState mode);
 
     esp_err_t end();
 
-
+    bool isSessionFolderCreated() const {
+        return session_folder_created;
+    }
+    const String& getSessionFolder() const {
+        return mSessionFolder;
+    }
 
     void testInput();
 
@@ -83,7 +109,7 @@ public:
         return mCurrentState;
     }
 
-    BaseType_t checkForNewMode(TickType_t xTicksToWait);
+    bool checkQueueAndChangeMode(TickType_t xTicksToWait);
 
     BaseType_t queueNewMode(RecState newMode);
     BaseType_t queueNewModeISR(RecState newMode);
@@ -94,11 +120,6 @@ extern ElocProcessFactory elocProcessing;
 
 //TODO: move this to .cpp file this should not be used outside of ElocProcessFactory
 
-// BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers
-//       but all EdgeImpulse stuff got encapsulated within a class, which does not match
-template <ElocProcessFactory* INST>
-int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
-    return INST->getEdgeImpulse().microphone_audio_signal_get_data(offset, length, out_ptr);
-}
+
 
 #endif // ELOCPROCESSFACTORY_HPP_

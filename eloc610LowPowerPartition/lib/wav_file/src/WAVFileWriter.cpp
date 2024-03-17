@@ -56,6 +56,9 @@ bool WAVFileWriter::initialize(int sample_rate, int buffer_time, int ch_count /*
   buffers[0][0] = {0};
   buffers[1][0] = {0};
 
+  //always start with disabled mode after initialization
+  mode = Mode::disabled;
+
   return true;
 }
 
@@ -199,6 +202,10 @@ void WAVFileWriter::start_write_thread() {
   static uint32_t slowestWriteSpeed  = std::numeric_limits<uint32_t>::max(); // set to max
   static int64_t longestWriteMs  = std::numeric_limits<uint32_t>::max(); // set to max
 
+  //TODO: move open file into the while loop directly before write() to make sure
+  //      the filename & timestamp matches the actual data. Otherwise it could happen 
+  //      that a file is created and only a few seconds later it is actually written
+  //      which may end up with having > than defined time between creation & last modified
   if (m_fp != nullptr) {
     ESP_LOGE(TAG, "File pointer is not NULL");
     enable_wav_file_write = false;
@@ -242,6 +249,8 @@ void WAVFileWriter::start_write_thread() {
          */
         if ((m_file_size >= (m_sample_rate * secondsPerFile * sizeof(int16_t)) || mode == Mode::disabled)) {
           // Won't be saving to this file anymore..
+          //BUGME: setting enable = false here would add a time window where I2S sampler won't send notifications
+          //       until its enabled again during open_file()
           enable_wav_file_write = false;
           recording_time_total_sec += recording_time_file_sec;
           this->finish();

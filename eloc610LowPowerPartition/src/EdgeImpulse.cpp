@@ -250,7 +250,6 @@ const char* EdgeImpulse::get_ei_classifier_inferencing_categories(int i) const {
 }
 
 esp_err_t checkSDCard();
-void start_sound_recording();
 
 /**
  * @brief This callback allows a thread created in EdgeImpulse to
@@ -313,12 +312,6 @@ void EdgeImpulse::ei_callback_func() {
                         result.classification[ix].value > AI_RESULT_THRESHOLD) {
                         this->increment_detectedEvents();
                         target_sound_detected = true;
-                        // Start recording??
-                        if (elocProcessing.getWavWriter().wav_recording_in_progress == false &&
-                            elocProcessing.getWavWriter().get_mode() == WAVFileWriter::Mode::single &&
-                            checkSDCard() == ESP_OK) {
-                            start_sound_recording();
-                        }
                     }
                 }
 

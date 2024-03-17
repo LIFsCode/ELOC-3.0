@@ -60,13 +60,6 @@ static const char *TAG = "main";
 bool gMountedSDCard = false;
 
 /**
- * @brief This bool is used to set the REQUESTED state of the AI inference
- *        The ACTUAL state is reflected by inference->status_running
- * @note Default is to be idle at startup
- */
-bool ai_run_enable = false;
-
-/**
  * @brief The size of the buffer for I2SMEMSampler to store the sound samples
  *        Appears to be a magic number!
  *        This value is used in both continuous & non-continuous inferencing examples from Edge Impulse
@@ -84,7 +77,6 @@ ESP32Time timeObject;
 bool gWillUpdate = false;
 float gFreeSpaceGB = 0.0;
 uint32_t gFreeSpaceKB = 0;
-bool session_folder_created = false;
 
 // String gTimeDifferenceCode; //see getTimeDifferenceCode() below
 
@@ -96,10 +88,6 @@ bool session_folder_created = false;
     SDCardSDIO sd_card;
 #endif
 
-QueueHandle_t rec_req_evt_queue = nullptr;  // wav recording queue
-QueueHandle_t rec_ai_evt_queue = nullptr;   // AI inference queue
-
-void writeSettings(String settings);
 void doDeepSleep();
 void setTime(long epoch, int ms);
 
@@ -205,17 +193,14 @@ void printMemory()
  */
 static void IRAM_ATTR buttonISR(void *args)
 {
-    if (elocProcessing.getWavWriter().get_mode() == WAVFileWriter::Mode::disabled) {
-        elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::continuous);
-    } else {
-        elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::disabled);
+    RecState new_mode;
+    if (elocProcessing.getState() != RecState::recordOff_detectOff) {
+        new_mode = RecState::recordOn_detectOff;
     }
-
-    /**
-     * Any point in send this command via the queue instead?
-     */
-
-    // xQueueSendFromISR(rec_req_evt_queue, &mode, (TickType_t)0);
+    else {
+        new_mode = RecState::recordOff_detectOff;
+    }
+    elocProcessing.queueNewModeISR(new_mode);
 }
 
 
@@ -265,39 +250,6 @@ void initTime()
     time_t timeSinceEpoch = mktime(&tm);
     timeObject.setTime(timeSinceEpoch);
     ESP_LOGI(TAG, "Setting initial time to build date: %s", BUILDDATE);
-}
-
-static String gSessionFolder;
-/**
- * @brief Create session folder on SD card & save config file
-*/
-bool createSessionFolder()
-{
-    String fname;
-    //TODO: check if another session identifier based on ISO time for mat would be more helpful
-    gSessionIdentifier = getDeviceInfo().fileHeader + String(time_utils::getSystemTimeMS());
-    fname = String("/sdcard/eloc/") + gSessionIdentifier;
-    gSessionFolder = fname;
-    ESP_LOGI(TAG, "Creating session folder %s", fname.c_str());
-    mkdir(fname.c_str(), 0777);
-
-    String cfg;
-    printConfig(cfg);
-    ESP_LOGI(TAG, "Starting session with this config:\n: %s", cfg.c_str());
-    fname += "/" + gSessionIdentifier + ".config";
-    FILE *f = fopen(fname.c_str(), "w+");
-
-    if (f == nullptr) {
-        ESP_LOGE(TAG, "Failed to open config file for storage %s!", fname.c_str());
-        return false;
-    }
-
-    fprintf(f, "%s", cfg.c_str());
-    fclose(f);
-
-    session_folder_created = true;
-
-    return true;
 }
 
 void doDeepSleep()
@@ -358,19 +310,6 @@ esp_err_t checkSDCard() {
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
-}
-
-/**
- * @brief Start the wav writer task
- * @attention This function presumes SD card check has already been done
- */
-void start_sound_recording() {
-    if (session_folder_created == false) {
-        session_folder_created = createSessionFolder();
-    }
-
-    // Start thread to continuously write to wav file & when sufficient data is collected finish the file
-    elocProcessing.getWavWriter().start_wav_write_task(getConfig().secondsPerFile);
 }
 
 void app_main(void) {
@@ -501,14 +440,6 @@ void app_main(void) {
     // check if a firmware update is triggered via SD card
     checkForFirmwareUpdateFile();
 
-    // Queue for recording requests
-    rec_req_evt_queue = xQueueCreate(10, sizeof(rec_req_t));
-    xQueueReset(rec_req_evt_queue);
-
-    // Queue for AI requests
-    rec_ai_evt_queue = xQueueCreate(10, sizeof(bool));
-    xQueueReset(rec_ai_evt_queue);
-
     ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
 
     ESP_LOGI(TAG, "Creating Bluetooth  task...");
@@ -533,63 +464,14 @@ void app_main(void) {
 
     elocProcessing.init();
 
-
-    if (checkSDCard() == ESP_OK) {
-        // create a new wave file wav_writer & make sure sample rate is up to date
-        if (elocProcessing.getWavWriter().initialize(i2s_mic_Config.sample_rate, 2, NUMBER_OF_CHANNELS) != true) {
-            ESP_LOGE(TAG, "Failed to initialize WAVFileWriter");
-        }
-
-        // Block until properly registered otherwise will get error later
-        while (elocProcessing.getInput().register_wavFileWriter(&elocProcessing.getWavWriter(), elocProcessing.getWavWriter().getTaskHandle()) == false) {
-            ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
-            delay(5);
-        }
-        #ifdef EDGE_IMPULSE_ENABLED
-            elocProcessing.getEdgeImpulse().enableSaveResultsToSD(gSessionFolder);
-        #endif
-    } else {
-        ESP_LOGE(TAG, "SD card not mounted, cannot create WAVFileWriter");
-            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::disabled);  // Default is disabled anyway
-        #ifdef EDGE_IMPULSE_ENABLED
-            elocProcessing.getEdgeImpulse().disableSaveResultsToSD();
-        #endif
-    }
-
-    #ifdef EDGE_IMPULSE_ENABLED
-        #ifdef AI_CONTINUOUS_INFERENCE
-            // Init static vars
-            elocProcessing.getEdgeImpulse().run_classifier_init();
-        #endif  // AI_CONTINUOUS_INFERENCE
-
-        elocProcessing.getInput().register_ei_inference(&elocProcessing.getEdgeImpulse().getInference(), EI_CLASSIFIER_FREQUENCY, elocProcessing.getEdgeImpulse().getTaskHandle());
-        // elocProcessing.getEdgeImpulse().set_status(EdgeImpulse::Status::running);
-        // elocProcessing.getEdgeImpulse().start_ei_thread(ei_callback_func);
-    #endif
-
     auto loopCnt = 0;
 
-    // This might be redundant, set directly in ElocCommands.cpp
-    auto new_mode =  WAVFileWriter::Mode::disabled;
 
     while (true) {
-        if (xQueueReceive(rec_req_evt_queue, &new_mode, pdMS_TO_TICKS(500))) {
-            ESP_LOGI(TAG, "Received new wav writer mode");
-
-            if (new_mode == WAVFileWriter::Mode::continuous) {
-                ESP_LOGI(TAG, "wav writer mode = continuous");
-                elocProcessing.getWavWriter().set_mode(new_mode);
-            } else if (new_mode == WAVFileWriter::Mode::single) {
-                ESP_LOGI(TAG, "wav writer mode = single");
-                elocProcessing.getWavWriter().set_mode(new_mode);
-            } else if (new_mode == WAVFileWriter::Mode::disabled) {
-                ESP_LOGI(TAG, "wav writer mode = disabled");
-                elocProcessing.getWavWriter().set_mode(new_mode);
-            } else {
-                ESP_LOGE(TAG, "wav writer mode = unknown");
-            }
+        // Check the queues for new commanded mode and change mode if necessary
+        if (elocProcessing.checkQueueAndChangeMode(pdMS_TO_TICKS(500))) {
+            
         }
-
         if ((loopCnt++ % 10) == 0) {
             Battery::GetInstance().updateVoltage();  // only updates actual as often as set in the config
             ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC, Temp %d °C",
@@ -613,50 +495,6 @@ void app_main(void) {
             }
         }
 
-        // Need to start I2S?
-        // Note: Once started continues to run..
-        if ((elocProcessing.getWavWriter().get_mode() != WAVFileWriter::Mode::disabled || ai_run_enable != false) &&
-            elocProcessing.getInput().is_i2s_installed_and_started() == false) {
-            // Keep trying until successful
-            if (elocProcessing.getInput().install_and_start() == ESP_OK) {
-                delay(300);
-                elocProcessing.getInput().zero_dma_buffer(I2S_DEFAULT_PORT);
-                elocProcessing.getInput().start_read_task(sample_buffer_size/ sizeof(signed short));
-            }
-        }
-
-        // Start a new recording?
-        if (elocProcessing.getWavWriter().wav_recording_in_progress == false &&
-            elocProcessing.getWavWriter().get_mode() == WAVFileWriter::Mode::continuous &&
-            checkSDCard() == ESP_OK) {
-            start_sound_recording();
-        }
-
-        #ifdef EDGE_IMPULSE_ENABLED
-
-        if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
-            ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);
-            auto ei_status = (elocProcessing.getEdgeImpulse().get_status() == EdgeImpulse::Status::running ? "running" : "not running");
-            ESP_LOGI(TAG, "EI current status = %s (%d)", ei_status, static_cast<int>(elocProcessing.getEdgeImpulse().get_status()));
-
-            if (ai_run_enable == false && (elocProcessing.getEdgeImpulse().get_status() == EdgeImpulse::Status::running)) {
-                ESP_LOGI(TAG, "Stopping EI thread");
-                elocProcessing.getEdgeImpulse().set_status(EdgeImpulse::Status::not_running);
-            } else if (ai_run_enable == true && (elocProcessing.getEdgeImpulse().get_status() == EdgeImpulse::Status::not_running)) {
-                ESP_LOGI(TAG, "Starting EI thread");
-                if (elocProcessing.getEdgeImpulse().start_ei_thread(&microphone_audio_signal_get_data<&elocProcessing>) != ESP_OK) {
-                    ESP_LOGE(TAG, "Failed to start EI thread");
-                    // Should this be retried?
-                    delay(500);
-                }
-            }
-        }
-
-#else
-        // Delay longer if not EI enabled
-        delay(300);
-
-#endif  // EDGE_IMPULSE_ENABLED
 
         // Don't forget the watchdog
         delay(1);

@@ -301,55 +301,37 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
 
     if (!req_mode) {
         ESP_LOGI(TAG, "setRecordMode requested <none>");
-
-        auto wav_write_mode = elocProcessing.getWavWriter().get_mode();
-        /**
-         * If no explicit mode is set, recording mode is toggled, no change to AI mode
-         * @warning This is debug feature, shouldn't be generally used
-         */
-        EdgeImpulse::Status aiMode = elocProcessing.getEdgeImpulse().get_status();
-        if (wav_write_mode == WAVFileWriter::Mode::disabled) {
-            new_mode = aiMode == EdgeImpulse::Status::running ? RecState::recordOn_detectOn : RecState::recordOn_detectOff;
-            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::continuous);
-        } else {
-            new_mode = aiMode == EdgeImpulse::Status::running ? RecState::recordOff_detectOn : RecState::recordOff_detectOff;
-            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::disabled);
+        if (elocProcessing.getState() != RecState::recordOff_detectOff) {
+            new_mode = RecState::recordOn_detectOff;
         }
+        else {
+            new_mode = RecState::recordOff_detectOff;
+        }
+
     } else {
         ESP_LOGI(TAG, "setRecordMode requested %s", req_mode);
         ai_mode_change = true;
 
         if (!strcasecmp(req_mode, "recordOn_DetectOFF")) {
             new_mode = RecState::recordOn_detectOff;
-            new_ai_mode = false;
-            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::continuous);
         } else if (!strcasecmp(req_mode, "recordOn_DetectOn")) {
             new_mode = RecState::recordOn_detectOn;
-            new_ai_mode = true;
-            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::continuous);
         } else if (!strcasecmp(req_mode, "recordOff_DetectOn")) {
             new_mode = RecState::recordOff_detectOn;
-            new_ai_mode = true;
-            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::disabled);
         } else if (!strcasecmp(req_mode, "recordOff_DetectOff")) {
             new_mode = RecState::recordOff_detectOff;
-            new_ai_mode = false;
-            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::disabled);
         } else if (!strcasecmp(req_mode, "recordOnEvent")) {
             new_mode = RecState::recordOnEvent;
-            new_ai_mode = true;
-            elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::single);
         } else {
             char errMsg[64];
             snprintf(errMsg, sizeof(errMsg), "Invalid mode %s", req_mode);
             ESP_LOGE(TAG, "%s", errMsg);
             resp.setError(ESP_ERR_INVALID_ARG, errMsg);
+            return;
         }
     }
+    elocProcessing.queueNewMode(new_mode);
 
-    if (ai_mode_change) {
-        xQueueSend(rec_ai_evt_queue, &new_ai_mode, (TickType_t)0);
-    }
 
     StaticJsonDocument<512> doc;
     JsonObject recordingState = doc.createNestedObject("recordingState");

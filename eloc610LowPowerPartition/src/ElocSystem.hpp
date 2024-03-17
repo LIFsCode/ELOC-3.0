@@ -30,6 +30,7 @@
 #include "ELOC_IOEXP.hpp"
 #include "lis3dh.h"
 
+#include "EdgeImpulse.hpp"
 #include "ElocStatus.hpp"
 
 //TODO: check for a good file to place this
@@ -59,7 +60,7 @@ public:
         bool btEnabled;
         bool btConnected;
         WAVFileWriter::Mode recMode;
-        bool ai_run_enable;
+        EdgeImpulse::Status aiMode;
         bool sdCardMounted;
         bool batteryLow;
         bool intruderDetected;
@@ -68,7 +69,7 @@ public:
             return ((this->btEnabled == rhs.btEnabled) &&
                     (this->btConnected == rhs.btConnected) &&
                     (this->recMode == rhs.recMode) &&
-                    (this->ai_run_enable == rhs.ai_run_enable) &&
+                    (this->aiMode == rhs.aiMode) &&
                     (this->sdCardMounted == rhs.sdCardMounted) &&
                     (this->batteryLow == rhs.batteryLow) &&
                     (this->intruderDetected == rhs.intruderDetected));

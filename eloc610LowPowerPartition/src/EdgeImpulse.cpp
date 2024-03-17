@@ -249,8 +249,6 @@ const char* EdgeImpulse::get_ei_classifier_inferencing_categories(int i) const {
     return ei_classifier_inferencing_categories[i];
 }
 
-extern bool ai_run_enable;
-
 esp_err_t checkSDCard();
 void start_sound_recording();
 
@@ -261,8 +259,7 @@ void start_sound_recording();
 void EdgeImpulse::ei_callback_func() {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
-    if (ai_run_enable == true &&
-        this->get_status() == EdgeImpulse::Status::running) {
+    if (this->get_status() == EdgeImpulse::Status::running) {
         ESP_LOGV(TAG, "Running inference");
         bool m = this->microphone_inference_record();
         // Blocking function - unblocks when buffer is full
@@ -343,7 +340,7 @@ void EdgeImpulse::ei_callback_func() {
                 print_results = 0;
             #endif  // AI_CONTINUOUS_INFERENCE
             }
-    }  // ai_run_enable
+    }
 
     ESP_LOGV(TAG, "Inference complete");
 }

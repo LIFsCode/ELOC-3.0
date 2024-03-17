@@ -312,7 +312,7 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
     status.btEnabled = btEnabled;
     status.btConnected = btConnected;
     status.recMode = elocProcessing.getWavWriter().get_mode();
-    status.ai_run_enable = ai_run_enable;
+    status.aiMode = elocProcessing.getEdgeImpulse().get_status();
     status.sdCardMounted = sd_card.isMounted();
     status.intruderDetected = mIntruderDetected;
     if ((mStatus == status) && !mRefreshStatus) {
@@ -347,11 +347,11 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
         }
         else if (status.recMode != WAVFileWriter::Mode::disabled) {
             mStatusLed->setBlinking(true, 100, 900, 30*1000);
-            if (status.ai_run_enable) {
+            if (status.aiMode == EdgeImpulse::Status::running) {
                 mBatteryLed->setBlinking(true, 100, 900, 30*1000);
             }
         }
-        else if (status.ai_run_enable) {
+        else if (status.aiMode == EdgeImpulse::Status::running) {
             mBatteryLed->setBlinking(true, 100, 900, 30*1000);
         }
         else if (status.btConnected) {

@@ -56,10 +56,13 @@ RecState calcRecordingState() {
     RecState recState = RecState::recInvalid;
 
     WAVFileWriter::Mode recMode = elocProcessing.getWavWriter().get_mode();
-    ESP_LOGI("COMMANDS", "WavWriterMode = %s(%d), AI = %s", elocProcessing.getWavWriter().get_mode_str(), elocProcessing.getWavWriter().get_mode_int(), ai_run_enable ? "ON" : "OFF");
+    EdgeImpulse::Status aiMode = elocProcessing.getEdgeImpulse().get_status();
+    ESP_LOGI("COMMANDS", "WavWriterMode = %s(%d), AI = %s", 
+            elocProcessing.getWavWriter().get_mode_str(), elocProcessing.getWavWriter().get_mode_int(), 
+            aiMode == EdgeImpulse::Status::running ? "ON" : "OFF");
     switch (recMode) {
         case WAVFileWriter::Mode::disabled:
-            if (ai_run_enable) {
+            if (aiMode == EdgeImpulse::Status::running) {
                 recState = RecState::recordOff_detectOn;
             }
             else {
@@ -67,7 +70,7 @@ RecState calcRecordingState() {
             }
             break;
         case WAVFileWriter::Mode::continuous:
-            if (ai_run_enable) {
+            if (aiMode == EdgeImpulse::Status::running) {
                 recState = RecState::recordOn_detectOn;
             }
             else {
@@ -75,7 +78,7 @@ RecState calcRecordingState() {
             }
             break;
         case WAVFileWriter::Mode::single:
-            if (ai_run_enable) {
+            if (aiMode == EdgeImpulse::Status::running) {
                 recState = RecState::recordOnEvent;
             }
             else {
@@ -116,7 +119,7 @@ void printStatus(String& buf) {
 
     session["recordingTime[h]"]    = (float)elocProcessing.getWavWriter().get_recording_time_total_sec() / 1000 / 1000 / 60 / 60;
     JsonObject ai = session.createNestedObject("detection");
-    ai["state"]                   = ai_run_enable;
+    ai["state"]                   = elocProcessing.getEdgeImpulse().get_status() == EdgeImpulse::Status::running;
     // first set to defaults in case edge impuse is not included in binary
     ai["detectingTime[h]"]        = 0.0;
     ai["detectedEvents"]          = 0;
@@ -304,11 +307,12 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
          * If no explicit mode is set, recording mode is toggled, no change to AI mode
          * @warning This is debug feature, shouldn't be generally used
          */
+        EdgeImpulse::Status aiMode = elocProcessing.getEdgeImpulse().get_status();
         if (wav_write_mode == WAVFileWriter::Mode::disabled) {
-            new_mode = ai_run_enable ? RecState::recordOn_detectOn : RecState::recordOn_detectOff;
+            new_mode = aiMode == EdgeImpulse::Status::running ? RecState::recordOn_detectOn : RecState::recordOn_detectOff;
             elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::continuous);
         } else {
-            new_mode = ai_run_enable ? RecState::recordOff_detectOn : RecState::recordOff_detectOff;
+            new_mode = aiMode == EdgeImpulse::Status::running ? RecState::recordOff_detectOn : RecState::recordOff_detectOff;
             elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::disabled);
         }
     } else {

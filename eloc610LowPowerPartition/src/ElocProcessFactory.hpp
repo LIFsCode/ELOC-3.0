@@ -77,6 +77,8 @@ public:
 
     void testEdgeImpulse();
 
+    void init();
+
     RecState getState() const {
         return mCurrentState;
     }

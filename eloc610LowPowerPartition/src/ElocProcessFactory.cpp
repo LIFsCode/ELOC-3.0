@@ -55,6 +55,28 @@ ElocProcessFactory::~ElocProcessFactory()
 {
 }
 
+void ElocProcessFactory::init() {
+#ifdef EDGE_IMPULSE_ENABLED
+
+    this->testEdgeImpulse();
+
+    #ifdef AI_CONTINUOUS_INFERENCE
+        mEdgeImpulse.buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
+    #else
+        mEdgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+    #endif  // AI_CONTINUOUS_INFERENCE
+
+#endif  // EDGE_IMPULSE_ENABLED
+
+    this->testInput();
+
+    //TODO: this should be moved to begin() so a change in config is effective immedeately
+    /**
+     * @note Using MicUseTimingFix == true or false doesn't seem to effect ICS-43434 mic
+     */
+    mInput.init(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,
+                               getConfig().listenOnly, getMicInfo().MicUseTimingFix);
+}
 esp_err_t ElocProcessFactory::begin() { 
     
     /**

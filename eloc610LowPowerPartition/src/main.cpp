@@ -523,17 +523,6 @@ void app_main(void) {
     }
 #endif
 
-#ifdef EDGE_IMPULSE_ENABLED
-
-    elocProcessing.testEdgeImpulse();
-
-    #ifdef AI_CONTINUOUS_INFERENCE
-        elocProcessing.getEdgeImpulse().buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
-    #else
-        elocProcessing.getEdgeImpulse().buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
-    #endif  // AI_CONTINUOUS_INFERENCE
-
-    #endif  // EDGE_IMPULSE_ENABLED
 
     // setup button as interrupt
     ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)GPIO_BUTTON));
@@ -542,13 +531,8 @@ void app_main(void) {
     /** Setup Power Management */
     ElocSystem::GetInstance().pm_configure();
 
-    elocProcessing.testInput();
+    elocProcessing.init();
 
-    /**
-     * @note Using MicUseTimingFix == true or false doesn't seem to effect ICS-43434 mic
-     */
-    elocProcessing.getInput().init(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,
-                               getConfig().listenOnly, getMicInfo().MicUseTimingFix);
 
     if (checkSDCard() == ESP_OK) {
         // create a new wave file wav_writer & make sure sample rate is up to date

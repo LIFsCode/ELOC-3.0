@@ -56,12 +56,6 @@ class EdgeImpulse {
     #endif
 
     /**
-     * @brief This callback allows the classifier to be run from main.cpp
-     *        This is required due to namespace issues, static implementations etc..
-     */
-    std::function<void()> callback;
-
-    /**
      * @brief This function is used by the ei::signal_t interface to read 
      *        data from the inference buffer
      */
@@ -86,6 +80,28 @@ class EdgeImpulse {
     bool save_ai_results_to_sd = true;
     int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
     String ei_results_filename;
+    String mSessionFolder;
+
+    /**
+     * @brief Create file to save inference results
+     * @attention This function presumes SD card check has already been done
+     * @note If the file doesn't exits it will be created with the following details:
+     *          EI Project ID, 186372
+     *          EI Project owner, EDsteve
+     *          EI Project name, trumpet
+     *          EI Project deploy version, 2
+     * @return 0 on success, -1 on fail
+     */
+    int create_inference_result_file_SD();
+
+    /**
+     * @brief This function accepts a string, prepends date & time & appends to a csv file
+     * @param file_string string in csv format, e.g. 0.94, 0.06
+     * @attention This function presumes SD card check has already been done
+     * @return 0 on success, -1 on fail
+     */
+    int save_inference_result_SD(String results_string);
+
  public:
     /**
      * @brief Construct a new Edge Impulse object
@@ -282,26 +298,16 @@ class EdgeImpulse {
     void test_inference(read_func_t read_func);
 
     /**
-     * @brief Create file to save inference results
-     * @attention This function presumes SD card check has already been done
-     * @note If the file doesn't exits it will be created with the following details:
-     *          EI Project ID, 186372
-     *          EI Project owner, EDsteve
-     *          EI Project name, trumpet
-     *          EI Project deploy version, 2
-     * @return 0 on success, -1 on fail
+     * @brief enables the storage of EI results on the SD card in the given session folder
+     * @param sessionFolder folder where the results are stored
+     * @return int -1 on failure
      */
-    int create_inference_result_file_SD();
+    int enableSaveResultsToSD(const String& sessionFolder);
 
     /**
-     * @brief This function accepts a string, prepends date & time & appends to a csv file
-     * @param file_string string in csv format, e.g. 0.94, 0.06
-     * @attention This function presumes SD card check has already been done
-     * @return 0 on success, -1 on fail
+     * @brief disables the storage of EI results on the SD card and resets session folder
      */
-    int save_inference_result_SD(String results_string);
-
-    void setSaveResultsToSD(bool enable);
+    void disableSaveResultsToSD();
 };
 
 // BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers

@@ -267,6 +267,7 @@ void initTime()
     ESP_LOGI(TAG, "Setting initial time to build date: %s", BUILDDATE);
 }
 
+static String gSessionFolder;
 /**
  * @brief Create session folder on SD card & save config file
 */
@@ -276,6 +277,7 @@ bool createSessionFolder()
     //TODO: check if another session identifier based on ISO time for mat would be more helpful
     gSessionIdentifier = getDeviceInfo().fileHeader + String(time_utils::getSystemTimeMS());
     fname = String("/sdcard/eloc/") + gSessionIdentifier;
+    gSessionFolder = fname;
     ESP_LOGI(TAG, "Creating session folder %s", fname.c_str());
     mkdir(fname.c_str(), 0777);
 
@@ -560,13 +562,13 @@ void app_main(void) {
             delay(5);
         }
         #ifdef EDGE_IMPULSE_ENABLED
-            elocProcessing.getEdgeImpulse().setSaveResultsToSD(true);
+            elocProcessing.getEdgeImpulse().enableSaveResultsToSD(gSessionFolder);
         #endif
     } else {
         ESP_LOGE(TAG, "SD card not mounted, cannot create WAVFileWriter");
             elocProcessing.getWavWriter().set_mode(WAVFileWriter::Mode::disabled);  // Default is disabled anyway
         #ifdef EDGE_IMPULSE_ENABLED
-            elocProcessing.getEdgeImpulse().setSaveResultsToSD(false);
+            elocProcessing.getEdgeImpulse().disableSaveResultsToSD();
         #endif
     }
 

@@ -24,6 +24,8 @@
 #ifndef UTILS_FFSUTILS_H_
 #define UTILS_FFSUTILS_H_
 
+#include <stdint.h>
+
 namespace ffsutil {
 
 /// @brief Prints a list of files & subdirectories with sizes of a given path

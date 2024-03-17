@@ -6,6 +6,7 @@
  */
 
 #include "project_config.h"
+#include "utils/ffsutils.h"
 #include "EdgeImpulse.hpp"
 #include "trumpet_trimmed_inferencing.h"
 #include "edge-impulse-sdk/dsp/numpy_types.h"
@@ -179,7 +180,6 @@ void EdgeImpulse::ei_thread() {
                           portMAX_DELAY /* xTicksToWait*/) == pdTRUE) {
       if (inference.buf_ready == 1) {
         // Run classifier from main.cpp
-        //callback();
         ei_callback_func();
 
         // Update times
@@ -250,10 +250,8 @@ const char* EdgeImpulse::get_ei_classifier_inferencing_categories(int i) const {
 }
 
 extern bool ai_run_enable;
-extern bool save_ai_results_to_sd;
 
 esp_err_t checkSDCard();
-int save_inference_result_SD(String results_string);
 void start_sound_recording();
 
 /**
@@ -420,17 +418,13 @@ void EdgeImpulse::test_inference(read_func_t read_func) {
     this->free_buffers();
 }
 
-//TODO: remove this and set session folder in save_inference_result_SD()
-extern bool session_folder_created;
-bool createSessionFolder();
-
 int EdgeImpulse::create_inference_result_file_SD() {
-    if (session_folder_created == false) {
-        session_folder_created = createSessionFolder();
+    if (!ffsutil::folderExists(mSessionFolder.c_str())) {
+        ESP_LOGE(TAG, "Session folder %s does not exist!", mSessionFolder.c_str());
+        return -1;
     }
 
-    ei_results_filename = "/sdcard/eloc/";
-    ei_results_filename += gSessionIdentifier;
+    ei_results_filename = mSessionFolder;
     ei_results_filename += "/EI-results-ID-";
     ei_results_filename += EI_CLASSIFIER_PROJECT_ID;
     ei_results_filename += "-DEPLOY-VER-";
@@ -500,9 +494,13 @@ int EdgeImpulse::save_inference_result_SD(String results_string) {
     return 0;
 }
 
-//TODO: set session folder here to make checks within create_inference_result_file_SD() obsolete
-void EdgeImpulse::setSaveResultsToSD(bool enable) {
-    save_ai_results_to_sd = enable;
-
+int EdgeImpulse::enableSaveResultsToSD(const String& sessionFolder) {
+    mSessionFolder = sessionFolder;
+    save_ai_results_to_sd = true;
+    return create_inference_result_file_SD();
+}
+void EdgeImpulse::disableSaveResultsToSD() {
+    save_ai_results_to_sd = false;
+    mSessionFolder = "";
 }
 

@@ -227,9 +227,9 @@ void cmd_SetLogPersistent(CmdParser *cmdParser) {
     return;
 }
 
-
-long getTimeFromTimeObjectMS() {
-    return(timeObject.getEpoch()*1000L+timeObject.getMillis());
+//TODO: use ESP32Time::getSystemTimeMS() instead (depends on the results of #77 time drift evaluation)
+int64_t getTimeFromTimeObjectMS() {
+    return(static_cast<int64_t>(timeObject.getEpoch())*1000LL+static_cast<int64_t>(timeObject.getMillis()));
 
 }
 
@@ -279,12 +279,12 @@ void cmd_SetTime(CmdParser *cmdParser) {
     // gLastSystemTimeUpdate = getTimeFromTimeObjectMS() - (atol(minutesSinceSync.c_str()) * 60L * 1000L);
     // ESP_LOGI(TAG, "timestamp in from android GMT "+everything    +"  sec: "+seconds + "   millisec: "+milliseconds);
     ESP_LOGI(TAG, "new timestamp from new sys time (local time) %lld", time_us  ); //this is 7 hours too slow!
-    ESP_LOGI(TAG,"new timestamp from timeobJect (local time) %ld",getTimeFromTimeObjectMS());
+    ESP_LOGI(TAG,"new timestamp from timeobJect (local time) %lld",getTimeFromTimeObjectMS());
     ESP_LOGI(TAG,"new time set to (local time) %s",timeObject.getDateTime().c_str());
 
     String& response = resp.getPayload();
     response = "{\"Time[ms]\" : ";
-    response += getTimeFromTimeObjectMS();
+    response += String(getTimeFromTimeObjectMS());
     response += "}";
     resp.setResultSuccess(response);
     return;

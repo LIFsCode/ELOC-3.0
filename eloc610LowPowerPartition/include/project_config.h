@@ -59,7 +59,7 @@
 #define USE_SDIO_VERSION
 
 #define NUMBER_OF_CHANNELS 1
-#define TIMEZONE_OFFSET    (+7)
+#define TIMEZONE_OFFSET    7  // Timezones east of GMT are positive, west are negative
 
 #ifdef USE_SPI_VERSION
         #define VERSION "eloc610SPILowPower06Apr2023a"

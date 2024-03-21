@@ -26,6 +26,20 @@
 #include <BluetoothServer.hpp>
 #include "project_config.h"
 
+// Externs required for the BluetoothServer class
+#include "WAVFileWriter.h"
+#include "SDCardSDIO.h"
+#include "ESP32Time.h"
+
+QueueHandle_t rec_ai_evt_queue = nullptr;
+
+WAVFileWriter wav_writer;
+SDCardSDIO sd_card;
+ESP32Time timeObject;
+
+bool ai_run_enable;
+bool gMountedSDCard;
+
 extern "C" {
     void app_main(void);
 }

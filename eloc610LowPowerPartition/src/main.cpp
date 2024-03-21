@@ -952,7 +952,7 @@ void app_main(void) {
             // Compare time sources
             if (1) {
                 ESP_LOGI(TAG, "esp_timer_get_time = %lld", esp_timer_get_time());
-                ESP_LOGI(TAG, "esp32Time.getMicros = %ld", timeObject.getMicros());
+                ESP_LOGI(TAG, "esp32Time.getEpoch = %ld", timeObject.getEpoch());
                 ESP_LOGI(TAG, "FreeRTOS xTaskGetTickCount = %u", xTaskGetTickCount());
                 ESP_LOGI(TAG, "esp32Time.getTime = %s", timeObject.getTime().c_str());
             }

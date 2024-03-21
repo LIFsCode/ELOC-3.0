@@ -299,14 +299,9 @@ void printPartitionInfo()
 /**
  * @brief Set initial time
  * @note If time is not set the getLocalTime() will stuck for 5 ms due to invalid timestamp
- * @todo: Move to time_utils.cpp
 */
 void initTime()
 {
-    // struct tm tm;
-    // strptime(BUILDDATE, "%b %d %Y %H:%M:%S %Y", &tm);
-    // time_t timeSinceEpoch = mktime(&tm);
-
     timeObject.setTime(BUILD_TIME_UNIX, 0);
     timeObject.setTimeZone(TIMEZONE_OFFSET);
     ESP_LOGI(TAG, "Setting initial time to Unix time: %d & timezone UTC%d", BUILD_TIME_UNIX, TIMEZONE_OFFSET);
@@ -912,7 +907,7 @@ void app_main(void) {
             Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC(), ElocSystem::GetInstance().getTemperaure());
 
             // Display memory usage
-            if (1) {
+            if (0) {
                 multi_heap_info_t heapInfo;
                 heap_caps_get_info(&heapInfo, MALLOC_CAP_INTERNAL);
                 ESP_LOGI(TAG, "Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%",
@@ -926,6 +921,15 @@ void app_main(void) {
                     100 - (heapInfo.total_free_bytes*100) / heap_caps_get_total_size(MALLOC_CAP_SPIRAM),
                     heapInfo.largest_free_block,
                     100 - (heapInfo.largest_free_block*100) / heapInfo.total_free_bytes);
+            }
+
+            // Compare time sources
+            if (1) {
+                ESP_LOGI(TAG, "FreeRTOS xTaskGetTickCount = %u", xTaskGetTickCount());
+                ESP_LOGI(TAG, "esp_timer_get_time = %lld", esp_timer_get_time());
+                ESP_LOGI(TAG, "esp32Time.getUpTimeSecs = %llu", timeObject.getUpTimeSecs());
+                ESP_LOGI(TAG, "esp32Time.getEpoch = %ld", timeObject.getEpoch());
+                ESP_LOGI(TAG, "esp32Time.getTime = %s", timeObject.getTime().c_str());
             }
         }
 

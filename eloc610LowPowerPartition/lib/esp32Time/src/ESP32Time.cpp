@@ -79,13 +79,18 @@ void ESP32Time::setTime(long epoch, int ms) {
     return;
 
   auto old_time = getEpoch();
+  if (old_time < BUILD_TIME_UNIX) {
+    // First time to set time
+    // getEpoch() not accurate
+    old_time = BUILD_TIME_UNIX;
+  }
 
   struct timeval tv;
   tv.tv_sec = epoch;  // epoch time (seconds)
   tv.tv_usec = ms;    // microseconds
   settimeofday(&tv, NULL);
 
-  // Adjust boot time for new time
+  // Advance boot time by change in time
   boot_time_unix += (epoch - old_time);
 }
 
@@ -93,10 +98,16 @@ int ESP32Time::setTimeZone(int32_t offset) {
   if (offset < -12 || offset > 14)
     return -1;
 
-  String s = "UTC" + String(offset);
+  String s;
+  if (offset == 0) {
+    s = "UTC";
+  } else {
+    // Reverse sign
+    offset = - offset;
+    s = "UTC" + String(offset);
+  }
   setenv("TZ", s.c_str(), 1);
   tzset();
-
   return 0;
 }
 
@@ -160,7 +171,7 @@ String ESP32Time::getTimeDate(bool mode){
 }
 
 /*!
-    @brief  get the time as an Arduino String object
+    @brief  get the local time as an Arduino String object
 */
 String ESP32Time::getTime(){
     struct tm timeinfo = getTimeStruct();
@@ -370,6 +381,6 @@ int ESP32Time::getYear(){
     @brief  get the current uptime as uint64_t
     @warning  Untested
 */
-uint64_t ESP32Time::getUpTime() {
+uint64_t ESP32Time::getUpTimeSecs() {
     return (getEpoch() - boot_time_unix);
 }

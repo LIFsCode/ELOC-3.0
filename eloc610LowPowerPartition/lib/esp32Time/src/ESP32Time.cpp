@@ -29,7 +29,9 @@
 /*!
     @brief  Constructor for ESP32Time
 */
-ESP32Time::ESP32Time(){}
+ESP32Time::ESP32Time() {
+    boot_time_unix = BUILD_TIME_UNIX;
+}
 
 /*!
     @brief  set the internal RTC time
@@ -70,16 +72,38 @@ void ESP32Time::setTime(int sc, int mn, int hr, int dy, int mt, int yr, int ms) 
             microseconds (optional)
 */
 void ESP32Time::setTime(long epoch, int ms) {
+  if ((epoch < BUILD_TIME_UNIX) || (epoch > (BUILD_TIME_UNIX + 60*60*24*365*10)))
+    return;
+
+  if (ms < 0 || ms > 999)
+    return;
+
+  auto old_time = getEpoch();
+
   struct timeval tv;
   tv.tv_sec = epoch;  // epoch time (seconds)
   tv.tv_usec = ms;    // microseconds
   settimeofday(&tv, NULL);
+
+  // Adjust boot time for new time
+  boot_time_unix += (epoch - old_time);
+}
+
+int ESP32Time::setTimeZone(int32_t offset) {
+  if (offset < -12 || offset > 14)
+    return -1;
+
+  String s = "UTC" + String(offset);
+  setenv("TZ", s.c_str(), 1);
+  tzset();
+
+  return 0;
 }
 
 /*!
     @brief  get the internal RTC time as a tm struct
 */
-tm ESP32Time::getTimeStruct(){
+tm ESP32Time::getTimeStruct() {
   struct tm timeinfo;
   getLocalTime(&timeinfo);
   return timeinfo;
@@ -192,7 +216,7 @@ long ESP32Time::getMillis(){
 /*!
     @brief  get the current microseconds as long
 */
-long ESP32Time::getMicros(){
+long ESP32Time::getMicros() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return tv.tv_usec;
@@ -201,7 +225,7 @@ long ESP32Time::getMicros(){
 /*!
     @brief  get the current epoch seconds as long
 */
-long ESP32Time::getEpoch(){
+long ESP32Time::getEpoch() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return tv.tv_sec;
@@ -210,7 +234,7 @@ long ESP32Time::getEpoch(){
 /*!
     @brief  get the current seconds as int
 */
-int ESP32Time::getSecond(){
+int ESP32Time::getSecond() {
     struct tm timeinfo = getTimeStruct();
     return timeinfo.tm_sec;
 }
@@ -218,7 +242,7 @@ int ESP32Time::getSecond(){
 /*!
     @brief  get the current minutes as int
 */
-int ESP32Time::getMinute(){
+int ESP32Time::getMinute() {
     struct tm timeinfo = getTimeStruct();
     return timeinfo.tm_min;
 }
@@ -340,4 +364,12 @@ int ESP32Time::getMonth(){
 int ESP32Time::getYear(){
     struct tm timeinfo = getTimeStruct();
     return timeinfo.tm_year+1900;
+}
+
+/*!
+    @brief  get the current uptime as uint64_t
+    @warning  Untested
+*/
+uint64_t ESP32Time::getUpTime() {
+    return (getEpoch() - boot_time_unix);
 }

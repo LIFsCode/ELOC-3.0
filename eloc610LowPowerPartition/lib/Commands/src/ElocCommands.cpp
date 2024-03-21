@@ -255,32 +255,61 @@ void cmd_SetTime(CmdParser *cmdParser) {
         resp.setError(ESP_ERR_INVALID_ARG, "Missing JSON key 'seconds'");
         return;
     }
+
+    /**
+     * Format:
+     * setTime#time={"seconds":1701665155, "ms" : 42, "timezone" : 7}
+     * where:
+     *  - seconds: epoch time in seconds
+     *  - ms: milliseconds
+     *  - timezone: offset in hours (+ve implies ahead of UTC, -ve implies behind UTC)
+     */
+
     long seconds = timeCfg["seconds"];
     long milliseconds = timeCfg["ms"];
     const char* type = timeCfg["type"] | "?";
-    long timeZone_offset = timeCfg["timezone"] | TIMEZONE_OFFSET;
+    long timeZone_offset = timeCfg["timezone"] | TIMEZONE_OFFSET;  // can -ve & +ve
     ESP_LOGI(TAG, "timestamp in from type %s Time Zone: %ld sec: %ld millisec: %ld", type, timeZone_offset, seconds, milliseconds);
     // TODO: why is this needed and what should it be used for?
     // const char* minutesSinceSync = "";//serialIN.substring(11, serialIN.indexOf("___"));
 
-    timeObject.setTime(seconds + (timeZone_offset * 60L * 60L), milliseconds * 1000);
+    // Some sanity checks
+    if ((seconds < BUILD_TIME_UNIX) || (seconds > (BUILD_TIME_UNIX + 60*60*24*365*10))) {
+        resp.setError(ESP_ERR_INVALID_ARG, "Invalid epoch time!");
+        return;
+    }
+
+    if (milliseconds < 0 || milliseconds > 999) {
+        resp.setError(ESP_ERR_INVALID_ARG, "Invalid milliseconds!");
+        return;
+    }
+
+    if (timeZone_offset < -12 || timeZone_offset > 14) {
+        resp.setError(ESP_ERR_INVALID_ARG, "Invalid timezone offset!");
+        return;
+    }
+
+    // Safe to cast as boundary checked
+    timeObject.setTime(seconds, static_cast<int>(milliseconds) * 1000);
+    timeObject.setTimeZone(static_cast<int32_t>(timeZone_offset));
+
     // timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
     //  timestamps coming in from android are always GMT (minus 7 hrs)
     //  if I not add timezone then timeobject is off
     //  so timeobject does not seem to be adding timezone to system time.
     //  timestamps are in gmt+0, so timestamp convrters
 
-    struct timeval tv_now;
-    gettimeofday(&tv_now, NULL);
-    int64_t time_us = ((int64_t)tv_now.tv_sec * 1000000L) + (int64_t)tv_now.tv_usec;
-    time_us = time_us / 1000;
+    // struct timeval tv_now;
+    // gettimeofday(&tv_now, NULL);
+    // int64_t time_us = ((int64_t)tv_now.tv_sec * 1000000L) + (int64_t)tv_now.tv_usec;
+    // time_us = time_us / 1000;
 
     // ESP_LOGI(TAG, "atol(minutesSinceSync.c_str()) *60L*1000L "+String(atol(minutesSinceSync.c_str()) *60L*1000L));
     // gLastSystemTimeUpdate = getTimeFromTimeObjectMS() - (atol(minutesSinceSync.c_str()) * 60L * 1000L);
     // ESP_LOGI(TAG, "timestamp in from android GMT "+everything    +"  sec: "+seconds + "   millisec: "+milliseconds);
-    ESP_LOGI(TAG, "new timestamp from new sys time (local time) %lld", time_us  ); //this is 7 hours too slow!
-    ESP_LOGI(TAG,"new timestamp from timeobJect (local time) %lld",getTimeFromTimeObjectMS());
-    ESP_LOGI(TAG,"new time set to (local time) %s",timeObject.getDateTime().c_str());
+    // ESP_LOGI(TAG, "new timestamp from new sys time (local time) %lld", time_us  ); //this is 7 hours too slow!
+    // ESP_LOGI(TAG,"new timestamp from timeobJect (local time) %lld",getTimeFromTimeObjectMS());
+    // ESP_LOGI(TAG,"new time set to (local time) %s",timeObject.getDateTime().c_str());
 
     String& response = resp.getPayload();
     response = "{\"Time[ms]\" : ";

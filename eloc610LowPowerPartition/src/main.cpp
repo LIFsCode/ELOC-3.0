@@ -121,7 +121,7 @@ TaskHandle_t ei_TaskHandler = nullptr;      // Task handler from I2S to AI infer
 
 void writeSettings(String settings);
 void doDeepSleep();
-void setTime(long epoch, int ms);
+// void setTime(long epoch, int ms); Now in ESP32Time
 
 // idf-wav-sdcard/lib/sd_card/src/SDCard.cpp   m_host.max_freq_khz = 18000;
 // https://github.com/atomic14/esp32_sdcard_audio/commit/000691f9fca074c69e5bb4fdf39635ccc5f993d4#diff-6410806aa37281ef7c073550a4065903dafce607a78dc0d4cbc72cf50bac3439
@@ -303,11 +303,13 @@ void printPartitionInfo()
 */
 void initTime()
 {
-    struct tm tm;
-    strptime(BUILDDATE, "%b %d %Y %H:%M:%S %Y", &tm);
-    time_t timeSinceEpoch = mktime(&tm);
-    timeObject.setTime(timeSinceEpoch);
-    ESP_LOGI(TAG, "Setting initial time to build date: %s", BUILDDATE);
+    // struct tm tm;
+    // strptime(BUILDDATE, "%b %d %Y %H:%M:%S %Y", &tm);
+    // time_t timeSinceEpoch = mktime(&tm);
+
+    timeObject.setTime(BUILD_TIME_UNIX, 0);
+    timeObject.setTimeZone(TIMEZONE_OFFSET);
+    ESP_LOGI(TAG, "Setting initial time to Unix time: %d & timezone UTC%d", BUILD_TIME_UNIX, TIMEZONE_OFFSET);
 }
 
 /**

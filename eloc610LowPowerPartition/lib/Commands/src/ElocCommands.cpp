@@ -133,7 +133,7 @@ void printStatus(String& buf) {
 #endif
     JsonObject device = doc.createNestedObject("device");
     device["firmware"]                   = gFirmwareVersion;
-    device["Uptime[h]"]                  = round((esp_timer_get_time() / 1000.f / 1000.f / 60.f / 60.f), 3);
+    device["Uptime[h]"]                  = round((timeObject.getUpTimeSecs() / 60.f / 60.f), 3);
     device["totalRecordingTime[h]"]      = round((wav_writer.get_recording_time_total_sec() / 60.f / 60.f), 3);
 
     float sdCardSizeGB = 0;

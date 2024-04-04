@@ -62,7 +62,7 @@ class EdgeImpulse {
      * @brief Record the usec seconds since boot (from esp_timer.h) when
      *        started & use to calculate the time since last activated
      */
-    int64_t detectingStartTime_usec = 0;
+    int64_t detectingStartTime_sec = 0;
 
     /**
      * @brief Represents the time the device has been in detection mode

@@ -119,7 +119,7 @@ void printStatus(String& buf) {
     RecState recState = calcRecordingState();
     addEnum(recordingState, recState);
 
-    session["recordingTime[h]"]    = round((wav_writer.get_recordingTimeSinceLastStarted_usec() / 1000.f / 1000.f / 60.f / 60.f), 3);
+    session["recordingTime[h]"]    = round((wav_writer.get_recordingTimeSinceLastStarted_sec() / 60.f / 60.f), 3);
     JsonObject ai = session.createNestedObject("detection");
     ai["state"]                   = ai_run_enable;
     // first set to defaults in case edge impulse is not included in binary

@@ -7,6 +7,12 @@
 extern SDCardSDIO sd_card;
 
 static const char *TAG = "WAVFileWriter";
+
+/**
+ * @note Ideally recording time would be retrieved with esp_timer_get_time()
+ * but found to be inaccurate. Hence, using the ESP32Time.
+*/
+extern ESP32Time timeObject;
 extern SDCardSDIO sd_card;
 
 WAVFileWriter::WAVFileWriter()
@@ -232,7 +238,7 @@ void WAVFileWriter::start_write_thread() {
 
         // Recalculate to avoid rounding errors
         recording_time_file_sec = m_file_size / (sizeof(int16_t) * m_sample_rate);
-        recordingTimeSinceLastStarted_usec = (esp_timer_get_time() - recordingStartTime_usec);
+        recordingTimeSinceLastStarted_sec = timeObject.getEpoch() - recordingStartTime_sec;
 
         // Limit output to once every 5 secs
         if (recording_time_file_sec % 5 == 0 && recording_time_file_sec != old_secs_written) {
@@ -263,8 +269,8 @@ void WAVFileWriter::start_write_thread() {
   }
 
   // Update total recording time now to avoid rounding errors
-  recording_time_total_sec += (esp_timer_get_time() - recordingStartTime_usec) / 1000000;
-  recordingTimeSinceLastStarted_usec = 0;
+  recording_time_total_sec += timeObject.getEpoch() - recordingStartTime_sec;
+  recordingTimeSinceLastStarted_sec = 0;
   wav_recording_in_progress = false;
   vTaskDelete(NULL);
 }
@@ -317,7 +323,7 @@ int WAVFileWriter::start_wav_write_task(int secondsPerFile)
   ESP_LOGV(TAG, "Func: %s, secondsPerFile = %d", __func__, secondsPerFile);
 
   wav_recording_in_progress = true;
-  recordingStartTime_usec = esp_timer_get_time();
+  recordingStartTime_sec = timeObject.getEpoch();
 
   if (secondsPerFile <= 0) {
     ESP_LOGE(TAG, "secondsPerFile must be > 0");

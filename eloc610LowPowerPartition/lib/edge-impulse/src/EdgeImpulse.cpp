@@ -9,6 +9,12 @@
 #include "EdgeImpulse.hpp"
 #include "trumpet_trimmed_inferencing.h"
 
+/**
+ * @note Ideally recording time would be retrieved with esp_timer_get_time()
+ * but found to be inaccurate. Hence, using the ESP32Time.
+*/
+extern ESP32Time timeObject;
+
 static const char *TAG = "EdgeImpulse";
 
 EdgeImpulse::EdgeImpulse(int i2s_sample_rate) {
@@ -177,7 +183,7 @@ void EdgeImpulse::ei_thread() {
         callback();
 
         // Update times
-        detectingTime_secs = (esp_timer_get_time() - detectingStartTime_usec) / 1000000;
+        detectingTime_secs = timeObject.getEpoch() - detectingStartTime_sec;
         ESP_LOGV(TAG, "detectingTime_secs: %d", detectingTime_secs);
         ESP_LOGV(TAG, "totalDetectingTime_secs: %d", totalDetectingTime_secs);
       }
@@ -186,7 +192,7 @@ void EdgeImpulse::ei_thread() {
   ESP_LOGI(TAG, "deleting task");
 
   // To avoid round errors only update on exit
-  totalDetectingTime_secs += (esp_timer_get_time() - detectingStartTime_usec) / 1000000;
+  totalDetectingTime_secs += timeObject.getEpoch() - detectingStartTime_sec;
   detectingTime_secs = 0;
   inference.status_running = false;
   vTaskDelete(NULL);
@@ -201,7 +207,7 @@ esp_err_t EdgeImpulse::start_ei_thread(std::function<void()> _callback) {
 
   status = Status::running;
   inference.status_running = true;
-  detectingStartTime_usec = esp_timer_get_time();
+  detectingStartTime_sec = timeObject.getEpoch();
   detectingTime_secs = 0;
 
   this->callback = _callback;

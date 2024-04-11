@@ -1,7 +1,10 @@
 #include <limits>
 #include "esp_log.h"
+#include "SDCardSDIO.h"
 #include "WAVFileWriter.h"
 #include "SDCardSDIO.h"
+
+extern SDCardSDIO sd_card;
 
 static const char *TAG = "WAVFileWriter";
 

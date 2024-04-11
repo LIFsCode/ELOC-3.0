@@ -34,15 +34,14 @@
 #include "jsonutils.hpp"
 #include "config.h"
 #include "ElocConfig.hpp"
-
+#include "SDCardSDIO.h"
 
 static const char* TAG = "CONFIG";
-
 static const uint32_t JSON_DOC_SIZE = 1024;
-
 static const char* CFG_FILE = "/spiffs/eloc.config";
 static const char* CFG_FILE_SD = "/sdcard/eloctest.txt";
 
+extern SDCardSDIO sd_card;
 
 //BUGME: encapsulate these in a struct & implement a getter
 static const micInfo_t C_MicInfo_Default {
@@ -155,9 +154,6 @@ const elocDeviceInfo_T& getDeviceInfo() {
 /**************************************************************************************************/
 
 /*************************** Global settings via config file **************************************/
-//BUGME: handle this through file system
-extern bool gMountedSDCard;
-
 
 void loadDevideInfo(const JsonObject& device) {
     gElocDeviceInfo.fileHeader       = device["fileHeader"]       | C_ElocDeviceInfo_Default.fileHeader;
@@ -265,15 +261,13 @@ bool readConfigFile(const char* filename) {
 }
 
 void readConfig() {
-    if (gMountedSDCard && ffsutil::fileExist(CFG_FILE_SD)) {
+    if (sd_card.isMounted() && ffsutil::fileExist(CFG_FILE_SD)) {
         ESP_LOGI(TAG, "Using test config from sd-card: %s", CFG_FILE_SD);
         readConfigFile(CFG_FILE_SD);
-    }
-    else {
+    } else {
         if (ffsutil::fileExist(CFG_FILE)) {
             readConfigFile(CFG_FILE);
-        }
-        else {
+        } else {
             ESP_LOGW(TAG, "No config file found, creating default config!");
             writeConfig();
         }
@@ -282,10 +276,9 @@ void readConfig() {
     String cfg;
     printConfig(cfg);
     ESP_LOGI(TAG, "Running with this Configuration:");
-    printf(cfg.c_str());
+    printf("%s", cfg.c_str());
 
     upateI2sConfig();
-
 }
 
 void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
@@ -362,8 +355,7 @@ bool writeConfigFile(const char* filename) {
 }
 
 bool writeConfig() {
-
-    if (gMountedSDCard) {
+    if (sd_card.isMounted()) {
         if (!writeConfigFile("/sdcard/elocConfig.config.bak")) {
             ESP_LOGE(TAG, "Failed to write config backup to sdcard!");
         }

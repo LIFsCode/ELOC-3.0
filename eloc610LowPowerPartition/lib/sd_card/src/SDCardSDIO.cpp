@@ -34,25 +34,18 @@ esp_err_t SDCardSDIO::init(const char *mount_point) {
   // Modify slot_config.gpio_cd and slot_config.gpio_wp if your board has these signals.
   sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
   slot_config.width = 1;
-  // Enable internal pullups on enabled pins. The internal pullups
-  // are insufficient however, please make sure 10k external pullups are
+  // Enable internal pull-ups on enabled pins. The internal pull-ups
+  // are insufficient however, please make sure 10k external pull-ups are
   // connected on the bus. This is for debug / example purpose only.
   slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
 
   ret = esp_vfs_fat_sdmmc_mount(m_mount_point.c_str(), &m_host, &slot_config, &mount_config, &m_card);
 
-  if (ret != ESP_OK)
-  {  
-    if (ret == ESP_FAIL)
-    {
-      ESP_LOGE(TAG, "Failed to mount filesystem. "
-                    "If you want the card to be formatted, set the EXAMPLE_FORMAT_IF_MOUNT_FAILED menuconfig option.");
-    }
-    else
-    {
-      ESP_LOGE(TAG, "Failed to initialize the card (%s). "
-                    "Make sure SD card lines have pull-up resistors in place.",
-               esp_err_to_name(ret));
+  if (ret != ESP_OK) {
+    if (ret == ESP_FAIL) {
+      ESP_LOGE(TAG, "Failed to mount filesystem");
+    } else {
+      ESP_LOGE(TAG, "Failed to initialize the card (%s)", esp_err_to_name(ret));
     }
     return ret;
   }
@@ -66,14 +59,6 @@ esp_err_t SDCardSDIO::init(const char *mount_point) {
   return ret;
 }
 
-SDCardSDIO::~SDCardSDIO()
-{
-  ESP_LOGI(TAG, "Trying to unmount SDIO card");
-  // All done, unmount partition and disable SDMMC or SPI peripheral
-  esp_vfs_fat_sdcard_unmount(m_mount_point.c_str(), m_card);
-  ESP_LOGI(TAG, "SDIO card unmounted");
-}
-
 float SDCardSDIO::getCapacityMB() const {
   if (!m_mounted) {
     return 0;
@@ -81,27 +66,57 @@ float SDCardSDIO::getCapacityMB() const {
   return static_cast<float>((uint64_t) m_card->csd.capacity * m_card->csd.sector_size) / (1024.0 * 1024.0);
 }
 
-float SDCardSDIO::freeSpaceGB() const {
+esp_err_t SDCardSDIO::update() {
+    if (!m_mounted) {
+        ESP_LOGW(TAG, "SD card not mounted, attempting to mount");
+        if (m_mount_point.empty()) {
+          ESP_LOGE(TAG, "Mount point not set");
+          return ESP_ERR_INVALID_STATE;
+        }
+        init(m_mount_point.c_str());
+        // Successfully mounted?
+        if (!m_mounted) {
+            return ESP_ERR_NOT_FOUND;
+        }
+    }
+
+    return updateFreeSpace();
+}
+
+esp_err_t SDCardSDIO::updateFreeSpace() {
     FATFS *fs;
-    uint32_t fre_clust, fre_sect, tot_sect;
+    uint32_t fre_clust;
     FRESULT res;
     /* Get volume information and free clusters of drive 0 */
     res = f_getfree(m_mount_point.c_str(), &fre_clust, &fs);
     if (res != FR_OK) {
-      return 0;
+      return ESP_ERR_INVALID_RESPONSE;
     }
-    /* Get total sectors and free sectors */
-    tot_sect = (fs->n_fatent - 2) * fs->csize;
-    fre_sect = fre_clust * fs->csize;
-    float freeSpaceGB = static_cast<float>(static_cast<float>(fre_sect) / 1048576.0 / 2.0);
-    /* Print the free space (assuming 512 bytes/sector) */
+    /**
+     * @ref: http://elm-chan.org/fsw/ff/doc/getfree.html
+     * Free bytes =  free clusters * sectors per cluster * sector size
+     *            =  fre_clust * fs->csize * fs->ssize
+     */
+    uint64_t fre_sect = fre_clust * fs->csize;
+    m_free_bytes = fre_sect * fs->ssize;
     if (0) {
-      printf("%10u KiB total drive space.\n%10u KiB available.\n", tot_sect / 2, fre_sect / 2);
-      printf("\n %2.1f GB free\n", freeSpaceGB);
+      ESP_LOGI(TAG, "SD card free space: %llu bytes", m_free_bytes);
+      ESP_LOGI(TAG, "SD card free space: %llu KiB", getFreeKB());
+      auto freeSpaceGB = static_cast<float>(static_cast<float>(m_free_bytes) / (1024 * 1024 * 1024));
+      ESP_LOGI(TAG, "SD card free space: %f GiB", freeSpaceGB);
     }
 
-    ESP_LOGI(TAG, "SD card free space: %f GB", freeSpaceGB);
-    ESP_LOGI(TAG, "SD card free space: %u KiB", fre_sect / 2);
-    return freeSpaceGB;
+    return ESP_OK;
 }
 
+esp_err_t SDCardSDIO::checkSDCard() {
+  if ((m_free_bytes > 0) && (m_free_bytes < (0.5 * 1024 * 1024 * 1024))) {
+    ESP_LOGE(TAG, "Insufficent free space");
+    return ESP_ERR_NO_MEM;
+  }
+  return ESP_OK;
+}
+
+SDCardSDIO::~SDCardSDIO() {
+  esp_vfs_fat_sdcard_unmount(m_mount_point.c_str(), m_card);
+}

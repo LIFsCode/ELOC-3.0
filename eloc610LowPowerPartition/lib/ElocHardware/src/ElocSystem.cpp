@@ -41,9 +41,7 @@
 //TODO move sd card into ELOC system
 extern SDCardSDIO sd_card;
 
-
 static const char *TAG = "ElocSystem";
-
 
 class StatusLED
 {
@@ -59,17 +57,16 @@ private:
     bool mIsRepeating;
 
     uint32_t mStartedMs;
-    uint32_t mPeriodStartMs;    
+    uint32_t mPeriodStartMs;
     bool mCurrentState;
     const char* mName;
-public:
-
+ public:
     StatusLED(ELOC_IOEXP& IOExpInstance, uint32_t bit, const char* name ="") :
         mIOExpInstance(IOExpInstance), mIObit(bit),
         mDurationMs(-1), mOnDurationMs(0), mOffDurationMs(0), mRepeats(0),mRepeatCnt(0),
         mIsBlinking(false), mIsRepeating(false), mStartedMs(0), mPeriodStartMs(0), mName(name) {
     }
-    virtual ~StatusLED() {};
+    virtual ~StatusLED() {}
 
     esp_err_t  setState(bool val) {
         mDurationMs = -1;
@@ -90,7 +87,7 @@ public:
     }
     esp_err_t setBlinkingPeriodic(uint32_t onMs, uint32_t offMs, int32_t durationMs, uint32_t repeats) {
         mIsRepeating = true;
-        mRepeats = repeats*2; // double the repeats for high low period
+        mRepeats = repeats*2;  // double the repeats for high low period
         mRepeatCnt = 0;
         ESP_LOGV(TAG, "%s: Repeated mode %d repeats", mName, mRepeats);
         return setBlinking(false, onMs, offMs, durationMs);
@@ -103,8 +100,7 @@ public:
                     mStartedMs = millis();
                     mPeriodStartMs = mStartedMs;
                     mRepeatCnt = 0;
-                }
-                else {
+                } else {
                     mIsBlinking = false;
                     return mIOExpInstance.setOutputBit(mIObit, false);
                 }
@@ -127,14 +123,14 @@ public:
                 return mIOExpInstance.setOutputBit(mIObit, mCurrentState);
             }
         }
-        return ESP_OK; 
+        return ESP_OK;
     }
 };
 
 
 ElocSystem::ElocSystem():
     mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true), 
-    mRefreshStatus(false), mIntruderDetected(false), 
+    mRefreshStatus(false), mIntruderDetected(false),
     mFwUpdateProcessing(false), mFactoryInfo()
 {
     ESP_LOGI(TAG, "Reading Factory Info from NVS");
@@ -293,10 +289,10 @@ esp_err_t ElocSystem::pm_check_ForRecording(int sample_rate) {
 esp_err_t ElocSystem::pm_configure() {
     /** Setup Power Management */
     esp_pm_config_esp32_t cfg = {
-        .max_freq_mhz = getConfig().cpuMaxFrequencyMHZ, 
-        .min_freq_mhz = getConfig().cpuMinFrequencyMHZ, 
+        .max_freq_mhz = getConfig().cpuMaxFrequencyMHZ,
+        .min_freq_mhz = getConfig().cpuMinFrequencyMHZ,
         .light_sleep_enable = getConfig().cpuEnableLightSleep
-    };            
+    };
     if (esp_err_t err = this->pm_configure(&cfg) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set PM config with %s", esp_err_to_name(err));
         return err;
@@ -305,6 +301,7 @@ esp_err_t ElocSystem::pm_configure() {
 }
 
 esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
+    sd_card.update();
 
     Status_t status;
     status.batteryLow = Battery::GetInstance().isLow();
@@ -327,7 +324,7 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
     }
     else {
         if (mStatus.intruderDetected && !mIntruderDetected) {
-            // release intruder alarm buzzer beeping 
+            // release intruder alarm buzzer beeping
             setBuzzerIdle();
         }
         if (mIntruderDetected) {
@@ -429,19 +426,19 @@ void ElocSystem::notifyFwUpdateError() {
         mStatusLed->setState(false);
         mBatteryLed->setState(false);
         vTaskDelay(pdMS_TO_TICKS(40));
-    }  
+    }
     mFwUpdateProcessing = false;
 }
 
 void ElocSystem::notifyFwUpdate() {
-    // Toggle LEDs with the speed 
+    // Toggle LEDs with the speed
     if (mFwUpdateProcessing) {
         mStatusLed->update();
         mBatteryLed->update();
     }
-    else { 
+    else {
         // will never be reset, except by notifyFwUpdateError, a successfull update results in a reboot
-        mFwUpdateProcessing = true; 
+        mFwUpdateProcessing = true;
         mStatusLed->setBlinking(false, 100, 100, 60*1000);
         mBatteryLed->setBlinking(false, 100, 100, 60*1000);
     }

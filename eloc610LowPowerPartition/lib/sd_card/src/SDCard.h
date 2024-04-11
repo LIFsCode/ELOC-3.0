@@ -8,6 +8,7 @@
 
 class SDCard {
  private:
+  bool m_mounted = false;
   std::string m_mount_point;
   sdmmc_card_t *m_card;
   sdmmc_host_t m_host = SDSPI_HOST_DEFAULT();

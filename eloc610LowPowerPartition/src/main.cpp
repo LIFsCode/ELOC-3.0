@@ -924,7 +924,7 @@ void app_main(void) {
             }
 
             // Compare time sources
-            if (1) {
+            if (0) {
                 ESP_LOGI(TAG, "FreeRTOS xTaskGetTickCount = %u", xTaskGetTickCount());
                 ESP_LOGI(TAG, "esp_timer_get_time = %lld", esp_timer_get_time());
                 ESP_LOGI(TAG, "esp32Time.getUpTimeSecs = %llu", timeObject.getUpTimeSecs());

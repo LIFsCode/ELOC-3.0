@@ -756,7 +756,7 @@ void app_main(void) {
     edgeImpulse.output_inferencing_settings();
     edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
 
-    if (1) {
+    if (0) {
         // TODO: This test now moved to unit test (test_target_edge-impulse) - could remove
 
         // Run stored audio samples through the model to test it

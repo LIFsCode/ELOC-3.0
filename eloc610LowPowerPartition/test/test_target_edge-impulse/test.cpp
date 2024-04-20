@@ -29,6 +29,7 @@
 #include <unity.h>
 #include "ei_inference.h"
 #include "project_config.h"
+#include "ESP32Time.h"
 #include "test_samples.h"
 #include "EdgeImpulse.hpp"              // This file includes trumpet_inferencing.h
 #include "edge-impulse-sdk/dsp/numpy_types.h"
@@ -36,8 +37,9 @@
 
 #define EIDSP_QUANTIZE_FILTERBANK 0
 
-EdgeImpulse edgeImpulse(I2S_DEFAULT_SAMPLE_RATE);
+ESP32Time timeObject;
 TaskHandle_t ei_TaskHandler = nullptr;
+EdgeImpulse edgeImpulse(I2S_DEFAULT_SAMPLE_RATE);
 
 int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
   return edgeImpulse.microphone_audio_signal_get_data(offset, length, out_ptr);
@@ -50,7 +52,10 @@ extern "C" {
 void app_main(void);
 }
 
-void setUp(void) {}
+void setUp(void) {
+    timeObject.setTime(BUILD_TIME_UNIX, 0);
+    timeObject.setTimeZone(TIMEZONE_OFFSET);
+}
 
 void tearDown(void) {}
 

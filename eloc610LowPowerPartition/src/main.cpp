@@ -754,13 +754,13 @@ void app_main(void) {
     auto s = edgeImpulse.get_aiModel();
     ESP_LOGI(TAG, "Edge impulse model version: %s", s.c_str());
     edgeImpulse.output_inferencing_settings();
-    edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
 
     if (0) {
+        edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
         // TODO: This test now moved to unit test (test_target_edge-impulse) - could remove
 
         // Run stored audio samples through the model to test it
-        // Use non-continuous process for this
+        // Use continuous process for this
         ESP_LOGI(TAG, "Testing model against pre-recorded sample data...");
 
         static_assert((EI_CLASSIFIER_RAW_SAMPLE_COUNT <= TEST_SAMPLE_LENGTH),

@@ -198,6 +198,80 @@ void test_wav_file() {
   }
 }
 
+void run_inference_from_file(WAVFileReader *reader) {
+  // Run stored audio samples through the model to test it
+  // Use non-continuous process for this
+  edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+
+  ei::signal_t signal;
+  signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
+  signal.get_data = &microphone_audio_signal_get_data;
+  ei_impulse_result_t result = {0};
+
+  // Artificially fill buffer with test data
+  auto ei_skip_rate = reader->sample_rate() / EI_CLASSIFIER_RAW_SAMPLE_COUNT;
+  auto skip_current = ei_skip_rate;  // Make sure to fill first sample, then
+                                     // start skipping if needed
+
+  for (auto i = 0; i < EI_CLASSIFIER_LABEL_COUNT; i++) {
+    for (auto test_sample_count = 0, inference_buffer_count = 0;
+         (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+         test_sample_count++) {
+      if (skip_current >= ei_skip_rate) {
+        reader->read(&edgeImpulse.inference.buffers[0][inference_buffer_count++], 1);
+        skip_current = 1;
+      } else {
+        skip_current++;
+      }
+    }
+
+    // Mark buffer as ready
+    // Mark active buffer as inference.buffers[1], inference run on inactive
+    // buffer
+    edgeImpulse.inference.buf_select = 1;
+    edgeImpulse.inference.buf_count = 0;
+    edgeImpulse.inference.buf_ready = 1;
+
+    TEST_ASSERT_EQUAL(EI_IMPULSE_OK,
+                      edgeImpulse.run_classifier(&signal, &result));
+
+    // print the predictions
+    printf("Test model predictions: \n");
+    printf("    (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.) \n",
+           result.timing.dsp, result.timing.classification,
+           result.timing.anomaly);
+    for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
+      printf("    %s: %f \n", result.classification[ix].label,
+             result.classification[ix].value);
+
+      if (strcmp(result.classification[ix].label, "trumpet") == 0 &&
+          strcmp(test_array_categories[i], "trumpet") == 0) {
+        if (result.classification[ix].value < AI_RESULT_THRESHOLD) {
+          printf("Test of trumpet sample appears to be poor, check model! \n");
+        }
+      }
+    }
+  }
+
+  // Free buffers as the buffer size differs
+  edgeImpulse.free_buffers();
+}
+
+void test_ai_model() {
+  const char *files[] = { "/sdcard/wav_test_files/4K_Trumpet2.wav",
+                          "/sdcard/wav_test_files/8K_Trumpet2.wav",
+                          "/sdcard/wav_test_files/16K_Trumpet2.wav" };
+
+  for (auto i {0}; i < 3; i++) {;
+    printf("Testing file %s \n", files[i]);
+    FILE *fp = fopen(files[i], "rb");
+    // create a new wave file writer & ques file to start of data
+    WAVFileReader *reader = new WAVFileReader(fp);
+    run_inference_from_file(reader);
+    fclose(fp);
+  }
+}
+
 int runUnityTests(void) {
   UNITY_BEGIN();
   RUN_TEST(test_init);
@@ -205,6 +279,7 @@ int runUnityTests(void) {
   RUN_TEST(test_setup_SD);
   RUN_TEST(test_output_inferencing_settings);
   RUN_TEST(test_wav_file);
+  RUN_TEST(test_ai_model);
   return UNITY_END();
 }
 

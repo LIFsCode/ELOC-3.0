@@ -167,10 +167,6 @@ void run_inference() {
 }
 
 void test_wav_file() {
-  // Get a list of wav files on the SD card
-  std::vector<String> wav_files;
-  // ffsutil::fileListDir("/sdcard/wav_test_files", "wav", wav_files);
-
   {
     FILE *fp = fopen("/sdcard/wav_test_files/16K_Trumpet2.wav", "rb");
     // create a new wave file writer
@@ -222,7 +218,7 @@ void run_inference_from_file(WAVFileReader *reader) {
         reader->read(&edgeImpulse.inference.buffers[0][inference_buffer_count++], 1);
         skip_current = 1;
       } else {
-        // Advance one int16_t sample from the file
+        // Advance one int16_t sample from the file & discard
         int16_t discard_sample[1];
         reader->read(&discard_sample[0], 1);
         skip_current++;
@@ -261,6 +257,11 @@ void run_inference_from_file(WAVFileReader *reader) {
 }
 
 void test_ai_model() {
+  // Get a list of wav files on the SD card
+  std::vector<std::string> wav_files;
+  ffsutil::getFileListWithExtension("/sdcard/wav_test_files", "wav", wav_files);
+
+
   const char *files[] = { "/sdcard/wav_test_files/4K_Trumpet2.wav",
                           "/sdcard/wav_test_files/8K_Trumpet2.wav",
                           "/sdcard/wav_test_files/16K_Trumpet2.wav" };

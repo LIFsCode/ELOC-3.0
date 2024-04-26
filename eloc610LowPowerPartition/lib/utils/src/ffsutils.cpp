@@ -198,4 +198,23 @@ sdTestSpeed_t TestSDFile(const char *path, uint8_t *buf, int len, int TEST_FILE_
     return result;
 }
 
-}//namespace ffsutil
+int getFileListWithExtension(const char *path, const char *extension, std::vector<std::string> &files) {
+    DIR *dir;
+    struct dirent *ent;
+    // if ((dir = opendir(path)) != NULL) {
+    //     while ((ent = readdir(dir)) != NULL) {
+    //         if (ent->d_type == DT_REG) {
+    //             String filename = ent->d_name;
+    //             if (filename.find(extension) != std::string::npos) {
+    //                 files.push_back(filename);
+    //             }
+    //         }
+    //     }
+    //     closedir(dir);
+    // } else {
+    //     return -1;
+    // }
+    return 0;
+}
+
+}  // namespace ffsutil

@@ -24,6 +24,10 @@
 #ifndef UTILS_FFSUTILS_H_
 #define UTILS_FFSUTILS_H_
 
+#include <string>
+#include <vector>
+
+
 namespace ffsutil {
 
 /// @brief Prints a list of files & subdirectories with sizes of a given path
@@ -45,7 +49,16 @@ typedef struct {
 }sdTestSpeed_t;
 sdTestSpeed_t TestSDFile(const char *path, uint8_t *buf, int len, int TEST_FILE_SIZE = -1);
 
-}
+/**
+ * @brief Get a file list in the provided path matching the required extension
+ *
+ * @param path The path to search for files
+ * @param extension The file extension to search for
+ * @param files The vector to store the file names
+ * @return int The number of files found
+ */
+int getFileListWithExtension(const char *path, const char *extension, std::vector<std::string> &files);
 
+}  // namespace ffsutil
 
-#endif // UTILS_FFSUTILS_H_
+#endif  // UTILS_FFSUTILS_H_

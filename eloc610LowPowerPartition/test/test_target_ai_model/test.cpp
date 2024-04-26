@@ -218,9 +218,13 @@ void run_inference_from_file(WAVFileReader *reader) {
          (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT);
          test_sample_count++) {
       if (skip_current >= ei_skip_rate) {
+        // Copy one int16_t sample from file to buffer
         reader->read(&edgeImpulse.inference.buffers[0][inference_buffer_count++], 1);
         skip_current = 1;
       } else {
+        // Advance one int16_t sample from the file
+        int16_t discard_sample[1];
+        reader->read(&discard_sample[0], 1);
         skip_current++;
       }
     }
@@ -232,8 +236,7 @@ void run_inference_from_file(WAVFileReader *reader) {
     edgeImpulse.inference.buf_count = 0;
     edgeImpulse.inference.buf_ready = 1;
 
-    TEST_ASSERT_EQUAL(EI_IMPULSE_OK,
-                      edgeImpulse.run_classifier(&signal, &result));
+    TEST_ASSERT_EQUAL(EI_IMPULSE_OK, edgeImpulse.run_classifier(&signal, &result));
 
     // print the predictions
     printf("Test model predictions: \n");

@@ -30,7 +30,7 @@ if (env.get("UPLOAD_PORT") == None):
     elif IS_LINUX:
         env.Replace(UPLOAD_PORT=LINUX_PORT)
     elif IS_MAC:
-        new_build_dir = "$PROJECT_DIR/.pio/build_custom_mac/$PIOENV"
+        print("Unknown port to set to")
     else:
         sys.stderr.write("Unrecognized OS.\n")
         env.Exit(-1)

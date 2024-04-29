@@ -55,9 +55,9 @@ sdTestSpeed_t TestSDFile(const char *path, uint8_t *buf, int len, int TEST_FILE_
  * @param path The path to search for files
  * @param extension The file extension to search for
  * @param files The vector to store the file names
- * @return int The number of files found
+ * @return size_t The number of files found
  */
-int getFileListWithExtension(const char *path, const char *extension, std::vector<std::string> &files);
+size_t getFileListWithExtension(const char *path, const char *extension, std::vector<std::string> &files);
 
 }  // namespace ffsutil
 

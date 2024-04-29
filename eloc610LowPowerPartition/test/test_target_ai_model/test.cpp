@@ -258,8 +258,8 @@ void run_inference_from_file(WAVFileReader *reader) {
 
 void test_ai_model() {
   // Get a list of wav files on the SD card
-  std::vector<std::string> wav_files;
-  ffsutil::getFileListWithExtension("/sdcard/wav_test_files", "wav", wav_files);
+  // std::vector<std::string> wav_files;
+  // auto file_count = ffsutil::getFileListWithExtension("/sdcard/wav_test_files", "wav", wav_files);
 
 
   const char *files[] = { "/sdcard/wav_test_files/4K_Trumpet2.wav",

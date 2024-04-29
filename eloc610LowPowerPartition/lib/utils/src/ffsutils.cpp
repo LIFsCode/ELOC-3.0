@@ -198,7 +198,7 @@ sdTestSpeed_t TestSDFile(const char *path, uint8_t *buf, int len, int TEST_FILE_
     return result;
 }
 
-int getFileListWithExtension(const char *path, const char *extension, std::vector<std::string> &files) {
+size_t getFileListWithExtension(const char *path, const char *extension, std::vector<std::string> &files) {
     static const char* TAG = "getFileListWithExtension";
 
     DIR *dir;
@@ -218,7 +218,7 @@ int getFileListWithExtension(const char *path, const char *extension, std::vecto
     } else {
         return -1;
     }
-    return 0;
+    return files.size();
 }
 
 }  // namespace ffsutil

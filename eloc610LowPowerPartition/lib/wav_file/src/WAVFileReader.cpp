@@ -9,21 +9,22 @@ WAVFileReader::WAVFileReader(FILE *fp)
     // read the WAV header
     fread(reinterpret_cast<void *>(&m_wav_header), sizeof(wav_header_t), 1, m_fp);
     // sanity check the bit depth
-    if (m_wav_header.bit_depth != 16)
-    {
+    if (m_wav_header.bit_depth != 16) {
         ESP_LOGE(TAG, "ERROR: bit depth %d is not supported\n", m_wav_header.bit_depth);
     }
-    if (m_wav_header.num_channels != 1)
-    {
+    if (m_wav_header.num_channels != 1) {
         ESP_LOGE(TAG, "ERROR: channels %d is not supported\n", m_wav_header.num_channels);
     }
-    ESP_LOGI(TAG, "fmt_chunk_size=%d, audio_format=%d, num_channels=%d, sample_rate=%d, sample_alignment=%d, bit_depth=%d, data_bytes=%d\n",
-             m_wav_header.fmt_chunk_size, m_wav_header.audio_format, m_wav_header.num_channels, m_wav_header.sample_rate, m_wav_header.sample_alignment, m_wav_header.bit_depth, m_wav_header.data_bytes);
+    // ESP_LOGI(TAG, "fmt_chunk_size=%d, audio_format=%d, num_channels=%d, sample_rate=%d, sample_alignment=%d, bit_depth=%d, data_bytes=%d",
+    //    m_wav_header.fmt_chunk_size, m_wav_header.audio_format, m_wav_header.num_channels, m_wav_header.sample_rate, m_wav_header.sample_alignment, m_wav_header.bit_depth, m_wav_header.data_bytes);
 
-    ESP_LOGI(TAG, "ChunkSize = %d", m_wav_header.wav_size);
+    // ESP_LOGI(TAG, "ChunkSize = %d", m_wav_header.wav_size);
 
     // set the number of samples
-    ESP_LOGI(TAG, "Number of samples = %d", set_number_samples());
+    // ESP_LOGI(TAG, "Number of samples = %d", set_number_samples());
+
+    ESP_LOGI(TAG, "num_channels=%d, sample_rate=%d, bit_depth=%d, number of samples=%d",
+        m_wav_header.num_channels, m_wav_header.sample_rate, m_wav_header.bit_depth, set_number_samples());
 }
 
 uint32_t WAVFileReader::set_number_samples() {
@@ -58,7 +59,7 @@ uint32_t WAVFileReader::set_number_samples() {
         ESP_LOGW(TAG, "Failed to read in samples");
         return 0;
     } else {
-        ESP_LOGI(TAG, "Subchunk2Size: %d\n", u32);
+        ESP_LOGV(TAG, "Subchunk2Size: %d", u32);
     }
 
     number_samples = u32 / (m_wav_header.num_channels * (m_wav_header.bit_depth / 8));

@@ -210,7 +210,7 @@ void run_inference_from_file(WAVFileReader *reader) {
                                      // start skipping if needed
 
   if (ei_skip_rate != 1) {
-    ESP_LOGI("TEST", "Skip rate = ", ei_skip_rate);
+    printf("Skip rate = %d", ei_skip_rate);
   }
 
   for (auto test_sample_count = 0, inference_buffer_count = 0;

@@ -209,47 +209,38 @@ void run_inference_from_file(WAVFileReader *reader) {
   auto skip_current = ei_skip_rate;  // Make sure to fill first sample, then
                                      // start skipping if needed
 
-  for (auto i = 0; i < EI_CLASSIFIER_LABEL_COUNT; i++) {
-    for (auto test_sample_count = 0, inference_buffer_count = 0;
-         (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT);
-         test_sample_count++) {
-      if (skip_current >= ei_skip_rate) {
-        // Copy one int16_t sample from file to buffer
-        reader->read(&edgeImpulse.inference.buffers[0][inference_buffer_count++], 1);
-        skip_current = 1;
-      } else {
-        // Advance one int16_t sample from the file & discard
-        int16_t discard_sample[1];
-        reader->read(&discard_sample[0], 1);
-        skip_current++;
-      }
+  for (auto test_sample_count = 0, inference_buffer_count = 0;
+        (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+        test_sample_count++) {
+    if (skip_current >= ei_skip_rate) {
+      // Copy one int16_t sample from file to buffer
+      reader->read(&edgeImpulse.inference.buffers[0][inference_buffer_count++], 1);
+      skip_current = 1;
+    } else {
+      // Advance one int16_t sample from the file & discard
+      int16_t discard_sample[1];
+      reader->read(&discard_sample[0], 1);
+      skip_current++;
     }
+  }
 
-    // Mark buffer as ready
-    // Mark active buffer as inference.buffers[1], inference run on inactive
-    // buffer
-    edgeImpulse.inference.buf_select = 1;
-    edgeImpulse.inference.buf_count = 0;
-    edgeImpulse.inference.buf_ready = 1;
+  // Mark buffer as ready
+  // Mark active buffer as inference.buffers[1], inference run on inactive
+  // buffer
+  edgeImpulse.inference.buf_select = 1;
+  edgeImpulse.inference.buf_count = 0;
+  edgeImpulse.inference.buf_ready = 1;
 
-    TEST_ASSERT_EQUAL(EI_IMPULSE_OK, edgeImpulse.run_classifier(&signal, &result));
+  TEST_ASSERT_EQUAL(EI_IMPULSE_OK, edgeImpulse.run_classifier(&signal, &result));
 
-    // print the predictions
-    printf("Test model predictions: \n");
-    printf("    (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.) \n",
-           result.timing.dsp, result.timing.classification,
-           result.timing.anomaly);
-    for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
-      printf("    %s: %f \n", result.classification[ix].label,
-             result.classification[ix].value);
-
-      if (strcmp(result.classification[ix].label, "trumpet") == 0 &&
-          strcmp(test_array_categories[i], "trumpet") == 0) {
-        if (result.classification[ix].value < AI_RESULT_THRESHOLD) {
-          printf("Test of trumpet sample appears to be poor, check model! \n");
-        }
-      }
-    }
+  // print the predictions
+  printf("Test model predictions: \n");
+  printf("    (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.) \n",
+          result.timing.dsp, result.timing.classification,
+          result.timing.anomaly);
+  for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
+    printf("    %s: %f \n", result.classification[ix].label,
+            result.classification[ix].value);
   }
 
   // Free buffers as the buffer size differs
@@ -258,17 +249,20 @@ void run_inference_from_file(WAVFileReader *reader) {
 
 void test_ai_model() {
   // Get a list of wav files on the SD card
-  // std::vector<std::string> wav_files;
-  // auto file_count = ffsutil::getFileListWithExtension("/sdcard/wav_test_files", "wav", wav_files);
+  const std::string file_path = "/sdcard/wav_test_files";
 
+  std::vector<std::string> wav_files;
+  auto file_count = ffsutil::getFileListWithExtension(file_path.c_str(), "wav", wav_files);
 
-  const char *files[] = { "/sdcard/wav_test_files/4K_Trumpet2.wav",
-                          "/sdcard/wav_test_files/8K_Trumpet2.wav",
-                          "/sdcard/wav_test_files/16K_Trumpet2.wav" };
+  if (file_count == 0) {
+    printf("No wav files found in /sdcard/wav_test_files\n");
+    return;
+  }
 
-  for (auto i {0}; i < 3; i++) {;
-    printf("Testing file %s \n", files[i]);
-    FILE *fp = fopen(files[i], "rb");
+  for (auto i {0}; i < file_count; i++) {
+    std::string fname = file_path + "/" + wav_files.at(i);
+    printf("Testing file %s \n", fname.c_str());
+    FILE *fp = fopen(fname.c_str(), "rb");
     // create a new wave file writer & ques file to start of data
     WAVFileReader *reader = new WAVFileReader(fp);
     run_inference_from_file(reader);

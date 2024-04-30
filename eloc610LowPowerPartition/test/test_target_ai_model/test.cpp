@@ -209,6 +209,10 @@ void run_inference_from_file(WAVFileReader *reader) {
   auto skip_current = ei_skip_rate;  // Make sure to fill first sample, then
                                      // start skipping if needed
 
+  if (ei_skip_rate != 1) {
+    ESP_LOGI("TEST", "Skip rate = ", ei_skip_rate);
+  }
+
   for (auto test_sample_count = 0, inference_buffer_count = 0;
         (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT);
         test_sample_count++) {

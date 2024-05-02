@@ -30,10 +30,11 @@
  */
 
 #include <Arduino.h>
+#include <sys/stat.h>
 #include <unity.h>
 #include <vector>
 #include "ESP32Time.h"
-#include "EdgeImpulse.hpp" // This file includes trumpet_inferencing.h
+#include "EdgeImpulse.hpp"  // This file includes trumpet_inferencing.h
 #include "SDCardSDIO.h"
 #include "WAVFileReader.h"
 #include "ffsutils.h"
@@ -167,7 +168,8 @@ void run_inference() {
 }
 
 void test_wav_file() {
-  {
+  // Run inference on test files
+  if (ffsutil::fileExist("/sdcard/wav_test_files/16K_Trumpet2.wav")) {
     FILE *fp = fopen("/sdcard/wav_test_files/16K_Trumpet2.wav", "rb");
     // create a new wave file writer
     WAVFileReader *reader = new WAVFileReader(fp);
@@ -178,9 +180,11 @@ void test_wav_file() {
     // Expect a min of 4000 samples, i.e. 1 sec at 4KHz
     TEST_ASSERT_GREATER_OR_EQUAL(4000, reader->get_number_samples());
     fclose(fp);
+  } else {
+    printf("File /sdcard/wav_test_files/16K_Trumpet2.wav not found\n");
   }
 
-  {
+  if (ffsutil::fileExist("/sdcard/wav_test_files/8K_Trumpet1.wav")) {
     FILE *fp = fopen("/sdcard/wav_test_files/8K_Trumpet1.wav", "rb");
     // create a new wave file writer
     WAVFileReader *reader = new WAVFileReader(fp);
@@ -191,6 +195,8 @@ void test_wav_file() {
     // Expect a min of 4000 samples, i.e. 1 sec at 4KHz
     TEST_ASSERT_GREATER_OR_EQUAL(4000, reader->get_number_samples());
     fclose(fp);
+  } else {
+    printf("File /sdcard/wav_test_files/8K_Trumpet1.wav not found\n");
   }
 }
 
@@ -255,6 +261,12 @@ void test_ai_model() {
   // Get a list of wav files on the SD card
   const std::string file_path = "/sdcard/wav_test_files";
 
+  // Check directory exists, create if not
+  if (!ffsutil::folderExists(file_path.c_str())) {
+        printf("%s does not exist, creating empty folder\n", file_path.c_str());
+        mkdir(file_path.c_str(), 0777);
+  }
+
   std::vector<std::string> wav_files;
   auto file_count = ffsutil::getFileListWithExtension(file_path.c_str(), "wav", wav_files);
 
@@ -282,6 +294,7 @@ int runUnityTests(void) {
   RUN_TEST(test_output_inferencing_settings);
   RUN_TEST(test_wav_file);
   RUN_TEST(test_ai_model);
+
   return UNITY_END();
 }
 

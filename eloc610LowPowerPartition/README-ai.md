@@ -23,7 +23,7 @@ Build using 'esp32dev-ei' in the 'Project Tasks':
     `lib/edge-impulse/src/tflite-model`  
     `lib/edge-impulse/src/<model-header-file.h>`  
 7. Copy the three new folders (edge-impulse-sdk, model-parameters & tflite-model) & model header file from the downloaded model into 'lib/src/'. 
-8. Amend the following line (currently #736) in main.cpp with the correct model header file name (if necessary)
+8. Amend the following line (currently #10) in /lib/edge-impulse/src/EdgeImpulse.cppn.cpp with the correct model header file name (if necessary)
     `#include "trumpet_inferencing.h"`
 9. Under 'esp32dev-ei' in the 'Project Tasks' menu run:
     'Full Clean' **(Very important, otherwise the new model will not be pulled into .pio build folder)**

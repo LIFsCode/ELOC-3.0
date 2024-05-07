@@ -24,6 +24,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #define EI_CLASSIFIER_NONE                       255
 #define EI_CLASSIFIER_UTENSOR                    1
@@ -47,16 +48,21 @@
 #define EI_CLASSIFIER_SENSOR_ENVIRONMENTAL       5
 #define EI_CLASSIFIER_SENSOR_FUSION              6
 
+#define EI_ANOMALY_TYPE_UNKNOWN                   0
+#define EI_ANOMALY_TYPE_KMEANS                    1
+#define EI_ANOMALY_TYPE_GMM                       2
+#define EI_ANOMALY_TYPE_VISUAL_GMM                3
+
 // These must match the enum values in TensorFlow Lite's "TfLiteType"
 #define EI_CLASSIFIER_DATATYPE_FLOAT32           1
 #define EI_CLASSIFIER_DATATYPE_UINT8             3
 #define EI_CLASSIFIER_DATATYPE_INT8              9
 
-#define EI_CLASSIFIER_PROJECT_ID                 290754
+#define EI_CLASSIFIER_PROJECT_ID                 243836
 #define EI_CLASSIFIER_PROJECT_OWNER              "EDsteve"
-#define EI_CLASSIFIER_PROJECT_NAME               "trumpet trimmed"
-#define EI_CLASSIFIER_PROJECT_DEPLOY_VERSION     14
-#define EI_CLASSIFIER_NN_INPUT_FRAME_SIZE        512
+#define EI_CLASSIFIER_PROJECT_NAME               "trumpets 16bit"
+#define EI_CLASSIFIER_PROJECT_DEPLOY_VERSION     17
+#define EI_CLASSIFIER_NN_INPUT_FRAME_SIZE        1024
 #define EI_CLASSIFIER_RAW_SAMPLE_COUNT           4000
 #define EI_CLASSIFIER_RAW_SAMPLES_PER_FRAME      1
 #define EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE       (EI_CLASSIFIER_RAW_SAMPLE_COUNT * EI_CLASSIFIER_RAW_SAMPLES_PER_FRAME)
@@ -66,16 +72,16 @@
 #define EI_CLASSIFIER_NN_OUTPUT_COUNT            2
 #define EI_CLASSIFIER_INTERVAL_MS                0.25
 #define EI_CLASSIFIER_LABEL_COUNT                2
-#define EI_CLASSIFIER_HAS_ANOMALY                0
+#define EI_CLASSIFIER_HAS_ANOMALY                EI_ANOMALY_TYPE_UNKNOWN
+#define EI_CLASSIFIER_HAS_VISUAL_ANOMALY         0
+#define EI_CLASSIFIER_SINGLE_FEATURE_INPUT       1
 #define EI_CLASSIFIER_FREQUENCY                  4000
 #define EI_CLASSIFIER_HAS_MODEL_VARIABLES        1
+#define EI_CLASSIFIER_THRESHOLD                  0.6
 
-
-
-#define EI_CLASSIFIER_OBJECT_DETECTION            0
-#define EI_CLASSIFIER_TFLITE_OUTPUT_DATA_TENSOR   0
-#define EI_CLASSIFIER_OBJECT_DETECTION_LAST_LAYER EI_CLASSIFIER_LAST_LAYER_UNKNOWN
-
+#define EI_CLASSIFIER_OBJECT_DETECTION             0
+#define EI_CLASSIFIER_TFLITE_OUTPUT_DATA_TENSOR    0
+#define EI_CLASSIFIER_OBJECT_DETECTION_LAST_LAYER  EI_CLASSIFIER_LAST_LAYER_UNKNOWN
 
 #define EI_CLASSIFIER_TFLITE_INPUT_DATATYPE         EI_CLASSIFIER_DATATYPE_INT8
 #define EI_CLASSIFIER_TFLITE_OUTPUT_DATATYPE        EI_CLASSIFIER_DATATYPE_INT8
@@ -113,6 +119,11 @@
 #endif // EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW
 #define EI_CLASSIFIER_SLICE_SIZE                 (EI_CLASSIFIER_RAW_SAMPLE_COUNT / EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW)
 
+#define EI_STUDIO_VERSION_MAJOR             1
+#define EI_STUDIO_VERSION_MINOR             49
+#define EI_STUDIO_VERSION_PATCH             22
+
+#define EI_CLASSIFIER_HR_ENABLED            0
 
 #if ((EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE) ||      (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_DRPAI)) &&      EI_CLASSIFIER_USE_FULL_TFLITE == 1
 
@@ -130,6 +141,11 @@
 #endif // ((EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE) || (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_DRPAI)) && EI_CLASSIFIER_USE_FULL_TFLITE == 1
 
 typedef struct {
+    const char *name;
+    int axis;
+} ei_dsp_named_axis_t;
+
+typedef struct {
     uint32_t block_id;
     uint16_t implementation_version;
     int axes;
@@ -141,12 +157,15 @@ typedef struct {
     bool stdev;
     bool skewness;
     bool kurtosis;
+    int moving_avg_num_windows;
 } ei_dsp_config_flatten_t;
 
 typedef struct {
     uint32_t block_id;
     uint16_t implementation_version;
     int axes;
+    ei_dsp_named_axis_t * named_axes;
+    size_t named_axes_size;
     const char * channels;
 } ei_dsp_config_image_t;
 
@@ -154,6 +173,8 @@ typedef struct {
     uint32_t block_id;
     uint16_t implementation_version;
     int axes;
+    ei_dsp_named_axis_t * named_axes;
+    size_t named_axes_size;
     int num_cepstral;
     float frame_length;
     float frame_stride;
@@ -170,6 +191,8 @@ typedef struct {
     uint32_t block_id;
     uint16_t implementation_version;
     int axes;
+    ei_dsp_named_axis_t * named_axes;
+    size_t named_axes_size;
     float frame_length;
     float frame_stride;
     int num_filters;
@@ -212,6 +235,8 @@ typedef struct {
     uint32_t block_id;
     uint16_t implementation_version;
     int axes;
+    ei_dsp_named_axis_t * named_axes;
+    size_t named_axes_size;
     float frame_length;
     float frame_stride;
     int fft_length;
@@ -223,6 +248,8 @@ typedef struct {
     uint32_t block_id;
     uint16_t implementation_version;
     int axes;
+    ei_dsp_named_axis_t * named_axes;
+    size_t named_axes_size;
     float frame_length;
     float frame_stride;
     int num_filters;
@@ -238,6 +265,15 @@ typedef struct {
     uint16_t implementation_version;
     int axes;
     bool scaling;
+    bool scaling_raw;
+    bool padding;
 } ei_dsp_config_imu_syntiant_t;
+
+typedef struct {
+    uint32_t block_id;
+    uint16_t implementation_version;
+    int axes;
+    const char * ppg_ecg;
+} ei_dsp_config_hr_t;
 
 #endif // _EI_CLASSIFIER_MODEL_METADATA_H_

@@ -7,7 +7,7 @@
 
 #include "../../../include/project_config.h"
 #include "EdgeImpulse.hpp"
-#include "trumpet_trimmed_inferencing.h"
+#include "trumpets_16bit_inferencing.h"
 #include "ESP32Time.h"
 
 /**

@@ -554,8 +554,15 @@ void ei_callback_func() {
                     file_str += ", ";
                     file_str += result.classification[ix].value;
 
+                    /**
+                     * If target sound detected, save result to SD card
+                     * Note: 'Target' sound is any sound that is not classified as 'background', 'other' or 'others'
+                     */
                     if ((strcmp(result.classification[ix].label, "background") != 0) &&
+                        (strcmp(result.classification[ix].label, "other") != 0) &&
+                        (strcmp(result.classification[ix].label, "others") != 0) &&
                         result.classification[ix].value > AI_RESULT_THRESHOLD) {
+                        ESP_LOGI(TAG, "Target sound detected: %s", result.classification[ix].label);
                         edgeImpulse.increment_detectedEvents();
                         target_sound_detected = true;
                         // Start recording??

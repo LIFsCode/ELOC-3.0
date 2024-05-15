@@ -129,7 +129,7 @@ private:
 
 
 ElocSystem::ElocSystem():
-    mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true), 
+    mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true),
     mRefreshStatus(false), mIntruderDetected(false),
     mFwUpdateProcessing(false), mFactoryInfo()
 {
@@ -164,7 +164,7 @@ ElocSystem::ElocSystem():
         nvs_close(my_handle);
         ESP_LOGI(TAG, "Reading values from NVS done - all OK");
     }
-    ESP_LOGI(TAG, "Factory Data: Serial=%d, HW_Gen = %d, HW_Rev = %d", 
+    ESP_LOGI(TAG, "Factory Data: Serial=%d, HW_Gen = %d, HW_Rev = %d",
         mFactoryInfo.serialNumber, mFactoryInfo.hw_gen, mFactoryInfo.hw_rev);
 
 
@@ -174,7 +174,7 @@ ElocSystem::ElocSystem():
     if (esp_err_t err = I2Cinstance.InitMaster(I2C_SDA_PIN, I2C_SCL_PIN, I2C_SPEED_HZ)) {
         ESP_LOGE(TAG, "Setting up I2c Master failed with %s", esp_err_to_name(err));
     }
-    else { 
+    else {
         // set up pointer for global getter functions
         mI2CInstance = &I2Cinstance;
         ESP_LOGI(TAG, "Setting up I2C devices...");
@@ -345,6 +345,8 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
             mStatusLed->setBlinking(true, 100, 900, 30*1000);
             if (status.ai_run_enable) {
                 mBatteryLed->setBlinking(true, 100, 900, 30*1000);
+            } else {
+                mBatteryLed->setState(false);
             }
         }
         else if (status.ai_run_enable) {

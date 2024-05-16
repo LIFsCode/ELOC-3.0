@@ -6,7 +6,7 @@
 Import("env")     # Yes, starts with a capital letter. This is not a typo.
 import sys
 
-WINDOWS_PORT = "COM3"
+WINDOWS_PORT = "COM5"
 LINUX_PORT = "/dev/ttyUSB0"
 
 # CAUTION

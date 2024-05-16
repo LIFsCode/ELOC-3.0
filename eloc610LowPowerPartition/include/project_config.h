@@ -27,7 +27,7 @@
 
         #define BLUETOOTH_CLASSIC
 
-        #define VERSION "ELOC_V1.1"
+        #define VERSION "ELOC_V1.2"
 
         #define STATUS_LED          GPIO_NUM_4
         #define BATTERY_LED         GPIO_NUM_4
@@ -167,7 +167,7 @@
 
 // #define I2S_BUFFER_IN_PSRAM
 // #define WAV_BUFFER_IN_PSRAM
-// #define EI_BUFFER_IN_PSRAM
+ #define EI_BUFFER_IN_PSRAM
 
 
 /////////////////////////////////// Thread Related configurations ///////////////////////////////////

@@ -102,15 +102,8 @@ float gFreeSpaceGB = 0.0;
 uint32_t gFreeSpaceKB = 0;
 bool session_folder_created = false;
 
-// String gTimeDifferenceCode; //see getTimeDifferenceCode() below
 
-#ifdef USE_SPI_VERSION
-    SDCard sd_card;
-#endif
-
-#ifdef USE_SDIO_VERSION
-    SDCardSDIO sd_card;
-#endif
+SDCardSDIO sd_card;
 
 I2SMEMSSampler input;
 WAVFileWriter wav_writer;
@@ -352,12 +345,6 @@ void doDeepSleep()
 }
 
 bool mountSDCard() {
-#ifdef USE_SPI_VERSION
-    ESP_LOGI(TAG, "Trying to mount SDCard (SPI)");
-    sd_card.init("/sdcard", PIN_NUM_MISO, PIN_NUM_MOSI, PIN_NUM_CLK, PIN_NUM_CS);
-#endif
-
-#ifdef USE_SDIO_VERSION
     ESP_LOGI(TAG, "Trying to mount SDCard (SDIO)");
     sd_card.init("/sdcard");
 
@@ -366,14 +353,15 @@ bool mountSDCard() {
 
     ESP_LOGI(TAG, "SD card mounted ");
     const char* ELOC_FOLDER = "/sdcard/eloc";
+
     if (!ffsutil::folderExists(ELOC_FOLDER)) {
         ESP_LOGI(TAG, "%s does not exist, creating empty folder", ELOC_FOLDER);
         mkdir(ELOC_FOLDER, 0777);
     }
+
     float freeSpace = sd_card.freeSpaceGB();
     float totalSpace = sd_card.getCapacityMB()/1024;
     ESP_LOGV(TAG, "SD card %f / %f GB free", freeSpace, totalSpace);
-#endif
     return true;
 }
 
@@ -624,42 +612,6 @@ void app_main(void) {
 
     resetPeripherals();
 
-#ifdef USE_SPI_VERSION
-    gpio_set_direction(STATUS_LED, GPIO_MODE_OUTPUT);
-    gpio_set_direction(BATTERY_LED, GPIO_MODE_OUTPUT);
-
-    gpio_set_direction(PIN_NUM_MISO, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(PIN_NUM_MISO, GPIO_PULLUP_ONLY);
-
-    gpio_set_direction(PIN_NUM_CLK, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(PIN_NUM_CLK, GPIO_PULLUP_ONLY);
-
-    gpio_set_direction(PIN_NUM_MOSI, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(PIN_NUM_MOSI, GPIO_PULLUP_ONLY);
-
-    gpio_set_direction(PIN_NUM_CS, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(PIN_NUM_CS, GPIO_PULLUP_ONLY);
-
-    // new
-    gpio_set_direction(GPIO_BUTTON, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(GPIO_BUTTON, GPIO_PULLUP_ONLY);
-    // end new
-    gpio_sleep_sel_dis(GPIO_BUTTON);
-    gpio_sleep_sel_dis(OTHER_GPIO_BUTTON);
-    gpio_sleep_sel_dis(PIN_NUM_MISO);
-    gpio_sleep_sel_dis(PIN_NUM_CLK);
-    gpio_sleep_sel_dis(PIN_NUM_MOSI);
-    gpio_sleep_sel_dis(PIN_NUM_CS);
-    gpio_sleep_sel_dis(I2S_MIC_SERIAL_CLOCK);
-    gpio_sleep_sel_dis(I2S_MIC_LEFT_RIGHT_CLOCK);
-    gpio_sleep_sel_dis(I2S_MIC_SERIAL_DATA);
-
-    gpio_set_intr_type(OTHER_GPIO_BUTTON, GPIO_INTR_POSEDGE);
-    gpio_set_intr_type(GPIO_BUTTON, GPIO_INTR_POSEDGE);
-
-#endif
-
-#ifdef USE_SDIO_VERSION
     gpio_set_direction(STATUS_LED, GPIO_MODE_OUTPUT);
     gpio_set_direction(BATTERY_LED, GPIO_MODE_OUTPUT);
 
@@ -676,8 +628,6 @@ void app_main(void) {
     gpio_set_pull_mode(GPIO_BUTTON, GPIO_PULLUP_ONLY);
     gpio_set_intr_type(GPIO_BUTTON, GPIO_INTR_POSEDGE);
     gpio_sleep_sel_dis(GPIO_BUTTON);
-
-#endif
 
     gpio_set_level(STATUS_LED, 0);
     gpio_set_level(BATTERY_LED, 0);
@@ -857,7 +807,7 @@ void app_main(void) {
 
     if (sd_card.checkSDCard() == ESP_OK) {
         // create a new wave file wav_writer & make sure sample rate is up to date
-        if (wav_writer.initialize(i2s_mic_Config.sample_rate, 2, NUMBER_OF_CHANNELS) != true) {
+        if (wav_writer.initialize(i2s_mic_Config.sample_rate, 2, NUMBER_OF_MIC_CHANNELS) != true) {
             ESP_LOGE(TAG, "Failed to initialize WAVFileWriter");
         }
 

@@ -21,77 +21,51 @@
 #define BOARD ELOC_3_0
 #endif
 
-// Board specific configurations
+///////////////////////////////// Board specific configurations ////////////////////////////
 
 #if BOARD == ELOC_3_0
 
-        // #define USE_SPI_VERSION
-        #define USE_SDIO_VERSION
         #define BLUETOOTH_CLASSIC
 
-        // Is SPI version redundant?
-        #ifdef USE_SPI_VERSION
-                #define VERSION "eloc610SPILowPower06Apr2023a"
+        #define VERSION "ELOC_V1.1"
 
-                #define STATUS_LED  GPIO_NUM_33
-                #define BATTERY_LED  GPIO_NUM_25
-                #define GPIO_BUTTON GPIO_NUM_0
-                #define OTHER_GPIO_BUTTON GPIO_NUM_21
-                #define VOLTAGE_PIN GPIO_NUM_34
+        #define STATUS_LED          GPIO_NUM_4
+        #define BATTERY_LED         GPIO_NUM_4
+        #define GPIO_BUTTON         GPIO_NUM_0
+        #define VOLTAGE_PIN         GPIO_NUM_34
+        #define BAT_ADC             ADC1_CHANNEL_6
 
-                #define PIN_NUM_MISO GPIO_NUM_19
-                #define PIN_NUM_CLK GPIO_NUM_18
-                #define PIN_NUM_MOSI GPIO_NUM_23
-                #define PIN_NUM_CS GPIO_NUM_5
+        // I2S Config
+        #define I2S_MIC_LEFT_RIGHT_CLOCK    GPIO_NUM_5
+        #define I2S_MIC_SERIAL_CLOCK        GPIO_NUM_18
+        #define I2S_MIC_SERIAL_DATA         GPIO_NUM_19
 
-                #define I2S_MIC_LEFT_RIGHT_CLOCK GPIO_NUM_12
-                #define I2S_MIC_SERIAL_DATA GPIO_NUM_27
-                #define I2S_MIC_SERIAL_CLOCK GPIO_NUM_14
-        #endif
+        // I2S Mic type
+        #define I2S_TDK_INVENSENSE_ICS_43434
 
-        #ifdef USE_SDIO_VERSION
-                #define VERSION "ELOC_V1.1"
+        // sdcard (unused, as SDIO is fixed to its Pins)
+        #define PIN_NUM_MISO    GPIO_NUM_2
+        #define PIN_NUM_CLK     GPIO_NUM_14
+        #define PIN_NUM_MOSI    GPIO_NUM_15
+        #define PIN_NUM_CS      GPIO_NUM_14
 
-                #define STATUS_LED          GPIO_NUM_4
-                #define BATTERY_LED         GPIO_NUM_4
-                #define GPIO_BUTTON         GPIO_NUM_0
-                #define VOLTAGE_PIN         GPIO_NUM_34
-                #define BAT_ADC             ADC1_CHANNEL_6
+        // i2c config
+        // LIS3DH Accelerometer & PCA9557 expander
+        #define USE_I2C
+        #define I2C_SPEED_HZ 100000
 
-                // I2S Config
-                #define I2S_MIC_LEFT_RIGHT_CLOCK    GPIO_NUM_5
-                #define I2S_MIC_SERIAL_CLOCK        GPIO_NUM_18
-                #define I2S_MIC_SERIAL_DATA         GPIO_NUM_19
+        #define I2C_PORT    I2C_NUM_0
+        #define I2C_SDA_PIN GPIO_NUM_23
+        #define I2C_SCL_PIN GPIO_NUM_22
 
-                // I2S Mic type
-                #define I2S_TDK_INVENSENSE_ICS_43434
+        /* LIS3DH Config*/
+        #define LIS3DH_INT_PIN GPIO_NUM_12
+        #define INTRUDER_DETECTION_THRSH 5  // 0 for disabling
 
-                // sdcard (unused, as SDIO is fixed to its Pins)
-                #define PIN_NUM_MISO    GPIO_NUM_2
-                #define PIN_NUM_CLK     GPIO_NUM_14
-                #define PIN_NUM_MOSI    GPIO_NUM_15
-                #define PIN_NUM_CS      GPIO_NUM_14
-
-                // i2c config
-                // LIS3DH Accelerometer & PCA9557 expander
-                #define USE_I2C
-                #define I2C_SPEED_HZ 100000
-
-                #define I2C_PORT    I2C_NUM_0
-                #define I2C_SDA_PIN GPIO_NUM_23
-                #define I2C_SCL_PIN GPIO_NUM_22
-
-                /* LIS3DH Config*/
-                #define LIS3DH_INT_PIN GPIO_NUM_12
-                #define INTRUDER_DETECTION_THRSH 5  // 0 for disabling
-
-                /* Buzzer Config */
-                #define BUZZER_PIN GPIO_NUM_13
-
-        #endif  // USE_SDIO_VERSION
+        /* Buzzer Config */
+        #define BUZZER_PIN GPIO_NUM_13
 
 #endif  // BOARD
-
 
 /////////////////////////////////// Time Configuration ///////////////////////////////////
 

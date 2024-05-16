@@ -9,12 +9,8 @@
 #include "lis3dh_types.h"
 #include "../../../include/project_config.h"
 
-#ifdef USE_SDIO_VERSION
-
-        extern lis3dh_config_t lis3dh_config;
-        extern lis3dh_int_click_config_t lis3dh_click_config;
-
-#endif
+extern lis3dh_config_t lis3dh_config;
+extern lis3dh_int_click_config_t lis3dh_click_config;
 
 // i2s config for reading from of I2S
 extern i2s_config_t i2s_mic_Config;

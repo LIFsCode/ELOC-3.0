@@ -146,7 +146,7 @@
  * @note A value threshold of 0.8 is used to determine if target sound has been detected
  * @todo Make this configurable via Bluetooth?
  */
-#define AI_RESULT_THRESHOLD 0.8
+#define AI_RESULT_THRESHOLD 0.85
 
 /**
  * @brief Enable continuous inference in the AI model

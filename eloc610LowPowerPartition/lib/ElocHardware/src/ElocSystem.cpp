@@ -287,9 +287,23 @@ esp_err_t ElocSystem::pm_check_ForRecording(int sample_rate) {
 }
 
 esp_err_t ElocSystem::pm_configure() {
-    /** Setup Power Management */
+    /**
+     * Setup Power Management
+     * @warning If CPU freq is set to > CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ
+     *          in sdkconfig file expect crashes & WDT resets!
+     * @ref https://docs.espressif.com/projects/esp-idf/en/v4.4.4/esp32/api-reference/system/power_management.html#configuration
+     */
+    auto max_freq  = getConfig().cpuMaxFrequencyMHZ;
+    if (max_freq > CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ) {
+        ESP_LOGW(TAG, "CPU Max Frequency is set to %d MHz, but the maximum allowed is %d MHz",
+            max_freq, CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ);
+        // Limit to the default value
+        max_freq = CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ;
+        ESP_LOGI(TAG, "Setting CPU Max Frequency to %d MHz", max_freq);
+    }
+
     esp_pm_config_esp32_t cfg = {
-        .max_freq_mhz = getConfig().cpuMaxFrequencyMHZ,
+        .max_freq_mhz = max_freq,
         .min_freq_mhz = getConfig().cpuMinFrequencyMHZ,
         .light_sleep_enable = getConfig().cpuEnableLightSleep
     };

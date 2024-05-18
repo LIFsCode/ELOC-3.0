@@ -255,7 +255,6 @@ bool readConfigFile(const char* filename) {
 
         free(input);
         fclose(f);
-
     }
     return true;
 }
@@ -266,6 +265,7 @@ void readConfig() {
         readConfigFile(CFG_FILE_SD);
     } else {
         if (ffsutil::fileExist(CFG_FILE)) {
+            ESP_LOGI(TAG, "Using config from SPIFFS: %s", CFG_FILE);
             readConfigFile(CFG_FILE);
         } else {
             ESP_LOGW(TAG, "No config file found, creating default config!");

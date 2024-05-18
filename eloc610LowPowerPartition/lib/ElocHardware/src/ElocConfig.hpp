@@ -99,8 +99,8 @@ const elocDeviceInfo_T& getDeviceInfo();
 /**
  * @brief Load configuration (.config)
  * @note Searched in priority order:
- *          1. SD card
- *          2. SPIFFS (i.e. onboard flash)
+ *          1. SD card (CFG_FILE_SD)
+ *          2. SPIFFS (i.e. onboard flash) (CFG_FILE)
  *          3. Default values (constructed in code)
  */
 void readConfig();

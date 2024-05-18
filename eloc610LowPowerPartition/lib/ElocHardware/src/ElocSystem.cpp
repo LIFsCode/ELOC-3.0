@@ -459,3 +459,17 @@ void ElocSystem::notifyFwUpdate() {
         mBatteryLed->setBlinking(false, 100, 100, 60*1000);
     }
 }
+
+#if defined(EDGE_IMPULSE_ENABLED) && defined (AI_INCREASE_CPU_FREQ)
+        #ifndef CONFIG_ESP32_DEFAULT_CPU_FREQ_240
+                #error "AI_INCREASE_CPU_FREQ requires CONFIG_ESP32_DEFAULT_CPU_FREQ_240"
+        #endif
+
+        #ifdef CONFIG_ESP32_DEFAULT_CPU_FREQ_80 || CONFIG_ESP32_DEFAULT_CPU_FREQ_160
+                #error "AI_INCREASE_CPU_FREQ requires CONFIG_ESP32_DEFAULT_CPU_FREQ_240"
+        #endif
+
+        #if CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ != 240
+                #error "AI_INCREASE_CPU_FREQ requires CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ=240"
+        #endif
+#endif  // AI_INCREASE_CPU_FREQ

@@ -8,9 +8,6 @@
 
 #pragma once
 
-#ifndef _PROJECT_CONFIG_H_
-#define _PROJECT_CONFIG_H_
-
 // List of supported boards
 #define ELOC_3_0 1
 // End of supported boards
@@ -155,6 +152,13 @@
 */
 // #define AI_CONTINUOUS_INFERENCE
 
+/**
+ * @brief Enable CPU frequency increase during AI processing
+ *        This is to speed up the AI processing & enable more complex models
+ * @note: This will increase power consumption
+ */
+
+#define AI_INCREASE_CPU_FREQ
 
 /////////////////////////////////// Bluetooth Related configurations ///////////////////////////////////
 
@@ -196,4 +200,5 @@
 // #define ENABLE_TEST_UART
 // #define ENABLE_UART_WAKE_FROM_SLEEP
 
-#endif  // _PROJECT_CONFIG_H_
+/////////////////////////////////// Configurations checks ///////////////////////////////////
+

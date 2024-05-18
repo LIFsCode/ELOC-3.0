@@ -96,7 +96,13 @@ typedef struct {
 }elocDeviceInfo_T;
 const elocDeviceInfo_T& getDeviceInfo();
 
-/// @brief load configuration from filesystem
+/**
+ * @brief Load configuration (.config)
+ * @note Searched in priority order:
+ *          1. SD card
+ *          2. SPIFFS (i.e. onboard flash)
+ *          3. Default values (constructed in code)
+ */
 void readConfig();
 
 /// @brief write current configuration to file system

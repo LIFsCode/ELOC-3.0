@@ -295,12 +295,10 @@ esp_err_t ElocSystem::pm_configure() {
      */
     auto max_freq  = getConfig().cpuMaxFrequencyMHZ;
     if (max_freq > CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ) {
-        ESP_LOGW(TAG, "CPU Max Frequency is set to %d MHz, but the maximum allowed is %d MHz",
+        ESP_LOGW(TAG, "CPU Max Frequency is set to %d MHz, but CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ = %d MHz",
             max_freq, CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ);
-        // Limit to the default value
-        max_freq = CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ;
-        ESP_LOGI(TAG, "Setting CPU Max Frequency to %d MHz", max_freq);
     }
+    ESP_LOGI(TAG, "Setting CPU Max Frequency to %d MHz", max_freq);
 
     esp_pm_config_esp32_t cfg = {
         .max_freq_mhz = max_freq,
@@ -461,15 +459,15 @@ void ElocSystem::notifyFwUpdate() {
 }
 
 #if defined(EDGE_IMPULSE_ENABLED) && defined (AI_INCREASE_CPU_FREQ)
-        #ifndef CONFIG_ESP32_DEFAULT_CPU_FREQ_240
-                #error "AI_INCREASE_CPU_FREQ requires CONFIG_ESP32_DEFAULT_CPU_FREQ_240"
-        #endif
+        // #ifndef CONFIG_ESP32_DEFAULT_CPU_FREQ_240
+        //         #warning "AI_INCREASE_CPU_FREQ requires CONFIG_ESP32_DEFAULT_CPU_FREQ_240"
+        // #endif
 
-        #ifdef CONFIG_ESP32_DEFAULT_CPU_FREQ_80 || CONFIG_ESP32_DEFAULT_CPU_FREQ_160
-                #error "AI_INCREASE_CPU_FREQ requires CONFIG_ESP32_DEFAULT_CPU_FREQ_240"
-        #endif
+        // #ifdef CONFIG_ESP32_DEFAULT_CPU_FREQ_80 || CONFIG_ESP32_DEFAULT_CPU_FREQ_160
+        //         #warning "AI_INCREASE_CPU_FREQ requires CONFIG_ESP32_DEFAULT_CPU_FREQ_240"
+        // #endif
 
-        #if CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ != 240
-                #error "AI_INCREASE_CPU_FREQ requires CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ=240"
-        #endif
+        // #if CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ != 240
+        //         #warning "AI_INCREASE_CPU_FREQ requires CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ=240"
+        // #endif
 #endif  // AI_INCREASE_CPU_FREQ

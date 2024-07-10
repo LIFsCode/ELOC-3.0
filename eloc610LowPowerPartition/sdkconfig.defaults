@@ -3,7 +3,12 @@
 #
 
 # This file contains a list of configuration
-# that are DIFFERENT from the standard SDK
+# that are DIFFERENT from the standard SDK.
+# These difference are overlaid on top of the
+# the standard sdfconfig.
+
+# WARNING: If any changes are made to this file the other sdkconfig
+#          files must be deleted to ensure changes are used
 
 
 #

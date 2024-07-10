@@ -2,6 +2,7 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_clk.h"
 #include <rom/ets_sys.h>
 #include "esp_pm.h"
 #include "esp_heap_caps.h"
@@ -862,6 +863,7 @@ void app_main(void) {
             Battery::GetInstance().updateVoltage();  // only updates actual as often as set in the config
             ESP_LOGI(TAG, "Battery: Voltage: %.3fV, %.0f%% SoC, Temp %d °C",
             Battery::GetInstance().getVoltage(), Battery::GetInstance().getSoC(), ElocSystem::GetInstance().getTemperaure());
+            ESP_LOGI(TAG, "CPU clock: %d MHz", esp_clk_cpu_freq()/ 1000000);
 
             // Display memory usage
             if (0) {

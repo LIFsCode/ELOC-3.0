@@ -33,37 +33,20 @@ bool WAVFileWriter::initialize(int sample_rate, int buffer_time, int ch_count /*
   #ifdef WAV_BUFFER_IN_PSRAM
     // Make buffer size a multiple of 512
     buffer_size_in_samples = int((sample_rate * buffer_time) / 512) * 512;
-    ESP_LOGI(TAG, "Allocating 2 buffers of %d bytes in PSRAM", buffer_size_in_samples);
-    buffers[0] = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+    ESP_LOGI(TAG, "Allocating a single buffer of %d bytes in PSRAM", buffer_size_in_samples);
+    buffer = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
   #else
-    ESP_LOGI(TAG, "Allocating 2 buffers of %d bytes in RAM", wav_static_buffer_size);
+    ESP_LOGI(TAG, "Allocating a single buffer of %d bytes in RAM", wav_static_buffer_size);
     buffer_size_in_samples = wav_static_buffer_size;
-    buffers[0] = wav_static_buffers[0];
+    buffer = wav_static_buffer;
   #endif
 
-  if (buffers[0] == NULL) {
+  if (buffer == NULL) {
     ESP_LOGE(TAG, "Failed to allocate wav file buffer[0]");
     return false;
   }
 
-  #ifdef WAV_BUFFER_IN_PSRAM
-    buffers[1] = (int16_t *)heap_caps_malloc(buffer_size_in_samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
-  #else
-    buffers[1] = wav_static_buffers[1];
-  #endif
-
-  if (buffers[1] == NULL) {
-    ESP_LOGE(TAG, "Failed to allocate wav file buffer[1]");
-
-  #ifdef WAV_BUFFER_IN_PSRAM
-      heap_caps_free(buffers[0]);
-  #endif
-
-    return false;
-  }
-
-  buffers[0][0] = {0};
-  buffers[1][0] = {0};
+  buffer[0] = {0};
 
   return true;
 }

@@ -19,9 +19,9 @@ extern ESP32Time timeObject;
 
 #ifndef WAV_BUFFER_IN_PSRAM
   // Use static buffers if not storing in PSRAM
-  // = size * 2 (for double buffering) & constrained to be a multiple of 512 bytes
-  static const size_t wav_static_buffer_size = (static_cast<int>((1024 * 3) * 2/512)) * 512;
-  static signed short wav_static_buffers[2][wav_static_buffer_size];
+  // constrained to be a multiple of 512 bytes
+  static const size_t wav_static_buffer_size = (static_cast<int>((1024 * 6)/512)) * 512;
+  static signed short wav_static_buffer[wav_static_buffer_size];
 #endif
 
 class WAVFileWriter
@@ -118,7 +118,7 @@ class WAVFileWriter
 
   /**
    * @param buffer_size_in_samples is the number of SAMPLES that will fit in the buffer
-   * @param buffers pointer array to 2 buffers, 1 active, 1 inactive
+   * @param buffer pointer a single ring buffer
    * @note In order to optimize write times the buffer_size_in_samples
    *       should be a multiple of 512 bytes (SD card block size)
    *
@@ -127,11 +127,11 @@ class WAVFileWriter
    */
 
   #ifdef WAV_BUFFER_IN_PSRAM
-    size_t buffer_size_in_samples = (int(16000 * 2/512)) * 512;
-    signed short *buffers[2];
+    size_t buffer_size_in_samples = (int(16000 * 1/512)) * 512;
+    signed short *buffer;
   #else
     size_t buffer_size_in_samples = wav_static_buffer_size;
-    signed short *buffers[2];
+    signed short *buffer;
   #endif
 
   /**

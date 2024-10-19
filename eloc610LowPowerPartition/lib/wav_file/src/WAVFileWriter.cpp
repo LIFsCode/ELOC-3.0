@@ -18,7 +18,6 @@ extern SDCardSDIO sd_card;
 WAVFileWriter::WAVFileWriter()
 {
   ESP_LOGV(TAG, "Func: %s", __func__);
-
 }
 
 bool WAVFileWriter::initialize(int sample_rate, int buffer_time, int ch_count /*=1*/)
@@ -59,12 +58,11 @@ bool WAVFileWriter::write_wav_header() {
 
   /**
    * @note Here a header is written to the file, with some fields left blank
-   *       Could possibly modify this to write fully correct header here, knowing
+   *       TODO: Could possibly modify this to write fully correct header here, knowing
    *       required seconds per file, sample rate, etc. However, this would
    *       probably writing only a partial buffer at the last write, and losing
    *       the rest of the buffer sound. Probably not ideal.
    */
-
   auto ret = fwrite(&m_header, sizeof(wav_header_t), 1, m_fp);
   m_file_size = sizeof(wav_header_t);
 
@@ -82,40 +80,13 @@ WAVFileWriter::~WAVFileWriter()
     fclose(m_fp);
   }
 
-  if (buffers[0] != NULL) {
+  if (buffer != NULL) {
 #ifdef WAV_BUFFER_IN_PSRAM
-    heap_caps_free(buffers[0]);
+    heap_caps_free(buffer[0]);
 #else
-    free(buffers[0]);
+    free(buffer);
 #endif
   }
-
-  if (buffers[1] != NULL) {
-#ifdef WAV_BUFFER_IN_PSRAM
-    heap_caps_free(buffers[1]);
-#else
-    free(buffers[1]);
-#endif
-  }
-}
-
-bool WAVFileWriter::buffer_is_full()
-{
-  this->swap_buffers();
-  buf_ready = 1;
-
-  return true;
-}
-
-void WAVFileWriter::swap_buffers()
-{
-  // swap buffers
-  if (++buf_select > 1)
-    buf_select = 0;
-
-  buf_count = 0;
-
-  ESP_LOGI(TAG, "buffer_active = %d", buf_select);
 }
 
 /**
@@ -166,27 +137,29 @@ bool WAVFileWriter::open_file() {
     return true;
 }
 
+int WAVFileWriter::available_samples_to_write() {
+  auto samples =   buf_head - buf_tail;
+  if (buf_head < 0)
+    buf_head += buffer_size_in_samples;
+  return (samples);
+}
+
 void WAVFileWriter::write() {
   ESP_LOGV(TAG, "Func: %s", __func__);
-
-  auto buffer_inactive = buf_select ? 0 : 1;
 
   if (m_fp == nullptr) {
     ESP_LOGE(TAG, "File pointer is NULL");
     return;
   }
 
-  fwrite(buffers[buffer_inactive], sizeof(int16_t), buffer_size_in_samples, m_fp);
-
+  fwrite(buffer, sizeof(int16_t), buffer_size_in_samples, m_fp);
   m_file_size += sizeof(int16_t) * buffer_size_in_samples;
-
-  // Don't swap buffers here, let I2MEMSSampler::read() to do it
-  buf_ready = 0;
 }
 
 void WAVFileWriter::start_write_thread() {
   ESP_LOGV(TAG, "Func: %s", __func__);
 
+  static auto min_write_sample_count = 245;  // For int16_t actually 512 bytes
   static auto old_secs_written = 0;
   static uint32_t slowestWriteSpeed  = std::numeric_limits<uint32_t>::max();  // set to max
   static int64_t longestWriteMs  = std::numeric_limits<uint32_t>::max();      // set to max
@@ -205,7 +178,7 @@ void WAVFileWriter::start_write_thread() {
                           0 /* ulBitsToClearOnExit */,
                           NULL /* pulNotificationValue */,
                           portMAX_DELAY /* xTicksToWait*/) == pdTRUE) {
-      if (this->buf_ready) {
+      if (available_samples_to_write() > min_write_sample_count) {
         int64_t start_time = esp_timer_get_time();
         if (m_fp == nullptr) {
           ESP_LOGE(TAG, "enable_wav_file_write enabled & file pointer == nullptr");
@@ -276,7 +249,7 @@ bool WAVFileWriter::finish()
   recording_time_file_sec = 0;
   m_fp = nullptr;
 
-  // Don't swap buffers?? Could be filling
+  // Don't swap buffer?? Could be filling
 
   return true;
 }

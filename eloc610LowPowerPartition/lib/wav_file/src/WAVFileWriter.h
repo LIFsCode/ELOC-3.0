@@ -99,17 +99,16 @@ class WAVFileWriter
 
  public:
   /**
-   * Use a double buffer system
-   * Active buffer -> fill with data
-   * Inactive buffer -> write to file
    * These are public to alow access from I2SMEMSSampler class
-   * @param buf_select which buffer is active?
-   * @param buf_count index of next element to write to
-   * @param buf_ready is the inactive buffer ready to write out to SD card?
+   * @param buf_head index of next element to write to
+   * @param buf_tail index of next element to read from
+   * @param buf_head_pushing_tail set true when head would overrun tail position
+   * @param head_to_tail_margin how many elements of a 'margin' should the head 'push' the tail
    */
-  size_t buf_select = 0;
-  size_t buf_count;
-  int buf_ready = 0;
+  int buf_head = 0;
+  int buf_tail = 0;
+  bool buf_head_pushing_tail = false;
+  int const head_to_tail_margin = 256;
 
   /**
    * @brief Is the wav writing in progress?
@@ -118,21 +117,23 @@ class WAVFileWriter
 
   /**
    * @param buffer_size_in_samples is the number of SAMPLES that will fit in the buffer
-   * @param buffer pointer a single ring buffer
    * @note In order to optimize write times the buffer_size_in_samples
    *       should be a multiple of 512 bytes (SD card block size)
    *
    *     The buffer_size_in_samples is calculated as follows (this is a sensible default):
    *     =  int((sample_rate * buffer_time) / 512) * 512;
    */
-
   #ifdef WAV_BUFFER_IN_PSRAM
     size_t buffer_size_in_samples = (int(16000 * 1/512)) * 512;
-    signed short *buffer;
   #else
     size_t buffer_size_in_samples = wav_static_buffer_size;
-    signed short *buffer;
+
   #endif
+
+  /**
+   * @param buffer pointer a single ring buffer
+   */
+    signed short *buffer;
 
   /**
    * @brief Construct a new WAVFileWriter object
@@ -234,12 +235,6 @@ class WAVFileWriter
   bool get_enable_wav_file_write() {return enable_wav_file_write;}
 
   /**
-   * @brief Check if file ready to save
-   * @return true if ready to save
-   */
-  int check_if_ready_to_save() {return buf_ready;}
-
-  /**
    * @brief Called when a buffer is full
    * @note This will swap the buffers and set buf_ready
    * @deprecated Not required?
@@ -255,13 +250,20 @@ class WAVFileWriter
   void swap_buffers();
 
   /**
+   * @brief How many samples are available in the buffer to write out?
+   *
+   * @return int could of samples
+   */
+  int available_samples_to_write();
+
+  /**
    * @brief Write samples to file
    */
   void write();
 
   /**
    * @brief Create header and write to file
-   * @note This will reset the buf_count to 0
+   * @note This will reset the buf_head to 0
    * @return true success
    */
   bool finish();

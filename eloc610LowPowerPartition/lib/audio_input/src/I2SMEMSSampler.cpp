@@ -251,12 +251,11 @@ int I2SMEMSSampler::read()
 
             if (writer != nullptr) {
                 // Store into wav file buffer
-                writer->buffers[writer->buf_select][writer->buf_count++] = processed_sample_16bit;
+                writer->buffer[writer->buf_head++] = processed_sample_16bit;
 
-                if (writer->buf_count >= writer->buffer_size_in_samples) {
-                    // Swap buffers and set buf_ready
-                    writer->buf_select ^= 1;
-                    writer->buf_count = 0;
+                if (writer->buf_head >= writer->buffer_size_in_samples) {
+                    // Loop
+                    writer->buf_head = 0;
 
                     // If recording a wav file & overrun => flag
                     if (writer->wav_recording_in_progress && writer->buf_ready == 1) {
@@ -325,7 +324,7 @@ int I2SMEMSSampler::read()
     }
 
     if (0) {
-        ESP_LOGI(TAG, "writer->buf_count = %d", writer->buf_count);
+        ESP_LOGI(TAG, "writer->buf_head = %d", writer->buf_head);
         ESP_LOGI(TAG, "writer->buf_select = %d", writer->buf_select);
         ESP_LOGI(TAG, "writer->buf_ready = %d", writer->buf_ready);
 

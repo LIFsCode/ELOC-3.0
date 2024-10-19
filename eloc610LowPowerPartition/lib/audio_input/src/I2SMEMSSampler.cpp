@@ -256,7 +256,6 @@ int I2SMEMSSampler::read()
                 if (writer->buf_head >= writer->buffer_size_in_samples) {
                     // Loop
                     writer->buf_head = 0;
-
                     // If recording a wav file & overrun => flag
                     if (writer->wav_recording_in_progress && writer->buf_ready == 1) {
                         writer_buffer_overrun = true;

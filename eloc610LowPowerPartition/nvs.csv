@@ -1,5 +1,5 @@
 key,type,encoding,value
 factory,namespace,,
 hw_gen,data,u16,3
-hw_rev,data,u16,4
-serial,data,u32,240100040
+hw_rev,data,u16,5
+serial,data,u32,240100191

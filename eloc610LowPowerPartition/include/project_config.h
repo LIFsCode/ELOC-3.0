@@ -24,7 +24,7 @@
 
         #define BLUETOOTH_CLASSIC
 
-        #define VERSION "ELOC_V1.2"
+        #define VERSION "ELOC_V1.3"
 
         #define STATUS_LED          GPIO_NUM_4
         #define BATTERY_LED         GPIO_NUM_4
@@ -81,7 +81,7 @@
 #define I2S_DMA_BUFFER_LEN   1024
 // WARNING: This value will be overridden by '.config' on SD card or SPIFFS
 #define I2S_DEFAULT_SAMPLE_RATE 16000
-#define I2S_DEFAULT_CHANNEL_FORMAT_LEFT         // or I2S_DEFAULT_CHANNEL_FORMAT_RIGHT
+#define I2S_DEFAULT_CHANNEL_FORMAT_RIGHT         // or I2S_DEFAULT_CHANNEL_FORMAT_RIGHT
 
 #ifdef I2S_TDK_INVENSENSE_ICS_43434
         // Uses TDK/ INVENSENSE ICS-43434 mic
@@ -104,7 +104,7 @@
          *       e.g. value of +1 doubles volume, value of -1 halves volume change in steps of 1
          *       Set a default as -3 which matches volume of SPH0645 in previous code
         */
-        #define I2S_DEFAULT_VOLUME -3
+        #define I2S_DEFAULT_VOLUME -4
 #endif  // I2S_TDK_INVENSENSE_ICS_43434
 
 #ifdef I2S_SPH0645

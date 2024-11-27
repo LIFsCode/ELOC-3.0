@@ -1,209 +1,214 @@
-# 
-# WARNING: This script was made by GPT and modified by ED -> Terrible combo
-#
-# Before using this script:
-# - copy Autoflysher.py to the project root
-# - check if nvs.csv (must be in root) has correct data
-#
-##### HOW TO:
-# - Bring the ESP32 into flashing mode
-# - Start the script with "python ./Autoflasher.py"
-# - This script reads nvs.csv and increments the serial number
-# - It then builds the project inlcuding nvs.bin and firmware.bin
-# - Then flashes firmware.bin
-# - After firmware.bin has been flashed. You must bring the ESPE32 into flashing mode again (You have around 10 seconds :)
-# - Then nvs.bin gets flashed and all should be done
+#!/usr/bin/env python3
+"""
+ESP32 Firmware Auto-Flasher
+--------------------------
+Automated tool for flashing ESP32 firmware and NVS data with improved usability.
 
+Features:
+- Auto-detects available COM ports
+- Configurable via command line arguments
+- Progress indicators for long operations
+- Robust error handling
+"""
 
 import os
-import subprocess
+import sys
 import csv
 import time
+import argparse
+import serial.tools.list_ports
+from tqdm import tqdm
+import subprocess
+from typing import Tuple, Optional
 
-print("Script started")
-print("Python interpreter path:", subprocess.run(["where", "python"], capture_output=True, text=True).stdout.strip())
+class AutoFlasher:
+    def __init__(self, args):
+        self.project_dir = args.project_dir or os.getcwd()
+        self.port = args.port
+        self.env = args.env
+        self.baud_rate = args.baud_rate
+        self.csv_file = os.path.join(self.project_dir, 'nvs.csv')
+        self.nvs_bin_path = os.path.join(self.project_dir, '.pio', 'build', self.env, 'nvs.bin')
+        self.firmware_bin_path = os.path.join(self.project_dir, '.pio', 'build', self.env, 'firmware.bin')
 
-def increment_serial_number(csv_file):
-    print("Incrementing serial number...")
-    rows = []
-    serial_num_key = 'serial'
-    serial_num_found = False
-    hardware_version = None
-    revision = None
+    @staticmethod
+    def detect_com_ports() -> list:
+        """Auto-detect available COM ports."""
+        return [port.device for port in serial.tools.list_ports.comports()]
 
-    try:
-        with open(csv_file, 'r', newline='') as file:
-            reader = csv.DictReader(file)
-            
-            # Print headers for debugging
-            print("CSV Headers:", reader.fieldnames)
-            
-            for row in reader:
-                # Print each row for debugging
-                print("Row:", row)
-                if row.get('key') == serial_num_key:
-                    current_value = row.get('value')
-                    if current_value is None:
-                        raise ValueError(f"Value for serial number (key: {serial_num_key}) is missing.")
-                    new_value = str(int(current_value) + 1).zfill(len(current_value))
-                    print(f"Serial Number incremented: {new_value}")  # Print right after incrementing
-                    row['value'] = new_value
-                    serial_num_found = True
-
-                # Extracting hardware_version and revision
-                if row.get('key') == 'hardware_version':
-                    hardware_version = row.get('value')
-                elif row.get('key') == 'revision':
-                    revision = row.get('value')
-
-                rows.append(row)
+    @staticmethod
+    def select_com_port(ports: list) -> str:
+        """Let user select COM port if multiple are available."""
+        if not ports:
+            raise RuntimeError("No COM ports detected!")
+        if len(ports) == 1:
+            return ports[0]
         
-        if not serial_num_found:
-            raise ValueError(f"Key '{serial_num_key}' not found in {csv_file}")
+        print("\nAvailable COM ports:")
+        for i, port in enumerate(ports):
+            print(f"{i + 1}: {port}")
+        while True:
+            try:
+                choice = int(input("\nSelect COM port number: ")) - 1
+                if 0 <= choice < len(ports):
+                    return ports[choice]
+            except ValueError:
+                pass
+            print("Invalid selection. Please try again.")
 
-        # Write the updated content back to the csv
-        with open(csv_file, 'w', newline='') as file:
-            writer = csv.DictWriter(file, fieldnames=reader.fieldnames)
-            writer.writeheader()
-            writer.writerows(rows)
+    def increment_serial_number(self) -> Tuple[str, str, str]:
+        """Increment serial number in NVS CSV file."""
+        print("\nProcessing serial number...")
+        rows = []
+        serial_num = None
+        hardware_version = None
+        revision = None
+
+        try:
+            with open(self.csv_file, 'r', newline='') as file:
+                reader = csv.DictReader(file)
+                for row in reader:
+                    if row.get('key') == 'serial':
+                        current_value = row.get('value')
+                        if not current_value:
+                            raise ValueError("Serial number value is missing")
+                        serial_num = str(int(current_value) + 1).zfill(len(current_value))
+                        row['value'] = serial_num
+                    elif row.get('key') == 'hardware_version':
+                        hardware_version = row.get('value')
+                    elif row.get('key') == 'revision':
+                        revision = row.get('value')
+                    rows.append(row)
+
+            if not serial_num:
+                raise ValueError("Serial number key not found in CSV")
+
+            with open(self.csv_file, 'w', newline='') as file:
+                writer = csv.DictWriter(file, fieldnames=reader.fieldnames)
+                writer.writeheader()
+                writer.writerows(rows)
+
+            print(f"Serial number incremented to: {serial_num}")
+            return serial_num, hardware_version, revision
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to process serial number: {e}")
+
+    def build_project(self):
+        """Build the project using PlatformIO."""
+        print("\nBuilding project...")
+        build_command = ['platformio', 'run', '-e', self.env]
         
-        # Return the serial number, hardware version, and revision
-        return new_value, hardware_version, revision
+        try:
+            process = subprocess.run(
+                build_command,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            if "Success" not in process.stdout:
+                raise RuntimeError("Build completed but success message not found")
+            print("Build successful!")
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Build failed: {e.stderr}")
 
-    except Exception as e:
-        print(f"An error occurred while incrementing the serial number: {e}")
-        return False
+    def flash_binary(self, binary_path: str, offset: str, wait_for_upload_mode: bool = False):
+        """Flash a binary file to ESP32."""
+        if not os.path.exists(binary_path):
+            raise FileNotFoundError(f"Binary file not found: {binary_path}")
 
+        if wait_for_upload_mode:
+            print("\nPreparing to flash... Please put ESP32 into upload mode!")
+            for _ in tqdm(range(10), desc="Waiting"):
+                time.sleep(0.5)
 
-def build_nvs_bin(source, target, env, csv_file_path):
-    print("Starting build_nvs_bin function...")
-    
-    # Define the paths
-    nvs_bin_path = os.path.join(project_dir, '.pio', 'build', 'esp32dev', 'nvs.bin')
-    firmware_bin_path = os.path.join(project_dir, '.pio', 'build', 'esp32dev-ei-windows', 'firmware.bin')  # Adjust the path as needed
-
-    # Increment the serial number and get details
-    details = increment_serial_number(csv_file_path)
-    if details is False:
-        print("Failed to increment serial number. Aborting operation.")
-        return
-
-    serial_num, hardware_version, revision = details
-    
-    print("Building the project using PlatformIO...")
-    build_command = [
-        'platformio',
-        'run',  # Use 'run' command to build the project
-       # '-d', project_dir,  # Specify the project directory
-        '-e', env,  # Specify the environment (e.g., 'esp32dev')
-    ]
-
-    # Execute the build command and check its return code
-    try:
-        build_process = subprocess.run(build_command, capture_output=True, text=True, check=True)
-        print(build_process.stdout)
-        if build_process.returncode != 0:
-            print(f"Build failed with return code {build_process.returncode}")
-            print(build_process.stderr)
-            return
-    except subprocess.CalledProcessError as e:
-        print(f"An exception occurred during building: {e}")
-        return
-    # Upload the firmware.bin
-    print("Checking if firmware.bin exists...")
-    if os.path.exists(firmware_bin_path):
-        print("Uploading firmware.bin...")
-        firmware_upload_command = [
-            'C:\\Users\\edste\\.platformio\\penv\\Scripts\\python.exe',  # Use the specific Python interpreter
+        flash_command = [
+            sys.executable,
             '-m', 'esptool',
             '--chip', 'esp32',
-            '--port', 'COM6',  # Change this to your ESP32's serial port
-            '--baud', '921600',
-            'write_flash', '0x10000',  # Adjust the address if needed
-            firmware_bin_path
+            '--port', self.port,
+            '--baud', str(self.baud_rate),
+            'write_flash',
+            offset,
+            binary_path
         ]
+
         try:
-            process = subprocess.Popen(firmware_upload_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            while True:
-                output = process.stdout.readline()
-                if process.poll() is not None and output == '':
-                    break
-                if output:
-                    print(output.strip())
-            _, stderr = process.communicate()
-            if process.returncode != 0:
-                print(f"Firmware upload failed with return code {process.returncode}")
-                print(stderr)
-                return
-            if stderr:
-                print(stderr)
-        except Exception as e:
-            print(f"An error occurred during firmware upload: {e}")
-            return
-    else:
-        print("firmware.bin not found. Please check the build process.")
-        return
+            process = subprocess.Popen(
+                flash_command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            with tqdm(total=100, desc=f"Flashing {os.path.basename(binary_path)}") as pbar:
+                while True:
+                    output = process.stdout.readline()
+                    if process.poll() is not None and not output:
+                        break
+                    if "Writing at" in output:
+                        pbar.update(10)
+                
+                pbar.update(100)  # Ensure bar reaches 100%
 
-    # Define the command to upload nvs.bin using esptool
-    upload_command = [
-        'C:\\Users\\edste\\.platformio\\penv\\Scripts\\python.exe',  # Use the specific Python interpreter
-        '-m', 'esptool',
-        '--chip', 'esp32',
-        '--port', 'COM6',  # Change this to your ESP32's serial port
-        'write_flash', '0x9000', 
-        nvs_bin_path
-    ]
-    
-    for _ in range(10):
-        print("Put ESP32 into UPLOAD mode")
-        time.sleep(0.4)
-        
-    print("Checking if nvs.bin exists...")
-    if os.path.exists(nvs_bin_path):
-        print("Uploading nvs.bin...")
+            if process.returncode != 0:
+                _, stderr = process.communicate()
+                raise RuntimeError(f"Flashing failed: {stderr}")
+            
+            print(f"Successfully flashed {os.path.basename(binary_path)}")
+        except Exception as e:
+            raise RuntimeError(f"Error during flashing: {e}")
+
+    def run(self):
+        """Main execution flow."""
         try:
-            process = subprocess.Popen(upload_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            
-            # Print output in real-time
-            while True:
-                output = process.stdout.readline()
-                if process.poll() is not None and output == '':
-                    break
-                if output:
-                    print(output.strip())
-            
-            # Check if process has ended and print any final output
-            _, stderr = process.communicate()
-            if process.returncode != 0:
-                print(f"Upload failed with return code {process.returncode}")
-                print(stderr)
-                return
-            if stderr:
-                print(stderr)
+            # Auto-detect and select COM port if not specified
+            if not self.port:
+                ports = self.detect_com_ports()
+                self.port = self.select_com_port(ports)
+                print(f"\nUsing COM port: {self.port}")
+
+            # Process serial number
+            serial_num, hw_version, revision = self.increment_serial_number()
+
+            # Build project
+            self.build_project()
+
+            # Flash firmware.bin
+            print("\nPreparing to flash firmware...")
+            self.flash_binary(self.firmware_bin_path, "0x10000", True)
+
+            # Flash nvs.bin
+            print("\nPreparing to flash NVS data...")
+            self.flash_binary(self.nvs_bin_path, "0x9000", True)
+
+            print("\n=== Flash Complete ===")
+            print(f"Serial Number: {serial_num}")
+            print(f"Hardware Version: {hw_version}")
+            print(f"Revision: {revision}")
+
         except Exception as e:
-            print(f"An error occurred during upload: {e}")
+            print(f"\nError: {e}")
+            sys.exit(1)
 
-    else:
-        print("nvs.bin not found. Please check the build process.")
-
-    # Print the details at the end of the function
-    print(f"Serial Number: {serial_num}")
-    print(f"Hardware Version: {hardware_version}")
-    print(f"Revision: {revision}")
-
-# Example of calling the build function (you'll need to define project_dir or pass it to the function)
-try:
-    print("Calling build_nvs_bin...")  # Confirm this part of the script is reached
-    project_dir = 'C:\Projects_Local\ELOC\Firmware\ELOC-3.0\ELOC-3.0\eloc610LowPowerPartition'
-    csv_file_path = os.path.join(project_dir, 'nvs.csv')
+def main():
+    parser = argparse.ArgumentParser(description="ESP32 Firmware Auto-Flasher")
+    parser.add_argument("--port", help="COM port (auto-detected if not specified)")
+    parser.add_argument("--project-dir", help="Project directory (default: current directory)")
+    parser.add_argument("--env", default="esp32dev-ei", help="PlatformIO environment (default: esp32dev-ei)")
+    parser.add_argument("--baud-rate", type=int, default=921600, help="Baud rate (default: 921600)")
     
-    # Define or get these parameters as needed. 
-    # Replace 'your_source', 'your_target', 'your_env' with actual values or remove if not needed.
-    source = 'your_source'
-    target = 'your_target'
-    env = 'esp32dev-ei-windows'
+    args = parser.parse_args()
     
-    # Call the function to build and upload the nvs.bin
-    build_nvs_bin(source, target, env, csv_file_path)
-except Exception as e:
-    print(f"An error occurred: {e}")
+    try:
+        flasher = AutoFlasher(args)
+        flasher.run()
+    except KeyboardInterrupt:
+        print("\nOperation cancelled by user")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\nUnexpected error: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

@@ -77,15 +77,15 @@ int printTensorInfo(Ort::Session *session, std::vector<const char *> *input_node
     Ort::TypeInfo type_info = (*session).GetInputTypeInfo(0);
     auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
     std::vector<int64_t> input_node_dims = tensor_info.GetShape();
-    ei_printf("LOG_INFO: number of inputs:%d \n", num_input_nodes);
-    ei_printf("LOG_INFO: number of outputs: %d\n", num_output_nodes);
+    ei_printf("LOG_INFO: number of inputs: %d\n", (int)num_input_nodes);
+    ei_printf("LOG_INFO: number of outputs: %d\n", (int)num_output_nodes);
     ei_printf("LOG_INFO: input(0) name: %s\n", (*input_node_names)[0]);
 
     Ort::TypeInfo type_info_out = (*session).GetOutputTypeInfo(0);
     auto tensor_info_out = type_info_out.GetTensorTypeAndShapeInfo();
     std::vector<int64_t> output_node_dims = tensor_info_out.GetShape();
     /* iterate over all input nodes */
-    for (int i = 0; i < num_input_nodes; i++)
+    for (int i = 0; i < (int)num_input_nodes; i++)
     {
         /* print input node names */
         ei_printf("LOG_INFO: Input %d : name=%s\n", i, (*input_node_names)[i]);
@@ -110,7 +110,7 @@ int printTensorInfo(Ort::Session *session, std::vector<const char *> *input_node
         return EI_IMPULSE_ONNX_ERROR;
     }
 
-    for (int i = 0; i < num_output_nodes; i++)
+    for (int i = 0; i < (int)num_output_nodes; i++)
     {
         /* print output node names */
         ei_printf("LOG_INFO: Output %d : name=%s\n", i, (*output_node_names)[i]);
@@ -124,7 +124,7 @@ int printTensorInfo(Ort::Session *session, std::vector<const char *> *input_node
         /* print output shapes/dims */
         output_node_dims = tensor_info.GetShape();
         ei_printf("LOG_INFO: Output %d : num_dims=%zu\n", i, output_node_dims.size());
-        for (int j = 0; j < output_node_dims.size(); j++)
+        for (int j = 0; j < (int)output_node_dims.size(); j++)
         {
             ei_printf("LOG_INFO: Output %d : dim %d=%jd\n", i, j, output_node_dims[j]);
         }
@@ -243,11 +243,11 @@ static EI_IMPULSE_ERROR inference_onnx_setup(
     /* output information */
     size_t num_output_nodes = session->GetOutputCount();
     std::vector<const char *> output_node_names(num_output_nodes);
-    for (int i = 0; i < num_output_nodes; i++)
+    for (int i = 0; i < (int)num_output_nodes; i++)
     {
         output_node_names[i] = session->GetOutputName(i, allocator);
     }
-    for (int i = 0; i < num_input_nodes; i++)
+    for (int i = 0; i < (int)num_input_nodes; i++)
     {
         input_node_names[i] = session->GetInputName(i, allocator);
     }
@@ -296,7 +296,7 @@ static EI_IMPULSE_ERROR inference_onnx_setup(
     *binding_ptr = binding;
     binding->BindInput(input_node_names[0], (*input_tensors)[0]);
 
-    for(int idx=0; idx < num_output_nodes; idx++)
+    for(int idx=0; idx < (int)num_output_nodes; idx++)
     {
         auto node_dims = output_tensors_warm_up[idx].GetTypeInfo().GetTensorTypeAndShapeInfo().GetShape();
         size_t tensor_size = 1;
@@ -387,11 +387,11 @@ static EI_IMPULSE_ERROR inference_onnx_run(const ei_impulse_t *impulse,
     if (block_config->object_detection) {
         switch (block_config->object_detection_last_layer) {
             case EI_CLASSIFIER_LAST_LAYER_YOLOX: {
-                #if EI_CLASSIFIER_TFLITE_OUTPUT_QUANTIZED == 1
+                if (block_config->quantized == 1) {
                     ei_printf("ERR: YOLOX does not support quantized inference\n");
                     return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-                #else
-
+                }
+                else {
                     if (debug) {
                         ei_printf("YOLOX OUTPUT (%d ms.): ", result->timing.classification);
                         for (size_t ix = 0; ix < output_tensor_features_count; ix++) {
@@ -406,7 +406,7 @@ static EI_IMPULSE_ERROR inference_onnx_run(const ei_impulse_t *impulse,
                         result,
                         (float*)out_data,
                         output_tensor_features_count);
-                #endif
+                }
                 break;
             }
             default: {
@@ -417,7 +417,7 @@ static EI_IMPULSE_ERROR inference_onnx_run(const ei_impulse_t *impulse,
         }
     }
     else {
-#if EI_CLASSIFIER_TFLITE_OUTPUT_QUANTIZED == 1
+#if EI_CLASSIFIER_QUANTIZATION_ENABLED == 1
 
     switch (output_tensor_type) {
         case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8: {

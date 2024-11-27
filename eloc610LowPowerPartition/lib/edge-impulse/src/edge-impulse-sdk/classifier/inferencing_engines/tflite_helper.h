@@ -388,10 +388,11 @@ EI_IMPULSE_ERROR fill_result_struct_from_output_tensor_tflite(
                 break;
             }
             case EI_CLASSIFIER_LAST_LAYER_YOLOX: {
-                #if EI_CLASSIFIER_TFLITE_OUTPUT_QUANTIZED == 1
+                if (block_config->quantized == 1) {
                     ei_printf("ERR: YOLOX does not support quantized inference\n");
                     return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-                #else
+                }
+                else {
                     fill_res = fill_result_struct_f32_yolox(
                         impulse,
                         block_config,
@@ -399,14 +400,15 @@ EI_IMPULSE_ERROR fill_result_struct_from_output_tensor_tflite(
                         output->data.f,
                         impulse->tflite_output_features_count,
                         debug);
-                #endif
+                }
                 break;
             }
             case EI_CLASSIFIER_LAST_LAYER_YOLOV7: {
-                #if EI_CLASSIFIER_TFLITE_OUTPUT_QUANTIZED == 1
+                if (block_config->quantized == 1) {
                     ei_printf("ERR: YOLOV7 does not support quantized inference\n");
                     return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-                #else
+                }
+                else {
                     size_t output_feature_count = 1;
                     for (int ix = 0; ix < output->dims->size; ix++) {
                         output_feature_count *= output->dims->data[ix];
@@ -417,7 +419,7 @@ EI_IMPULSE_ERROR fill_result_struct_from_output_tensor_tflite(
                         result,
                         output->data.f,
                         output_feature_count);
-                #endif
+                }
                 break;
             }
             case EI_CLASSIFIER_LAST_LAYER_TAO_SSD:
@@ -548,7 +550,7 @@ EI_IMPULSE_ERROR fill_result_struct_from_output_tensor_tflite(
     else if (block_config->classification_mode == EI_CLASSIFIER_CLASSIFICATION_MODE_VISUAL_ANOMALY)
     {
         if (!result->copy_output) {
-            fill_res = fill_result_visual_ad_struct_f32(impulse, result, output->data.f, block_config->threshold, debug);
+            fill_res = fill_result_visual_ad_struct_f32(impulse, result, output->data.f, block_config, debug);
         }
     }
     // if we copy the output, we don't need to process it as classification

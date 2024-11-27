@@ -106,7 +106,7 @@ void upateI2sConfig() {
 
 
 static const elocConfig_T C_ElocConfig_Default {
-    .secondsPerFile = 60,
+    .secondsPerFile = 6000,
     .listenOnly = false,
     // Power management
     .cpuMaxFrequencyMHZ = 80,    // minimum 80
@@ -115,10 +115,10 @@ static const elocConfig_T C_ElocConfig_Default {
     .bluetoothEnableAtStart = true,
     .bluetoothEnableOnTapping = true,
     .bluetoothEnableDuringRecord = true,
-    .bluetoothOffTimeoutSeconds = 60,
+    .bluetoothOffTimeoutSeconds = 360,
     .testI2SClockInput = false,
     .logConfig = {
-        .logToSdCard = true,
+        .logToSdCard = false,
         .filename = "/sdcard/log/eloc.log",
         .maxFiles = 10,
         .maxFileSize = 5*1024*1024,

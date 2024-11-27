@@ -42,6 +42,7 @@
 #define EI_CLASSIFIER_SYNTIANT                   10
 #define EI_CLASSIFIER_ONNX_TIDL                  11
 #define EI_CLASSIFIER_MEMRYX                     12
+#define EI_CLASSIFIER_ETHOS_LINUX                13
 
 #define EI_CLASSIFIER_SENSOR_UNKNOWN             -1
 #define EI_CLASSIFIER_SENSOR_MICROPHONE          1
@@ -85,6 +86,7 @@
 #define EI_CLASSIFIER_CLASSIFICATION_MODE_DSP                 7
 
 struct ei_impulse;
+class ei_impulse_handle_t;
 
 typedef struct {
     ei::matrix_t* matrix;
@@ -100,13 +102,15 @@ typedef struct {
     uint32_t suppression_flags;
 } ei_model_performance_calibration_t;
 
+typedef int (*extract_fn_t)(ei::signal_t *signal, ei::matrix_t *output_matrix, void *config, float frequency);
+
 typedef struct {
     uint32_t blockId;
     size_t n_output_features;
-    int (*extract_fn)(ei::signal_t *signal, ei::matrix_t *output_matrix, void *config, const float frequency);
+    extract_fn_t extract_fn;
     void *config;
     uint8_t *axes;
-    size_t axes_size;
+    uint32_t axes_size;
     int version;  // future proof, can easily add to this struct now
     DspHandle* (*factory)(void* config, float sampling_freq); // nullptr means no state
     // v1 ends here
@@ -124,9 +128,17 @@ typedef struct {
     void *config;
     int image_scaling;
     const uint32_t* input_block_ids;
-    const uint32_t input_block_ids_size;
+    const uint8_t input_block_ids_size;
     uint32_t output_features_count;
 } ei_learning_block_t;
+
+typedef struct {
+    uint32_t block_id;
+    EI_IMPULSE_ERROR (*init_fn)(ei_impulse_handle_t *handle, void *config);
+    EI_IMPULSE_ERROR (*deinit_fn)(ei_impulse_handle_t *handle, void *config);
+    EI_IMPULSE_ERROR (*postprocess_fn)(ei_impulse_handle_t *handle, ei_impulse_result_t *result, void *config, bool debug);
+    void *config;
+} ei_postprocessing_block_t;
 
 typedef struct {
     uint16_t implementation_version;
@@ -146,6 +158,21 @@ typedef struct {
     size_t model_size;
     size_t arena_size;
 } ei_config_tflite_graph_t;
+
+typedef struct {
+    uint16_t implementation_version;
+    uint8_t input_datatype;
+    bool input_quantized;
+    float input_scale;
+    float input_zeropoint;
+    uint8_t output_datatype;
+    bool output_quantized;
+    float output_scale;
+    float output_zeropoint;
+    const unsigned char *model;
+    size_t model_size;
+    size_t arena_size;
+} ei_config_ethos_graph_t;
 
 typedef struct {
     uint16_t implementation_version;
@@ -206,7 +233,9 @@ typedef struct ei_impulse {
     uint32_t project_id;
     const char *project_owner;
     const char *project_name;
-    uint32_t deploy_version;
+    uint16_t impulse_id;
+    const char *impulse_name;
+    uint16_t deploy_version;
 
     /* DSP details */
     uint32_t nn_input_frame_size;
@@ -218,31 +247,36 @@ typedef struct ei_impulse {
     uint32_t input_frames;
     float interval_ms;
     float frequency;
-    size_t dsp_blocks_size;
+    uint8_t dsp_blocks_size;
     ei_model_dsp_t *dsp_blocks;
 
     /* object detection */
     uint16_t object_detection_count;
     uint32_t fomo_output_size;
+    uint16_t visual_ad_grid_size_x;
+    uint16_t visual_ad_grid_size_y;
     uint32_t tflite_output_features_count;
 
     /* learning blocks */
-    const size_t learning_blocks_size;
+    const uint8_t learning_blocks_size;
     const ei_learning_block_t *learning_blocks;
 
+    /* postprocessing blocks */
+    const size_t postprocessing_blocks_size;
+    const ei_postprocessing_block_t *postprocessing_blocks;
+
     /* inference parameters */
-    uint32_t inferencing_engine;
+    uint8_t inferencing_engine;
 
     /* sensors and on-device inference */
-    uint32_t sensor;
+    uint8_t sensor;
     const char *fusion_string;
     uint32_t slice_size;
-    uint32_t slices_per_model_window;
+    uint8_t slices_per_model_window;
 
     /* output details */
-    uint16_t has_anomaly;
+    uint8_t has_anomaly;
     uint16_t label_count;
-    const ei_model_performance_calibration_t calibration;
     const char **categories;
     ei_object_detection_nms_config_t object_detection_nms;
 } ei_impulse_t;
@@ -307,6 +341,7 @@ class ei_impulse_handle_t {
 public:
     ei_impulse_handle_t(const ei_impulse_t *impulse)
         : state(impulse), impulse(impulse) {};
+    void* post_processing_state;
     ei_impulse_state_t state;
     const ei_impulse_t *impulse;
 };

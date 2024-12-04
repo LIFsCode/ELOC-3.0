@@ -308,7 +308,13 @@ bool createSessionFolder()
 {
     String fname;
     //TODO: check if another session identifier based on ISO time for mat would be more helpful
-    gSessionIdentifier = getDeviceInfo().fileHeader + timeObject.getSystemTimeMS_string();
+    if (getDeviceInfo().fileHeader == "not_set") {
+        // Omit
+        gSessionIdentifier = timeObject.getSystemTimeMS_string();
+    } else {
+        gSessionIdentifier = getDeviceInfo().fileHeader + "_" + timeObject.getSystemTimeMS_string();
+    }
+
     fname = String("/sdcard/eloc/") + gSessionIdentifier;
     ESP_LOGI(TAG, "Creating session folder %s", fname.c_str());
     mkdir(fname.c_str(), 0777);

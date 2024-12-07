@@ -146,7 +146,7 @@ String ESP32Time::getDateTime(bool mode){
 String ESP32Time::getDateTimeFilename() {
     struct tm timeinfo = getTimeStruct();
     char s[51];
-    strftime(s, 50, "%F_%H_%M_%S", &timeinfo);
+    strftime(s, 50, "%F_%H-%M-%S", &timeinfo);
     return String(s);
 }
 

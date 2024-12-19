@@ -10,6 +10,8 @@
 class SDCardSDIO {
  private:
   bool m_mounted = false;
+  uint32_t m_failedMounts = 0;
+  const uint32_t m_MAX_FAILED_MOUNTS = 4;
   std::string m_mount_point = "";
   sdmmc_card_t *m_card = nullptr;
   sdmmc_host_t m_host = SDMMC_HOST_DEFAULT();

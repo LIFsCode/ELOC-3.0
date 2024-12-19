@@ -51,6 +51,7 @@ esp_err_t SDCardSDIO::init(const char *mount_point) {
   }
 
   m_mounted = true;
+  m_failedMounts = 0;
   ESP_LOGI(TAG, "SDCard mounted at: %s", m_mount_point.c_str());
 
   // Card has been initialized, print its properties
@@ -67,7 +68,7 @@ float SDCardSDIO::getCapacityMB() const {
 }
 
 esp_err_t SDCardSDIO::update() {
-    if (!m_mounted) {
+    if ((!m_mounted) && (m_failedMounts < m_MAX_FAILED_MOUNTS)) {
         ESP_LOGW(TAG, "SD card not mounted, attempting to mount");
         if (m_mount_point.empty()) {
           ESP_LOGE(TAG, "Mount point not set");
@@ -76,6 +77,7 @@ esp_err_t SDCardSDIO::update() {
         init(m_mount_point.c_str());
         // Successfully mounted?
         if (!m_mounted) {
+            m_failedMounts++;
             return ESP_ERR_NOT_FOUND;
         }
     }

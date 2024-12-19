@@ -28,8 +28,11 @@ class AutoFlasher:
         self.env = args.env
         self.baud_rate = args.baud_rate
         self.csv_file = os.path.join(self.project_dir, 'nvs.csv')
-        self.nvs_bin_path = os.path.join(self.project_dir, '.pio', 'build', self.env, 'nvs.bin')
-        self.firmware_bin_path = os.path.join(self.project_dir, '.pio', 'build', self.env, 'firmware.bin')
+
+        # Hardcode the firmware and NVS paths to the correct directories
+        self.firmware_bin_path = os.path.join(self.project_dir, '.pio', 'build', 'esp32dev-ei', 'firmware.bin')
+        self.nvs_bin_path = os.path.join(self.project_dir, '.pio', 'build', 'esp32dev', 'nvs.bin')
+
 
     @staticmethod
     def detect_com_ports() -> list:
@@ -98,19 +101,20 @@ class AutoFlasher:
         """Build the project using PlatformIO."""
         print("\nBuilding project...")
         build_command = ['platformio', 'run', '-e', self.env]
-        
-        try:
-            process = subprocess.run(
-                build_command,
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            if "Success" not in process.stdout:
-                raise RuntimeError("Build completed but success message not found")
-            print("Build successful!")
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Build failed: {e.stderr}")
+
+        # Run the process without capturing output, so logs appear in real-time.
+        process = subprocess.Popen(
+            build_command,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            text=True
+        )
+        return_code = process.wait()
+
+        if return_code != 0:
+            raise RuntimeError(f"Build failed with return code: {return_code}")
+        print("Build successful!")
+
 
     def flash_binary(self, binary_path: str, offset: str, wait_for_upload_mode: bool = False):
         """Flash a binary file to ESP32."""
@@ -133,31 +137,20 @@ class AutoFlasher:
             binary_path
         ]
 
-        try:
-            process = subprocess.Popen(
-                flash_command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            
-            with tqdm(total=100, desc=f"Flashing {os.path.basename(binary_path)}") as pbar:
-                while True:
-                    output = process.stdout.readline()
-                    if process.poll() is not None and not output:
-                        break
-                    if "Writing at" in output:
-                        pbar.update(10)
-                
-                pbar.update(100)  # Ensure bar reaches 100%
+        # Run esptool command and show output in real-time
+        print(f"\nFlashing {os.path.basename(binary_path)}...")
+        process = subprocess.Popen(
+            flash_command,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            text=True
+        )
+        return_code = process.wait()
 
-            if process.returncode != 0:
-                _, stderr = process.communicate()
-                raise RuntimeError(f"Flashing failed: {stderr}")
-            
-            print(f"Successfully flashed {os.path.basename(binary_path)}")
-        except Exception as e:
-            raise RuntimeError(f"Error during flashing: {e}")
+        if return_code != 0:
+            raise RuntimeError(f"Flashing {binary_path} failed with return code: {return_code}")
+        print(f"Successfully flashed {os.path.basename(binary_path)}")
+
 
     def run(self):
         """Main execution flow."""
@@ -177,6 +170,9 @@ class AutoFlasher:
             # Flash firmware.bin
             print("\nPreparing to flash firmware...")
             self.flash_binary(self.firmware_bin_path, "0x10000", True)
+            
+            # Prompt the user to put ESP32 into download mode again
+            input("\nFirmware flashed successfully! Please put the ESP32 into download mode again and press Enter to continue...")
 
             # Flash nvs.bin
             print("\nPreparing to flash NVS data...")

@@ -274,7 +274,8 @@ void cmd_SetTime(CmdParser *cmdParser) {
     // const char* minutesSinceSync = "";//serialIN.substring(11, serialIN.indexOf("___"));
 
     // Some sanity checks
-    if ((seconds < BUILD_TIME_UNIX) || (seconds > (BUILD_TIME_UNIX + 60*60*24*365*10))) {
+    //BUGME: Why limit the max. time change since build to 10 years?! should be unlimited
+    if ((seconds < timeObject.getBuildTimeSecs()) || (seconds > (timeObject.getBuildTimeSecs() + 60*60*24*365*10))) {
         resp.setError(ESP_ERR_INVALID_ARG, "Invalid epoch time!");
         return;
     }

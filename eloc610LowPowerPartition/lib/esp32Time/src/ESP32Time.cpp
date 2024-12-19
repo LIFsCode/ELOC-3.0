@@ -24,13 +24,28 @@
 
 #include "ESP32Time.h"
 #include "time.h"
+#include "esp_app_format.h"
+#include "esp_ota_ops.h"
+#include "esp_log.h"
+#include <stdio.h>
 #include <sys/time.h>
+
+static const char* TAG = "ESP32Time";
 
 /*!
     @brief  Constructor for ESP32Time
 */
 ESP32Time::ESP32Time() {
-    boot_time_unix = BUILD_TIME_UNIX;
+    const esp_app_desc_t *app_desc = esp_ota_get_app_description();
+    struct tm timeinfo;
+    char str[50];
+    snprintf(str, sizeof(str), "%s %s", app_desc->date, app_desc->time);
+    strptime(str, "%b %d %Y %H:%M:%S", &timeinfo);
+    build_time_unix = mktime(&timeinfo);    
+    setTime(build_time_unix, 0);
+    strftime(str, 50, "%A, %B %d %Y", &timeinfo);
+    ESP_LOGI(TAG, "Set boot time to %s (unix time = %lld)", str, build_time_unix);
+    boot_time_unix = build_time_unix;
 }
 
 /*!
@@ -65,6 +80,21 @@ void ESP32Time::setTime(int sc, int mn, int hr, int dy, int mt, int yr, int ms) 
 }
 
 /*!
+ * @brief set time based a string
+ * 
+ * @param timeStr 
+ *        timestamp formated as string
+ * @param format 
+ *        the format of the timeStr string (see strptime for details)
+ */
+void ESP32Time::setTime(const char* timeStr, const char* format) {
+    struct tm tm;
+    strptime(timeStr, format, &tm);
+    time_t timeSinceEpoch = mktime(&tm);
+    setTime(timeSinceEpoch, 0);
+}
+
+/*!
     @brief  set the internal RTC time
     @param  epoch
             epoch time in seconds
@@ -72,17 +102,18 @@ void ESP32Time::setTime(int sc, int mn, int hr, int dy, int mt, int yr, int ms) 
             microseconds (optional)
 */
 void ESP32Time::setTime(long epoch, int ms) {
-  if ((epoch < BUILD_TIME_UNIX) || (epoch > (BUILD_TIME_UNIX + 60*60*24*365*10)))
+    //BUGME: Why limit the max. time change since build to 10 years?! should be unlimited
+  if ((epoch < build_time_unix) || (epoch > (build_time_unix + 60*60*24*365*10)))
     return;
 
   if (ms < 0 || ms > 999)
     return;
 
   auto old_time = getEpoch();
-  if (old_time < BUILD_TIME_UNIX) {
+  if (old_time < build_time_unix) {
     // First time to set time
     // getEpoch() not accurate
-    old_time = BUILD_TIME_UNIX;
+    old_time = build_time_unix;
   }
 
   struct timeval tv;

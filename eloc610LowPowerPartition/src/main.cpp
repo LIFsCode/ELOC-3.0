@@ -296,9 +296,9 @@ void printPartitionInfo()
 */
 void initTime()
 {
-    timeObject.setTime(BUILD_TIME_UNIX, 0);
+    timeObject.setTime(BUILDDATE, "%b %d %Y %H:%M:%S %Y");
     timeObject.setTimeZone(TIMEZONE_OFFSET);
-    ESP_LOGI(TAG, "Setting initial time to Unix time: %d & timezone UTC%d", BUILD_TIME_UNIX, TIMEZONE_OFFSET);
+    ESP_LOGI(TAG, "Setting initial time to Unix time: %d & timezone UTC%d", timeObject.getEpoch(), TIMEZONE_OFFSET);
 }
 
 /**

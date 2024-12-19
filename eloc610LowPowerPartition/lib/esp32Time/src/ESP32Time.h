@@ -27,14 +27,17 @@
 
 #include <Arduino.h>
 
+
 class ESP32Time {
     private:
-        uint64_t boot_time_unix = BUILD_TIME_UNIX;  // Some sort of reasonable default
+        uint64_t boot_time_unix = 0;  // Some sort of reasonable default
+        uint64_t build_time_unix = 0;  // Some sort of reasonable default
     public:
         ESP32Time();
         void setTime(long epoch = 1609459200, int ms = 0);  // default (1609459200) = 1st Jan 2021
         int setTimeZone(int32_t offset);
         void setTime(int sc, int mn, int hr, int dy, int mt, int yr, int ms = 0);
+        void setTime(const char* timeStr, const char* format);
         tm getTimeStruct();
         String getTime(String format);
 
@@ -47,6 +50,9 @@ class ESP32Time {
         int64_t getSystemTimeMS();
         String getSystemTimeMS_string();
         int64_t getSystemTimeSecs();
+        int64_t getBuildTimeSecs() const {
+            return build_time_unix;
+        };
 
         long getEpoch();
         long getMillis();

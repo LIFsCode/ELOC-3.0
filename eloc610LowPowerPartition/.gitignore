@@ -16,3 +16,7 @@ sdkconfig*
 
 #ignore auto generated files
 src/version.h
+
+#ignore LoraWAN secrets files
+LoraWAN_appKey.hex
+LoraWAN_nwkKey.hex

@@ -52,6 +52,12 @@ extern QueueHandle_t rec_ai_evt_queue;
 
 class StatusLED;
 
+struct loraWAN_keys_t {
+    uint64_t devEUI;
+    uint8_t appKey[16];
+    uint8_t nwkKey[16];
+}; 
+
 class ElocSystem
 {
 public:
@@ -96,6 +102,7 @@ private:
         uint16_t hw_rev;
         uint32_t serialNumber;
     }mFactoryInfo; 
+    loraWAN_keys_t mLoraWAN_keys;
 
     /**
      * @brief Set implementation-specific power management configuration. This is a wrapper for esp_pm_configure

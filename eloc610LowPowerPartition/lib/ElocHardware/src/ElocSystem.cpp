@@ -27,6 +27,7 @@
 #include <nvs.h>
 #include <esp_pm.h>
 #include <driver/rtc_io.h>
+#include <byteswap.h>
 
 // arduino includes
 #include "Arduino.h"
@@ -167,6 +168,29 @@ ElocSystem::ElocSystem():
     ESP_LOGI(TAG, "Factory Data: Serial=%d, HW_Gen = %d, HW_Rev = %d",
         mFactoryInfo.serialNumber, mFactoryInfo.hw_gen, mFactoryInfo.hw_rev);
 
+    err = nvs_open_from_partition("nvs", "loraKeys", NVS_READONLY, &my_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error (%s) opening NVS handle 'loraKeys' namespace!\n", esp_err_to_name(err));
+    }
+    else {
+        ESP_LOGI(TAG, "The NVS handle successfully opened");
+        size_t strLen=sizeof(mLoraWAN_keys.devEUI);
+        err = nvs_get_blob(my_handle, "devEUI", &mLoraWAN_keys.devEUI, &strLen);
+        if (err) ESP_LOGE(TAG, "%s: Missing parameter 'devEUI'", esp_err_to_name(err));
+        mLoraWAN_keys.devEUI = __bswap_64(mLoraWAN_keys.devEUI); // swap byte order, hex2bin stores value in reverse byte order in nvs.csv
+
+        strLen=sizeof(mLoraWAN_keys.appKey);
+        err = nvs_get_blob(my_handle, "appKey", reinterpret_cast<char*>(mLoraWAN_keys.appKey), &strLen);
+        if (err) ESP_LOGE(TAG, "%s: Missing parameter 'appKey'", esp_err_to_name(err));
+
+        strLen=sizeof(mLoraWAN_keys.nwkKey);
+        err = nvs_get_blob(my_handle, "nwkKey", reinterpret_cast<char*>(mLoraWAN_keys.nwkKey), &strLen);
+        if (err) ESP_LOGE(TAG, "%s: Missing parameter 'nwkKey'", esp_err_to_name(err));
+
+        // Close
+        nvs_close(my_handle);
+        ESP_LOGI(TAG, "Reading values from NVS done - all OK");
+    }
 
     ESP_LOGI(TAG, "Setting up I2C");
 

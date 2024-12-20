@@ -38,3 +38,13 @@ String getSubstring(String data, char separator, int index) {
     }
     return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
 }
+
+String array_to_HexString(uint8_t array[], unsigned int len) {
+    String hexstring = "";
+
+    for (int i = 0; i < len; i++) {
+        hexstring += String(array[i], 16);
+    }
+    hexstring.toUpperCase();
+    return hexstring;
+}

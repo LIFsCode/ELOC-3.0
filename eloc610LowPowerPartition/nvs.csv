@@ -3,3 +3,8 @@ factory,namespace,,
 hw_gen,data,u16,3
 hw_rev,data,u16,5
 serial,data,u32,240100191
+loraKeys,namespace,,
+devEUI,data,hex2bin,70B3D57ED0062B25
+appKey,file,hex2bin,LoraWAN_appKey.hex
+nwkKey,file,hex2bin,LoraWAN_nwkKey.hex
+

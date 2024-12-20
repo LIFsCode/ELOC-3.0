@@ -29,5 +29,14 @@
 
 String getSubstring(String data, char separator, int index);
 
+/**
+ * @brief Converts a byte array into an hex string
+ * 
+ * @param array array of bytes
+ * @param len length of array
+ * @return String representation of array without prefix
+ */
+String array_to_HexString(uint8_t array[], unsigned int len);
+
 
 #endif // UTILS_STRUTILS_H_

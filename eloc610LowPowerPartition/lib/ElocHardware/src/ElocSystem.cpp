@@ -38,6 +38,7 @@
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
 #include "Battery.hpp"
+#include "strutils.h"
 
 //TODO move sd card into ELOC system
 extern SDCardSDIO sd_card;
@@ -128,7 +129,6 @@ private:
     }
 };
 
-
 ElocSystem::ElocSystem():
     mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true),
     mRefreshStatus(false), mIntruderDetected(false),
@@ -191,6 +191,12 @@ ElocSystem::ElocSystem():
         nvs_close(my_handle);
         ESP_LOGI(TAG, "Reading values from NVS done - all OK");
     }
+    //BUGME (CRITICAL): Remove this print as it reveals secret key information.
+    ESP_LOGI(TAG, "LoraWAN Data: devEUI=0x%llX, appKey = %s, nwkKey = %s",
+        mLoraWAN_keys.devEUI, 
+        array_to_HexString(mLoraWAN_keys.appKey, sizeof(mLoraWAN_keys.appKey)).c_str(), 
+        array_to_HexString(mLoraWAN_keys.nwkKey, sizeof(mLoraWAN_keys.nwkKey)).c_str());
+
 
     ESP_LOGI(TAG, "Setting up I2C");
 

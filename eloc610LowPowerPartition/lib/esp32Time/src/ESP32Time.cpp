@@ -34,8 +34,14 @@ static const char* TAG = "ESP32Time";
 
 /*!
     @brief  Constructor for ESP32Time
+    @param  epochBuildDate
+            Build date in UNIX Time epoch format (optional)
 */
-ESP32Time::ESP32Time() {
+ESP32Time::ESP32Time(uint64_t epochBuildDate/* = 0*/) {
+    /*
+     * Retrieving build date from esp app description returns only the local
+     * Build date, but not the absolute UTC timestamp. It is prefereable to 
+     * initialize ESP32Time with the UTC Unix timestamp, but this must be provided externally
     const esp_app_desc_t *app_desc = esp_ota_get_app_description();
     struct tm timeinfo;
     char str[50];
@@ -45,7 +51,31 @@ ESP32Time::ESP32Time() {
     setTime(build_time_unix, 0);
     strftime(str, 50, "%A, %B %d %Y", &timeinfo);
     ESP_LOGI(TAG, "Set boot time to %s (unix time = %lld)", str, build_time_unix);
+    */
+    build_time_unix = epochBuildDate;
+    ESP_LOGI(TAG, "Set boot time to unix time = %lld", build_time_unix);
     boot_time_unix = build_time_unix;
+}
+
+/**
+ * @brief Set initial build time as boot time reference
+ * @param  epochBuildDate
+ *         Build date in UNIX Time epoch format (optional)
+ * @param  tz_offset
+ *         Timezone offset (ignored if 0)
+ * @note If time is not set the getLocalTime() will stuck for 5 ms due to invalid timestamp
+*/
+void ESP32Time::initBuildTime(uint64_t epochBuildDate, int32_t tz_offset) {
+    
+    build_time_unix = epochBuildDate;
+    ESP_LOGI(TAG, "Set boot time to unix time = %lld)", build_time_unix);
+    boot_time_unix = build_time_unix;
+
+    this->setTime(epochBuildDate, 0);
+    this->setTimeZone(tz_offset);
+    String time= getTimeDate(false);
+    ESP_LOGI(TAG, "Setting initial time to Unix time: %ld & timezone UTC %+d --> Current Time %s", 
+            getEpoch(), tz_offset, time.c_str());
 }
 
 /*!

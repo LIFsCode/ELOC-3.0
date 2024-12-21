@@ -1,5 +1,6 @@
 import os
 import subprocess
+import time
 
 FILENAME_VERSION_H = 'src/version.h'
 
@@ -23,6 +24,7 @@ BUILD_CHECKEDIN = ""
 if (len(modifiedFiles) != 0):
   BUILD_CHECKEDIN = "_MODIFIED"
 
+UNIX_TIME = int(time.time())
 
 hf = """
 
@@ -49,7 +51,11 @@ hf = """
 #define VERSIONTAG VERSION "_" BUILD_HASH BUILD_CHECKEDIN " " __DATE__ " " __TIME__""
 #endif
 
+#ifndef __TIME_UNIX__
+#define __TIME_UNIX__ {}
+#endif
+
 #endif /* BUILDINFO_H_ */
-""".format(build_hash[:8], BUILD_CHECKEDIN)
+""".format(build_hash[:8], BUILD_CHECKEDIN, UNIX_TIME)
 with open(FILENAME_VERSION_H, 'w+') as f:
     f.write(hf)

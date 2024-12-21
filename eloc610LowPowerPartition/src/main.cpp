@@ -291,17 +291,6 @@ void printPartitionInfo()
 }
 
 /**
- * @brief Set initial time
- * @note If time is not set the getLocalTime() will stuck for 5 ms due to invalid timestamp
-*/
-void initTime()
-{
-    timeObject.setTime(BUILDDATE, "%b %d %Y %H:%M:%S %Y");
-    timeObject.setTimeZone(TIMEZONE_OFFSET);
-    ESP_LOGI(TAG, "Setting initial time to Unix time: %d & timezone UTC%d", timeObject.getEpoch(), TIMEZONE_OFFSET);
-}
-
-/**
  * @brief Create session folder on SD card & save config file
 */
 bool createSessionFolder()
@@ -613,7 +602,7 @@ void app_main(void) {
 
 #endif
 
-    initTime();
+    timeObject.initBuildTime(__TIME_UNIX__, TIMEZONE_OFFSET);
 
     printRevision();
 

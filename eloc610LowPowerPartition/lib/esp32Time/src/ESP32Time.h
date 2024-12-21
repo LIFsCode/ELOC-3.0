@@ -27,17 +27,18 @@
 
 #include <Arduino.h>
 
-
+//TODO: create global instance of ESP32Time in .cpp file and extern declaration in .h like Arduino style
 class ESP32Time {
     private:
         uint64_t boot_time_unix = 0;  // Some sort of reasonable default
         uint64_t build_time_unix = 0;  // Some sort of reasonable default
     public:
-        ESP32Time();
+        ESP32Time(uint64_t epochBuildDate = 0);
         void setTime(long epoch = 1609459200, int ms = 0);  // default (1609459200) = 1st Jan 2021
         int setTimeZone(int32_t offset);
         void setTime(int sc, int mn, int hr, int dy, int mt, int yr, int ms = 0);
         void setTime(const char* timeStr, const char* format);
+        void initBuildTime(uint64_t epochBuildDate, int32_t tz_offset);
         tm getTimeStruct();
         String getTime(String format);
 

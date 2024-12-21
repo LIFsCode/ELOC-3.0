@@ -26,7 +26,8 @@ To program the initial NVS information in a fabric new ELOC device use the flash
 python -m esptool write_flash 0x9000 .\.pio\build\esp32dev\nvs.bin
 ```
 
-**TODO**: @edsteve Add description of flashNVSonly.py and usage
+A script to partly automate this process is in the root folder called Autoflasher.py. More info about that can be found in the Wiki:
+https://github.com/LIFsCode/ELOC-3.0/wiki/Firmware-Update-&-Initial-Flashing-with-NVS#initial-flashing-including-nvs
 
 ## Limitations
 

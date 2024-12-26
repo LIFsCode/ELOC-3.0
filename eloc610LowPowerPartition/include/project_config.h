@@ -46,6 +46,15 @@
         #define PIN_NUM_MOSI    GPIO_NUM_15
         #define PIN_NUM_CS      GPIO_NUM_14
 
+        // Lora
+        #define PIN_LORA_MISO GPIO_NUM_32
+        #define PIN_LORA_CLK GPIO_NUM_33
+        #define PIN_LORA_MOSI GPIO_NUM_26
+        #define PIN_LORA_CS GPIO_NUM_27
+        #define PIN_LORA_DIO1 GPIO_NUM_21
+        #define PIN_LORA_RST GPIO_NUM_25
+        #define PIN_LORA_BUSY GPIO_NUM_35
+
         // i2c config
         // LIS3DH Accelerometer & PCA9557 expander
         #define USE_I2C

@@ -37,6 +37,7 @@
 #include "SDCardSDIO.h"
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
+#include "ElocLora.hpp"
 #include "Battery.hpp"
 #include "strutils.h"
 
@@ -264,6 +265,8 @@ ElocSystem::ElocSystem():
     ESP_LOGI(TAG, "Setup Buzzer");
     EasyBuzzer.setPin(BUZZER_PIN);
 
+    ESP_LOGI(TAG, "Setup LoraWAN");
+    ElocLoraSetup();
 }
 
 ElocSystem::~ElocSystem()
@@ -420,6 +423,9 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
     }
     mRefreshStatus = false;
     mStatus = status;
+
+    //TODO find a better place for Lora handling
+    ElocLoraLoop();
 
     return ESP_OK;
 }

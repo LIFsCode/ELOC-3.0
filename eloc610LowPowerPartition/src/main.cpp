@@ -2,7 +2,7 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
-#include "esp_clk.h"
+#include "esp32/clk.h"
 #include <rom/ets_sys.h>
 #include "esp_pm.h"
 #include "esp_heap_caps.h"
@@ -502,7 +502,7 @@ void ei_callback_func() {
         #endif  // AI_CONTINUOUS_INFERENCE
 
         signal.get_data = &microphone_audio_signal_get_data;
-        ei_impulse_result_t result = {0};
+        ei_impulse_result_t result = {};
 
         #ifdef AI_CONTINUOUS_INFERENCE
             EI_IMPULSE_ERROR r = edgeImpulse.run_classifier_continuous(&signal, &result);
@@ -734,7 +734,7 @@ void app_main(void) {
         ei::signal_t signal;
         signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
         signal.get_data = &microphone_audio_signal_get_data;
-        ei_impulse_result_t result = {0};
+        ei_impulse_result_t result = {};
 
         // Artificially fill buffer with test data
         auto ei_skip_rate = TEST_SAMPLE_LENGTH / EI_CLASSIFIER_RAW_SAMPLE_COUNT;

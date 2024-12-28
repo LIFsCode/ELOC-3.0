@@ -422,7 +422,7 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
     mStatus = status;
 
     //TODO find a better place for Lora handling
-    ElocLoraLoop();
+    ElocLora::GetInstance().ElocLoraLoop();
 
     return ESP_OK;
 }

@@ -681,7 +681,7 @@ void app_main(void) {
 
 
     ESP_LOGI(TAG, "Setup LoraWAN");
-    ElocLoraSetup();
+    ElocLora::GetInstance();
     // do not install GPIO ISR. This is already done wiithin Eloc Lora Setup 
     // TODO: this must be correctly handled for non LORA setups
     //ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));

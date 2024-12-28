@@ -30,6 +30,11 @@
       "avgSamples": 10,
       "avgIntervalMs": 0,
       "noBatteryMode": false
+    },
+    "lorawan": {
+      "loraEnable": false,
+      "upLinkIntervalS": 60,
+      "loraRegion": "EU868"
     }
   },
   "mic": {

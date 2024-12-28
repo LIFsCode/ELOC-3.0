@@ -329,6 +329,13 @@ esp_err_t ElocSystem::pm_configure() {
         .min_freq_mhz = getConfig().cpuMinFrequencyMHZ,
         .light_sleep_enable = getConfig().cpuEnableLightSleep
     };
+    if (getConfig().loraConfig.loraEnable) {
+        cfg.min_freq_mhz = cfg.max_freq_mhz;
+        cfg.light_sleep_enable = false;
+        ESP_LOGW(TAG, "LoraWAN is enabled! This does not allow to use Power Management, e.g. DFS or light sleep!"
+                    "Overwrite Settings: min CPU freq = max CPU freq (%d MHz) and light sleep to %s",
+            cfg.min_freq_mhz, cfg.light_sleep_enable ? "on" : "off");
+    }
     if (esp_err_t err = this->pm_configure(&cfg) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set PM config with %s", esp_err_to_name(err));
         return err;

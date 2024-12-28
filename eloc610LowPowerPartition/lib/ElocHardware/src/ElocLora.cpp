@@ -270,6 +270,11 @@ esp_err_t ElocLora::init() {
     return ESP_ERR_NOT_FINISHED;
   }
 
+  //BUGME (CRITICAL): Remove this print as it reveals secret key information.
+  ESP_LOGI(TAG, "LoraWAN Data: devEUI=0x%llX, appKey = %s, nwkKey = %s",
+      this->devEUI, 
+      array_to_HexString(this->appKey, sizeof(this->appKey)).c_str(), 
+      array_to_HexString(this->nwkKey, sizeof(this->nwkKey)).c_str());
   // Setup the OTAA session information
   state = node.beginOTAA(joinEUI, devEUI, nwkKey, appKey);
   if (state != RADIOLIB_ERR_NONE) {

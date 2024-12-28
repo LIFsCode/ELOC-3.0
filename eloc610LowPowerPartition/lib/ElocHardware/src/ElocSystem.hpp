@@ -167,6 +167,10 @@ public:
 
     void notifyFwUpdateError();
     void notifyFwUpdate();
+
+    const loraWAN_keys_t& getLoraWAN_Keys() {
+        return mLoraWAN_keys;
+    }
 };
 
 

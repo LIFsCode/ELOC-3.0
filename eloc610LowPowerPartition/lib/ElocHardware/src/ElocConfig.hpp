@@ -67,6 +67,12 @@ typedef struct {
     bool noBatteryMode;        // disables battery readings to allow the device to be powered from USB only
 }batteryConfig_t;
 
+typedef struct {
+    bool loraEnable;          // enable/disable Lora communication
+    uint32_t upLinkIntervalS; // time between lora uplink messages in seconds
+    String loraRegion;        // Lora Region, e.g. EU868
+}loraConfig_T;
+
 /// @brief holds all the device specific configuration settings
 typedef struct {
     int  secondsPerFile;
@@ -81,6 +87,7 @@ typedef struct {
     logConfig_t logConfig;
     intruderConfig_t IntruderConfig;
     batteryConfig_t batteryConfig;
+    loraConfig_T loraConfig;
 }elocConfig_T;
 
 const elocConfig_T& getConfig();
@@ -93,6 +100,8 @@ typedef struct {
     String nodeName;
 }elocDeviceInfo_T;
 const elocDeviceInfo_T& getDeviceInfo();
+
+const loraConfig_T& getLoraConfig();
 
 /**
  * @brief Load configuration (.config)

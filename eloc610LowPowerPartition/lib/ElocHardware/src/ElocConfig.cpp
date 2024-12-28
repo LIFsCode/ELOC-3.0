@@ -134,6 +134,11 @@ static const elocConfig_T C_ElocConfig_Default {
         .avgIntervalMs = 0,
         .noBatteryMode  = false,
     },
+    .loraConfig = {
+        .loraEnable = false,
+        .upLinkIntervalS = 60,
+        .loraRegion = "EU868",
+    },
 };
 elocConfig_T gElocConfig = C_ElocConfig_Default;
 const elocConfig_T& getConfig() {
@@ -186,6 +191,10 @@ void loadConfig(const JsonObject& config) {
     gElocConfig.batteryConfig.avgSamples       = config["battery"]["avgSamples"]       | C_ElocConfig_Default.batteryConfig.avgSamples;
     gElocConfig.batteryConfig.avgIntervalMs    = config["battery"]["avgIntervalMrs"]   | C_ElocConfig_Default.batteryConfig.avgIntervalMs;
     gElocConfig.batteryConfig.noBatteryMode    = config["battery"]["noBatteryMode"]    | C_ElocConfig_Default.batteryConfig.noBatteryMode;
+    /** lora config*/
+    gElocConfig.loraConfig.loraEnable          = config["lorawan"]["loraEnable"]       | C_ElocConfig_Default.loraConfig.loraEnable;
+    gElocConfig.loraConfig.upLinkIntervalS     = config["lorawan"]["upLinkIntervalS"]  | C_ElocConfig_Default.loraConfig.upLinkIntervalS;
+    gElocConfig.loraConfig.loraRegion          = config["lorawan"]["loraRegion"]       | C_ElocConfig_Default.loraConfig.loraRegion;
 }
 
 MicChannel_t ParseMicChannel(const char* str, MicChannel_t default_value) {
@@ -314,6 +323,9 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     config["battery"]["avgSamples"]       = ElocConfig.batteryConfig.avgSamples;
     config["battery"]["avgIntervalMs"]    = ElocConfig.batteryConfig.avgIntervalMs;
     config["battery"]["noBatteryMode"]    = ElocConfig.batteryConfig.noBatteryMode;
+    config["lorawan"]["loraEnable"]       = ElocConfig.loraConfig.loraEnable;
+    config["lorawan"]["upLinkIntervalS"]  = ElocConfig.loraConfig.upLinkIntervalS;
+    config["lorawan"]["loraRegion"]       = ElocConfig.loraConfig.loraRegion;
 
 
     JsonObject micInfo = doc.createNestedObject("mic");

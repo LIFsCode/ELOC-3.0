@@ -264,9 +264,6 @@ ElocSystem::ElocSystem():
 
     ESP_LOGI(TAG, "Setup Buzzer");
     EasyBuzzer.setPin(BUZZER_PIN);
-
-    ESP_LOGI(TAG, "Setup LoraWAN");
-    ElocLoraSetup();
 }
 
 ElocSystem::~ElocSystem()

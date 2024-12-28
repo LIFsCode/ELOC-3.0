@@ -30,6 +30,7 @@
 #include "esp_log.h"
 #include <driver/rtc_io.h>
 #include <esp_pm.h>
+#include <esp_mac.h>
 
 #include "ElocLoraConfig.h"
 #include "ElocLora.hpp"
@@ -48,6 +49,8 @@ const char* TAG = "LoraWAN";
 uint8_t C_appKey[] = { RADIOLIB_LORAWAN_APP_KEY };
 uint8_t C_nwkKey[] = { RADIOLIB_LORAWAN_NWK_KEY };
 
+//#define USE_DEVEUI_FROM_NVS
+
 
 
 // joinEUI - previous versions of LoRaWAN called this AppEUI
@@ -64,10 +67,13 @@ ElocLora::ElocLora(/* args */):
 {
   const loraWAN_keys_t& loraKeys = ElocSystem::GetInstance().getLoraWAN_Keys();
   if (getRegionFromConfig() == ESP_OK) {
+    calcDevEUIfromMAC();
     ESP_LOGI(TAG, "init & Join Lora\n");
     //TODO: how to handle the joinEUI... check that
     joinEUI = RADIOLIB_LORAWAN_JOIN_EUI;
+#ifdef USE_DEVEUI_FROM_NVS
     devEUI = loraKeys.devEUI;
+#endif
     memcpy(this->appKey, loraKeys.appKey, sizeof(appKey));
     memcpy(this->nwkKey, loraKeys.nwkKey, sizeof(nwkKey));
     if (init() != ESP_OK) {
@@ -188,6 +194,28 @@ esp_err_t ElocLora::getRegionFromConfig() {
   return ESP_OK;
 }
 
+void ElocLora::calcDevEUIfromMAC() {
+  uint8_t mac[6];
+  uint64_t devEUI64 = 0;
+  uint8_t* eui64 = reinterpret_cast<uint8_t*>(&devEUI64); // helper for stitching together the bytes of the MAC address
+
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+
+  ESP_LOGI(TAG, "ESP32 Base MAC address = %s", array_to_HexString(mac, sizeof(mac)).c_str());
+  // take endianess into account when converting to uint64_t
+  eui64[7] = mac[0];
+  eui64[6] = mac[1];
+  eui64[5] = mac[2];
+  eui64[4] = 0xFF;
+  eui64[3] = 0xFE;
+  eui64[2] = mac[3];
+  eui64[1] = mac[4];
+  eui64[0] = mac[5];
+  ESP_LOGI(TAG, "MAC address based devEUI = %llX", devEUI64);
+
+  this->devEUI = devEUI64;
+}
+
 
 #include "esp_log.h"
 // helper function to display any issues
@@ -269,7 +297,6 @@ esp_err_t ElocLora::init() {
     this->errMsg(F("Initialise radio failed"), state);
     return ESP_ERR_NOT_FINISHED;
   }
-
   //BUGME (CRITICAL): Remove this print as it reveals secret key information.
   ESP_LOGI(TAG, "LoraWAN Data: devEUI=0x%llX, appKey = %s, nwkKey = %s",
       this->devEUI, 

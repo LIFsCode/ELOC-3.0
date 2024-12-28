@@ -41,6 +41,7 @@
 
 const char* TAG = "LoraWAN";
 
+static const uint32_t C_MIN_UPLINK_INTERVAL_S = 10;
 
 #include "RadioLib.h"
 #include "../../../include/project_config.h"
@@ -67,8 +68,14 @@ ElocLora::ElocLora(/* args */):
 {
   const loraWAN_keys_t& loraKeys = ElocSystem::GetInstance().getLoraWAN_Keys();
   if (getRegionFromConfig() == ESP_OK) {
+    if (getConfig().loraConfig.upLinkIntervalS > C_MIN_UPLINK_INTERVAL_S) {
+      uplinkIntervalSeconds = getConfig().loraConfig.upLinkIntervalS;
+    }
+    else {
+      ESP_LOGW(TAG, "Update Interval %d is too short. Minimum %d second allowed", getConfig().loraConfig.upLinkIntervalS, C_MIN_UPLINK_INTERVAL_S);
+    }
     calcDevEUIfromMAC();
-    ESP_LOGI(TAG, "init & Join Lora\n");
+    ESP_LOGI(TAG, "init & Join Lora with uplink Interval %d seconds\n", uplinkIntervalSeconds);
     //TODO: how to handle the joinEUI... check that
     joinEUI = RADIOLIB_LORAWAN_JOIN_EUI;
 #ifdef USE_DEVEUI_FROM_NVS
@@ -76,8 +83,9 @@ ElocLora::ElocLora(/* args */):
 #endif
     memcpy(this->appKey, loraKeys.appKey, sizeof(appKey));
     memcpy(this->nwkKey, loraKeys.nwkKey, sizeof(nwkKey));
-    if (init() != ESP_OK) {
-        ESP_LOGE(TAG, "init failed! Lora Communication will be unavailable!\n");
+    if (esp_err_t err=init() != ESP_OK) {
+        ESP_LOGE(TAG, "init failed with %s! Lora Communication will be unavailable!\n", esp_err_to_name(err));
+        return;
     }
     ESP_LOGI(TAG, "init completed!\n");
   }

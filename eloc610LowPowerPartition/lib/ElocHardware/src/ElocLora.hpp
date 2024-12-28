@@ -72,6 +72,8 @@ private:
 
     void errMsg(const __FlashStringHelper* message, int state);
     esp_err_t getRegionFromConfig();
+
+    void calcDevEUIfromMAC();
 public:
     virtual ~ElocLora();
     static ElocLora& GetInstance() {

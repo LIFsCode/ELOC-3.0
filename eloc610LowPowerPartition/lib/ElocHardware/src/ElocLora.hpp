@@ -23,7 +23,64 @@
 #ifndef ELOCLORA_HPP_
 #define ELOCLORA_HPP_
 
-void ElocLoraSetup();
-void ElocLoraLoop();
+#include <esp_err.h>
+
+
+#include "RadioLib.h"
+#include <Arduino.h>
+#include <SPI.h>
+
+
+class ElocLora
+{
+private:
+    bool mInitDone;
+    /* data */
+    SPIClass loraSPI;
+    // RADIOLIB_DEFAULT_SPI_SETTINGS
+    const SPISettings loraSpiSettings = SPISettings(2000000, MSBFIRST, SPI_MODE0);
+
+    // first you have to set your radio model and pin configuration
+    // this is provided just as a default example
+    // config for TTGO T3 V1.6.1 (V2.1) https://github.com/LilyGO/TTGO-LoRa32-V2.1
+    SX1262 radio;
+    
+    // how often to send an uplink - consider legal & FUP constraints - see notes
+    uint32_t uplinkIntervalSeconds = 1UL * 60UL;    // minutes x seconds
+
+    uint64_t joinEUI;
+    uint64_t devEUI;
+    uint8_t appKey[16];
+    uint8_t nwkKey[16];
+
+    //TODO: Retrieve Region from Config
+    // regional choices: EU868, US915, AU915, AS923, AS923_2, AS923_3, AS923_4, IN865, KR920, CN500
+    const LoRaWANBand_t Region = EU868;
+    const uint8_t subBand = 0;  // For US915, change this to 2, otherwise leave on 0
+
+    // create the LoRaWAN node
+    LoRaWANNode node;
+
+    // This MUST fit the loraWAN application setting
+    // if not this may cause buffer overruns & memory violations.
+    static const size_t C_DOWNLINK_PAYLOAD = 10; 
+
+    void printDecodedPayload(const uint8_t* payload, size_t  payloadSize);
+
+    esp_err_t init();
+    ElocLora(/* args */);
+
+    void errMsg(const __FlashStringHelper* message, int state);
+public:
+    virtual ~ElocLora();
+    static ElocLora& GetInstance() {
+        static ElocLora elocLora;
+        return elocLora;
+    }
+    void ElocLoraLoop();
+};
+
+
+
 
 #endif // ELOCLORA_HPP_

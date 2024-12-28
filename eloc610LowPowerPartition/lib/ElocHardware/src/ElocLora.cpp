@@ -34,7 +34,9 @@
 #include "ElocLoraConfig.h"
 #include "ElocLora.hpp"
 #include "ElocConfig.hpp"
+#include "ElocSystem.hpp"
 #include "config.h"
+#include "strutils.h"
 
 const char* TAG = "LoraWAN";
 
@@ -46,6 +48,12 @@ const char* TAG = "LoraWAN";
 uint8_t C_appKey[] = { RADIOLIB_LORAWAN_APP_KEY };
 uint8_t C_nwkKey[] = { RADIOLIB_LORAWAN_NWK_KEY };
 
+
+
+// joinEUI - previous versions of LoRaWAN called this AppEUI
+// for development purposes you can use all zeros - see wiki for details
+#define RADIOLIB_LORAWAN_JOIN_EUI  0x0000000000000000
+
 ElocLora::ElocLora(/* args */):
     mInitDone(false),
     loraSPI(VSPI), 
@@ -54,13 +62,14 @@ ElocLora::ElocLora(/* args */):
     //BUGME: handle subband correct for US915 (need to be 2)
     node(&radio, &Region, subBand)
 {
-
+  const loraWAN_keys_t& loraKeys = ElocSystem::GetInstance().getLoraWAN_Keys();
   if (getRegionFromConfig() == ESP_OK) {
     ESP_LOGI(TAG, "init & Join Lora\n");
+    //TODO: how to handle the joinEUI... check that
     joinEUI = RADIOLIB_LORAWAN_JOIN_EUI;
-    devEUI = RADIOLIB_LORAWAN_DEV_EUI;
-    memcpy(this->appKey, C_appKey, sizeof(appKey));
-    memcpy(this->nwkKey, C_nwkKey, sizeof(nwkKey));
+    devEUI = loraKeys.devEUI;
+    memcpy(this->appKey, loraKeys.appKey, sizeof(appKey));
+    memcpy(this->nwkKey, loraKeys.nwkKey, sizeof(nwkKey));
     if (init() != ESP_OK) {
         ESP_LOGE(TAG, "init failed! Lora Communication will be unavailable!\n");
     }
@@ -249,7 +258,7 @@ esp_err_t ElocLora::init() {
   ESP_LOGI(TAG, "SCK: %u", PIN_LORA_CLK);
   ESP_LOGI(TAG, "SS: %u", PIN_LORA_CS);  
   delay(5000);  // Give time to switch to the serial monitor
-  ESP_LOGI(TAG, "\nSetup ... ");
+  ESP_LOGI(TAG, "Setup ... ");
 
   loraSPI.begin(PIN_LORA_CLK, PIN_LORA_MISO, PIN_LORA_MOSI, PIN_LORA_CS);
 
@@ -262,7 +271,6 @@ esp_err_t ElocLora::init() {
   }
 
   // Setup the OTAA session information
-  //state = node.beginOTAA(this->joinEUI, this->devEUI, this->nwkKey, this->appKey);
   state = node.beginOTAA(joinEUI, devEUI, nwkKey, appKey);
   if (state != RADIOLIB_ERR_NONE) {
     this->errMsg(F("Initialise node failed"), state);

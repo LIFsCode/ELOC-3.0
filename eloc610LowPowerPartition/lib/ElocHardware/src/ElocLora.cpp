@@ -21,8 +21,6 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "ElocLoraConfig.h"
-#include "ElocLora.hpp"
 #include <stdio.h>
 #include <inttypes.h>
 #include <string.h>
@@ -33,6 +31,9 @@
 #include <driver/rtc_io.h>
 #include <esp_pm.h>
 
+#include "ElocLoraConfig.h"
+#include "ElocLora.hpp"
+#include "ElocConfig.hpp"
 #include "config.h"
 
 const char* TAG = "LoraWAN";
@@ -50,9 +51,11 @@ ElocLora::ElocLora(/* args */):
     loraSPI(VSPI), 
     radio (new Module(PIN_LORA_CS, PIN_LORA_DIO1, PIN_LORA_RST, PIN_LORA_BUSY, loraSPI, loraSpiSettings)),
     // create the LoRaWAN node
+    //BUGME: handle subband correct for US915 (need to be 2)
     node(&radio, &Region, subBand)
 {
 
+  if (getRegionFromConfig() == ESP_OK) {
     ESP_LOGI(TAG, "init & Join Lora\n");
     joinEUI = RADIOLIB_LORAWAN_JOIN_EUI;
     devEUI = RADIOLIB_LORAWAN_DEV_EUI;
@@ -62,7 +65,8 @@ ElocLora::ElocLora(/* args */):
         ESP_LOGE(TAG, "init failed! Lora Communication will be unavailable!\n");
     }
     ESP_LOGI(TAG, "init completed!\n");
-    mInitDone = true;
+  }
+  // if Region cannot determined than do nothing with LoraWAN
 }
 
 ElocLora::~ElocLora()
@@ -135,6 +139,46 @@ String stateDecode(const int16_t result) {
   return "See https://jgromes.github.io/RadioLib/group__status__codes.html";
 }
 
+esp_err_t ElocLora::getRegionFromConfig() {
+  const String& cfgRegion = getConfig().loraConfig.loraRegion;
+  if (cfgRegion == "EU868") {
+    Region= EU868;
+  }
+  else if (cfgRegion == "US915") {
+    Region= US915;
+  }
+  else if (cfgRegion == "AU915") {
+    Region= AU915;
+  }
+  else if (cfgRegion == "AS923") {
+    Region= AS923;
+  }
+  else if (cfgRegion == "AS923_2") {
+    Region= AS923_2;
+  }
+  else if (cfgRegion == "AS923_3") {
+    Region= AS923_3;
+  }
+  else if (cfgRegion == "AS923_4") {
+    Region= AS923_4;
+  }
+  else if (cfgRegion == "IN865") {
+    Region= IN865;
+  }
+  else if (cfgRegion == "KR920") {
+    Region= KR920;
+  }
+  else if (cfgRegion == "CN500") {
+    Region= CN500;
+  }
+  else {
+    ESP_LOGE(TAG, "Invalid Lora Region Config: %s", cfgRegion.c_str());
+    return ESP_ERR_INVALID_ARG;
+  }
+  ESP_LOGI(TAG, "Setting Lora Region Config: %s", cfgRegion.c_str());
+  return ESP_OK;
+}
+
 
 #include "esp_log.h"
 // helper function to display any issues
@@ -192,8 +236,14 @@ void ElocLora::errMsg(const __FlashStringHelper* message, int state) {
 }
 
 esp_err_t ElocLora::init() {
+  //BUGME: handle serial somewhere else? or use ESP IDF based HAL instead of Arduino
   Serial.begin(115200);
   while(!Serial);
+  if (!getConfig().loraConfig.loraEnable) {
+    ESP_LOGW(TAG, "Lora is not enabled... skipping Initialization");
+    return ESP_OK;
+  }
+
   ESP_LOGI(TAG, "MOSI: %u", PIN_LORA_MOSI);
   ESP_LOGI(TAG, "MISO: %u", PIN_LORA_MISO);
   ESP_LOGI(TAG, "SCK: %u", PIN_LORA_CLK);
@@ -227,12 +277,13 @@ esp_err_t ElocLora::init() {
   }
 
   ESP_LOGI(TAG, "Ready!\n");
+  mInitDone = true;
   return ESP_OK;
 }
 
 void ElocLora::ElocLoraLoop() {
 
-    if (!mInitDone) {
+    if ((!mInitDone) || (!getConfig().loraConfig.loraEnable)) {
       // if initialization failed Lora is not available so we skip everything
       return;
     }

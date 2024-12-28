@@ -684,7 +684,9 @@ void app_main(void) {
     ElocLora::GetInstance();
     // do not install GPIO ISR. This is already done wiithin Eloc Lora Setup 
     // TODO: this must be correctly handled for non LORA setups
-    //ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
+    if (!getConfig().loraConfig.loraEnable) {
+        ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
+    }
 
     ESP_LOGI(TAG, "Creating Bluetooth  task...");
     if (esp_err_t err = BluetoothServerSetup(false)) {

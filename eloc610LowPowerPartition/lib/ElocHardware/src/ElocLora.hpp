@@ -55,8 +55,8 @@ private:
 
     //TODO: Retrieve Region from Config
     // regional choices: EU868, US915, AU915, AS923, AS923_2, AS923_3, AS923_4, IN865, KR920, CN500
-    const LoRaWANBand_t Region = EU868;
-    const uint8_t subBand = 0;  // For US915, change this to 2, otherwise leave on 0
+    LoRaWANBand_t Region = EU868;
+    uint8_t subBand = 0;  // For US915, change this to 2, otherwise leave on 0
 
     // create the LoRaWAN node
     LoRaWANNode node;
@@ -71,6 +71,7 @@ private:
     ElocLora(/* args */);
 
     void errMsg(const __FlashStringHelper* message, int state);
+    esp_err_t getRegionFromConfig();
 public:
     virtual ~ElocLora();
     static ElocLora& GetInstance() {

@@ -44,6 +44,7 @@
 #include "ElocSystem.hpp"
 #include "ElocConfig.hpp"
 #include "ElocStatus.hpp"
+#include "ElocLora.hpp"
 #include "logging.hpp"
 #include "BluetoothServer.hpp"
 #include "FirmwareUpdate.hpp"
@@ -678,7 +679,12 @@ void app_main(void) {
     rec_ai_evt_queue = xQueueCreate(10, sizeof(bool));
     xQueueReset(rec_ai_evt_queue);
 
-    ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
+
+    ESP_LOGI(TAG, "Setup LoraWAN");
+    ElocLoraSetup();
+    // do not install GPIO ISR. This is already done wiithin Eloc Lora Setup 
+    // TODO: this must be correctly handled for non LORA setups
+    //ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
 
     ESP_LOGI(TAG, "Creating Bluetooth  task...");
     if (esp_err_t err = BluetoothServerSetup(false)) {

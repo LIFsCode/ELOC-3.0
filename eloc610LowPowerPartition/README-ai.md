@@ -43,5 +43,10 @@ Build using 'esp32dev-ei' in the 'Project Tasks':
     
     Modify line 120 of lib/edge-impulse/src/edge-impulse-sdk/tensorflow/lite/micro/kernels/select.cpp to read:  
     TfLiteIntArray* output_size = nullptr;
+4. Compile error:
+    ```collect2.exe: error: ld returned 1 exit status
+    *** [.pio\build\esp32dev-ei-windows\firmware.elf] Error 1```
+    Solution: Comment out this line in platform.io: -DEI_CLASSIFIER_ALLOCATION_STATIC=1
+    It's a RAM issue. More info here: https://github.com/LIFsCode/ELOC-3.0/issues/79
 
 

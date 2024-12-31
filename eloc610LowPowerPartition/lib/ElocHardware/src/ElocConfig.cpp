@@ -71,7 +71,7 @@ const micInfo_t& getMicInfo() {
  *         3. Setting in src/config.h
  * TODO: Confirm the priority of the configuration sources??
  */
-void upateI2sConfig() {
+void updateI2sConfig() {
     i2s_mic_Config.sample_rate = gMicInfo.MicSampleRate;
     i2s_mic_Config.use_apll = gMicInfo.MicUseAPLL;
     if (i2s_mic_Config.sample_rate == 0) {
@@ -210,7 +210,7 @@ void loadMicInfo(const JsonObject& micInfo) {
     gMicInfo.MicUseTimingFix = micInfo["MicUseTimingFix"] | C_MicInfo_Default.MicUseTimingFix;
     gMicInfo.MicChannel = ParseMicChannel(micInfo["MicChannel"], C_MicInfo_Default.MicChannel);
 
-    upateI2sConfig();
+    updateI2sConfig();
 }
 
 bool readConfigFile(const char* filename) {
@@ -226,12 +226,13 @@ bool readConfigFile(const char* filename) {
         fseek(f, 0, SEEK_SET);  /* same as rewind(f); */
 
         char *input = reinterpret_cast<char*>(malloc(fsize + 1));
-        memset(input, 0, fsize+1);
+        // Check successful before clearing memory
         if (!input) {
             ESP_LOGE(TAG, "Not enough memory for reading %s", filename);
             fclose(f);
             return false;
         }
+        memset(input, 0, fsize+1);
         fread(input, fsize, 1, f);
 
         ESP_LOGI(TAG, "Read this Configuration:");
@@ -278,7 +279,7 @@ void readConfig() {
     ESP_LOGI(TAG, "Running with this Configuration:");
     printf("%s", cfg.c_str());
 
-    upateI2sConfig();
+    updateI2sConfig();
 }
 
 void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {

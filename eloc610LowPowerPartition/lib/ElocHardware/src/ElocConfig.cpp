@@ -107,7 +107,6 @@ void updateI2sConfig() {
 
 static const elocConfig_T C_ElocConfig_Default {
     .secondsPerFile = 6000,
-    .listenOnly = false,
     // Power management
     .cpuMaxFrequencyMHZ = 80,    // minimum 80
     .cpuMinFrequencyMHZ = 10,
@@ -163,7 +162,6 @@ void loadDevideInfo(const JsonObject& device) {
 }
 void loadConfig(const JsonObject& config) {
     gElocConfig.secondsPerFile                = config["secondsPerFile"]              | C_ElocConfig_Default.secondsPerFile;
-    gElocConfig.listenOnly                    = /* TODO: unusedconfig["listenOnly"] |*/ C_ElocConfig_Default.listenOnly;
     gElocConfig.cpuMaxFrequencyMHZ            = config["cpuMaxFrequencyMHZ"]          | C_ElocConfig_Default.cpuMaxFrequencyMHZ;
     gElocConfig.cpuMinFrequencyMHZ            = config["cpuMinFrequencyMHZ"]          | C_ElocConfig_Default.cpuMinFrequencyMHZ;
     gElocConfig.cpuEnableLightSleep           = config["cpuEnableLightSleep"]         | C_ElocConfig_Default.cpuEnableLightSleep;

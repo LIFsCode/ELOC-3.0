@@ -14,7 +14,6 @@ class I2SMEMSSampler : public I2SSampler {
     i2s_pin_config_t m_i2sPins;
     bool m_fixSPH0645;
     int  mBitShift = I2S_DEFAULT_BIT_SHIFT;  // TODO: depreciated?? Using I2S_DEFAULT_BIT_SHIFT + I2S_DEFAULT_VOLUME instead from config.h
-    bool mListenOnly = false;
     WAVFileWriter *writer = nullptr;
 
     int32_t *raw_samples = nullptr;
@@ -72,16 +71,12 @@ class I2SMEMSSampler : public I2SSampler {
         const i2s_pin_config_t &i2s_pins,
         i2s_config_t i2s_config,
         int  bitShift = I2S_DEFAULT_BIT_SHIFT,     // TODO: depreciated?? Using I2S_DEFAULT_BIT_SHIFT + I2S_DEFAULT_VOLUME instead from config.h
-        bool listenOnly = false,
         bool fixSPH0645 = false);
 
     virtual ~I2SMEMSSampler();
 
     virtual void setBitShift(int bitShift) {
         mBitShift = bitShift;
-    }
-    virtual void setListenOnly(bool listenOnly) {
-        mListenOnly = listenOnly;
     }
 
     /**

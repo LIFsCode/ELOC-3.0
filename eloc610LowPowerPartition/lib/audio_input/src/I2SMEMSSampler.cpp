@@ -11,13 +11,12 @@ I2SMEMSSampler::I2SMEMSSampler() {
 }
 
 void I2SMEMSSampler::init(i2s_port_t i2s_port, const i2s_pin_config_t &i2s_pins, i2s_config_t i2s_config, int bitShift,
-                            bool listenOnly, bool fixSPH0645) {
+                          bool fixSPH0645) {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
     I2SSampler::init(i2s_port, i2s_config);
     m_i2sPins = i2s_pins;
     mBitShift = bitShift;
-    mListenOnly = listenOnly;
     m_fixSPH0645 = fixSPH0645;
     i2s_sampling_rate = i2s_config.sample_rate;
     i2s_samples_to_read = I2S_DEFAULT_SAMPLE_RATE;  // Reasonable default
@@ -28,7 +27,6 @@ void I2SMEMSSampler::init(i2s_port_t i2s_port, const i2s_pin_config_t &i2s_pins,
         ESP_LOGI(TAG, "i2s_port = %d", i2s_port);
         ESP_LOGI(TAG, "i2s_sampling_rate = %d", i2s_sampling_rate);
         ESP_LOGI(TAG, "mBitShift = %d", mBitShift);
-        ESP_LOGI(TAG, "mListenOnly = %d", mListenOnly);
         ESP_LOGI(TAG, "m_fixSPH0645 = %d", m_fixSPH0645);
     }
 }

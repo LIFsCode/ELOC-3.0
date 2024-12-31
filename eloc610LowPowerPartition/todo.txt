@@ -19,7 +19,7 @@ TO DO:
     -- take off the pm_profiling in menuconfig
     -- menuconfig disable freertos [] Enable FreeRTOS trace facility  and  [ ] Enable FreeRTOS to collect run time stats
 
-    -- turn off status_led in record. 
+    -- turn off status_led in record.
     -- timezone-- highpower
     -- DONE ((esp_timer_get_time() - recordupdate  ) > 900000 ) {
     -- DONE voltage check for both highpower and lowpower
@@ -32,7 +32,7 @@ TO DO:
     -- how much memory are we using, and where?
     -- #define SPI_DMA_CHAN        SPI_DMA_CH_AUTO  //conflicting with i2s?
 
-    -- allocation_unit_size = 16 * 1024     
+    -- allocation_unit_size = 16 * 1024
                  Must be a power of 2, between sector size and 128 * sector size. For SD cards, sector size is always 512 bytes. For wear_levelling, sector size is determined by CONFIG_WL_SECTOR_SIZE option.
                 Using larger allocation unit size will result in higher read/write performance and higher overhead when storing small files.
                 Setting this field to 0 will result in allocation unit set to the sector size.. CONFIG_WL_SECTOR_SIZE=4096
@@ -40,12 +40,12 @@ TO DO:
 
 
 
-    -- I2S driver can prevent the system from changing or stopping the source clock by acquiring a 
-    power management lock. When the source clock is generated from APB, the lock type will be 
-    set to esp_pm_lock_type_t::ESP_PM_APB_FREQ_MAX and when the source clock is 
-    APLL (if target support APLL), it will be set to esp_pm_lock_type_t::ESP_PM_NO_LIGHT_SLEEP. 
-    Whenever user is reading or writing via I2S (i.e. calling i2s_channel_read() 
-    or i2s_channel_write()), the driver will guarantee that the power management 
+    -- I2S driver can prevent the system from changing or stopping the source clock by acquiring a
+    power management lock. When the source clock is generated from APB, the lock type will be
+    set to esp_pm_lock_type_t::ESP_PM_APB_FREQ_MAX and when the source clock is
+    APLL (if target support APLL), it will be set to esp_pm_lock_type_t::ESP_PM_NO_LIGHT_SLEEP.
+    Whenever user is reading or writing via I2S (i.e. calling i2s_channel_read()
+    or i2s_channel_write()), the driver will guarantee that the power management
     lock is acquired. Likewise, the driver releases the lock after reading or writing finished.
 
 
@@ -54,51 +54,50 @@ TO DO:
 
 
     -- apll not working?
-                ////////////////////////////WORKS high current.   seems like timing fix must be tru. 
+                ////////////////////////////WORKS high current.   seems like timing fix must be tru.
                 SampleRate:4000
                 UseAPLL:no
                 MaxFrequencyMHZ:80
                 MinFrequencyMHZ:10
                 TryLightSleep?:yes
-                ListenOnly?:no
                 gain:11
                 TimingFix:yes
-                SecondsPerFile:60         
-                VoltageOffset:10.0      
-         
+                SecondsPerFile:60
+                VoltageOffset:10.0
+
          - 10khz timing fix=true works
 
-         - SR 4000 APLL=true  :   hangs.  .03 amp 
+         - SR 4000 APLL=true  :   hangs.  .03 amp
             I (1333) I2S: PLL_D2: Req RATE: 4000, real rate: 4006.000, BITS: 32, CLKM: 156, BCK: 4, MCLK: 1024000.000, SCLK: 256384.000000, diva: 64, divb: 16
             I (1343) main: I2s REAL clockrate in record  4006
 
-        - SR 8000 APLL=true  :   hangs.  .03 amp 
+        - SR 8000 APLL=true  :   hangs.  .03 amp
             I (1333) I2S: PLL_D2: Req RATE: 8000, real rate: 8012.000, BITS: 32, CLKM: 78, BCK: 4, MCLK: 2048000.000, SCLK: 512768.000000, diva: 64, divb: 8
             I (1343) main: I2s REAL clockrate in record  8012
-        
-        - SR 16000 APLL=true  :   records.  .03-.04 amp             
+
+        - SR 16000 APLL=true  :   records.  .03-.04 amp
             I (1383) I2S: APLL: Req RATE: 16000, real rate: 16000.003, BITS: 32, CLKM: 1, BCK_M: 8, MCLK: 8192001.500, SCLK: 1024000.187500, diva: 1, divb: 0
-            I (1383) main: I2s REAL clockrate in record  16000        - 
+            I (1383) main: I2s REAL clockrate in record  16000        -
 
         - SR 4000 APLL=FALSE  hangs
             I (1313) I2S: PLL_D2: Req RATE: 4000, real rate: 4006.000, BITS: 32, CLKM: 156, BCK: 4, MCLK: 1024000.000, SCLK: 256384.000000, diva: 64, divb: 16
             I (1323) main: I2s REAL clockrate in record  4006
 
-        ---- recording in Arduino high power APLL works fine at 4khz but gives us suspected 4006 NON-apll return.    
+        ---- recording in Arduino high power APLL works fine at 4khz but gives us suspected 4006 NON-apll return.
 
-        
-            using elocESPIDF18maWorking3			
-        version 3 use apll=true SR=8000 uses pll_d2 instead and file size is ridiculously small. 
+
+            using elocESPIDF18maWorking3
+        version 3 use apll=true SR=8000 uses pll_d2 instead and file size is ridiculously small.
         at sample rat: 32000,  I (22238) I2S: APLL: Req RATE: 32000, real rate: 32000.006, BITS: 32, CLKM: 1, BCK_M: 8, MCLK: 16384003.000, SCLK: 2048000.375000, diva: 1, divb: 0
-                                and I get the same wierd sound stuff as I did before.  
-       
-       //in highpower/apll, 
-  
+                                and I get the same wierd sound stuff as I did before.
+
+       //in highpower/apll,
+
         8000    [I][main.cpp:1659] record(): I2s REAL clockrate  8012--> so looks likd apll is not activated for 8khz.
-        32000   [I][main.cpp:1659] record(): I2s REAL clockrate  32000 
-        
+        32000   [I][main.cpp:1659] record(): I2s REAL clockrate  32000
+
         // low power no_apll
-                32k gives almost 33k, 8000 gives 8012 16000=16025 
+                32k gives almost 33k, 8000 gives 8012 16000=16025
 
         //low power APLL
             32k  I2S: APLL: Req RATE: 32000, real rate: 32000.006, BITS: 32, CLKM: 1, BCK_M: 8, MCLK: 16384003.000, SCLK: 204800
@@ -133,26 +132,26 @@ FAST_CLOCK, so access to these memories may be slower. DMA uses the APB_CLK to a
                             # CONFIG_PM_SLP_DISABLE_GPIO is not set
                             # end of Power Management
 
-    If you want to specifically use some pins normally as chip wakes when chip sleeps, you can 
-    call ‘gpio_sleep_sel_dis’ to disable this feature on those pins. You can also keep this feature 
-    on and call ‘gpio_sleep_set_direction’ and ‘gpio_sleep_set_pull_mode’ to have a different GPIO 
-    configuration at sleep. Waring: If you want to enable this option on ESP32, you should enable 
-    GPIO_ESP32_SUPPORT_SWITCH_SLP_PULL at first, otherwise you will not be able to switch 
+    If you want to specifically use some pins normally as chip wakes when chip sleeps, you can
+    call ‘gpio_sleep_sel_dis’ to disable this feature on those pins. You can also keep this feature
+    on and call ‘gpio_sleep_set_direction’ and ‘gpio_sleep_set_pull_mode’ to have a different GPIO
+    configuration at sleep. Waring: If you want to enable this option on ESP32, you should enable
+    GPIO_ESP32_SUPPORT_SWITCH_SLP_PULL at first, otherwise you will not be able to switch
     pullup/pulldown mode.
         # GPIO Configuration
         #
         # CONFIG_GPIO_ESP32_SUPPORT_SWITCH_SLP_PULL is not set
 
         CONFIG_PM_PROFILING
-        If enabled, esp_pm_* functions will keep track of the amount of time each of the power management 
-        locks has been held, and esp_pm_dump_locks function will print this information. This feature can 
-        be used to analyze which locks are preventing the chip from going into a lower power state, and 
-        see what time the chip spends in each power saving mode. This feature does incur some run-time 
+        If enabled, esp_pm_* functions will keep track of the amount of time each of the power management
+        locks has been held, and esp_pm_dump_locks function will print this information. This feature can
+        be used to analyze which locks are preventing the chip from going into a lower power state, and
+        see what time the chip spends in each power saving mode. This feature does incur some run-time
         overhead, so should typically be disabled in production builds.
          Frequency switching config: CPU_MAX: 80, APB_MAX: 80, APB_MIN: 10, Light sleep: ENABLED
 
 
-description of below: 
+description of below:
                 Time: 131120019
                 Lock stats:
                 i2s_driver        APB_FREQ_MAX    0    0       2080     129277786   99%
@@ -164,7 +163,7 @@ description of below:
                 APB_MIN   10M        58315   0%
                 APB_MAX   80M    127939580  97%
                 CPU_MAX   80M      3125264   2%
- 
+
                 I (131400) main: vTaskGetRunTimeStats:
                 main                   1945672         1%
                 IDLE            131002388               99%    An idle task (IDLEx) is created for (and pinned to) each CPU, where x is the CPU’s number.
@@ -194,7 +193,7 @@ description of below:
                 ipc1            148420          <1%
 
                 I (149370) main: gpio button pressed
-                I (149370) main: Stopping record. 
+                I (149370) main: Stopping record.
                 I (149370) main: Finished recording
 
 */
@@ -212,7 +211,7 @@ description of below:
 
 
 THIS ONE ORIGINAL
-[]  Enable Ultra Low Power (ULP) Coprocessor    
+[]  Enable Ultra Low Power (ULP) Coprocessor
 
  [*] Support for power management
 [ ]     Enable dynamic frequency scaling (DFS) at startup
@@ -228,8 +227,5 @@ no_apll:  0.05 amp
 
 
     //spi
-     #define STATUS_LED  GPIO_NUM_33     
-     #define BATTERY_LED  GPIO_NUM_25     
- 
-         
-       
+     #define STATUS_LED  GPIO_NUM_33
+     #define BATTERY_LED  GPIO_NUM_25

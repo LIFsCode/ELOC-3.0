@@ -12,16 +12,10 @@ extern TaskHandle_t ei_TaskHandler;
 class I2SMEMSSampler : public I2SSampler {
  private:
     i2s_pin_config_t m_i2sPins;
-    bool m_fixSPH0645;
-    int  mBitShift = I2S_DEFAULT_BIT_SHIFT;  // TODO: depreciated?? Using I2S_DEFAULT_BIT_SHIFT + I2S_DEFAULT_VOLUME instead from config.h
+    int volume2_pwr = I2S_DEFAULT_VOLUME;
     WAVFileWriter *writer = nullptr;
-
     int32_t *raw_samples = nullptr;
 
-    /**
-     * @brief The volume shift is used to scale the adjust the volume
-     */
-    int volume_shift = I2S_DEFAULT_VOLUME;
 
     // Set some reasonable values as default
     uint32_t i2s_sampling_rate = I2S_DEFAULT_SAMPLE_RATE;
@@ -70,14 +64,10 @@ class I2SMEMSSampler : public I2SSampler {
         i2s_port_t i2s_port,
         const i2s_pin_config_t &i2s_pins,
         i2s_config_t i2s_config,
-        int  bitShift = I2S_DEFAULT_BIT_SHIFT,     // TODO: depreciated?? Using I2S_DEFAULT_BIT_SHIFT + I2S_DEFAULT_VOLUME instead from config.h
-        bool fixSPH0645 = false);
+        int volume2_pwr = I2S_DEFAULT_VOLUME
+        );
 
     virtual ~I2SMEMSSampler();
-
-    virtual void setBitShift(int bitShift) {
-        mBitShift = bitShift;
-    }
 
     /**
      * @brief Zero the appropiate TX DMA buffer for the I2S port

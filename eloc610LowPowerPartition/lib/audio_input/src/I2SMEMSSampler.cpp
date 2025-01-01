@@ -10,14 +10,12 @@ static const char *TAG = "I2SMEMSSampler";
 I2SMEMSSampler::I2SMEMSSampler() {
 }
 
-void I2SMEMSSampler::init(i2s_port_t i2s_port, const i2s_pin_config_t &i2s_pins, i2s_config_t i2s_config, int bitShift,
-                          bool fixSPH0645) {
+void I2SMEMSSampler::init(i2s_port_t i2s_port, const i2s_pin_config_t &i2s_pins, i2s_config_t i2s_config, int volume2_pwr_config) {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
     I2SSampler::init(i2s_port, i2s_config);
     m_i2sPins = i2s_pins;
-    mBitShift = bitShift;
-    m_fixSPH0645 = fixSPH0645;
+    volume2_pwr = volume2_pwr_config;
     i2s_sampling_rate = i2s_config.sample_rate;
     i2s_samples_to_read = I2S_DEFAULT_SAMPLE_RATE;  // Reasonable default
     writer = nullptr;
@@ -26,26 +24,13 @@ void I2SMEMSSampler::init(i2s_port_t i2s_port, const i2s_pin_config_t &i2s_pins,
     if (1) {
         ESP_LOGI(TAG, "i2s_port = %d", i2s_port);
         ESP_LOGI(TAG, "i2s_sampling_rate = %d", i2s_sampling_rate);
-        ESP_LOGI(TAG, "mBitShift = %d", mBitShift);
-        ESP_LOGI(TAG, "m_fixSPH0645 = %d", m_fixSPH0645);
+        ESP_LOGI(TAG, "volume2_pwr = %d", volume2_pwr);
     }
 }
 
 bool I2SMEMSSampler::configureI2S() {
-    if (m_fixSPH0645) {
-        // Undocumented (?!) manipulation of I2S peripheral registers
-        // to fix MSB timing issues with some I2S microphones
-        REG_SET_BIT(I2S_TIMING_REG(m_i2sPort), BIT(9));
-        REG_SET_BIT(I2S_CONF_REG(m_i2sPort), I2S_RX_MSB_SHIFT);
-    }
-
-    auto ret = i2s_set_pin(m_i2sPort, &m_i2sPins);
-
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Func: %s, error i2s_set_pin", __func__);
-    }
-
-    return ret;
+    ESP_ERROR_CHECK(i2s_set_pin(m_i2sPort, &m_i2sPins));
+    return ESP_OK;
 }
 
 esp_err_t I2SMEMSSampler::zero_dma_buffer(i2s_port_t i2sPort) {
@@ -190,8 +175,8 @@ int I2SMEMSSampler::read()
          *                         increase volume by shifting left (each shift left doubles volume))
          *       15th Nov, allow -ve volume shift, i.e. decrease volume
          */
-        auto overall_bit_shift = (32 - I2S_BITS_PER_SAMPLE) - volume_shift;
-        ESP_LOGV(TAG, "volume_shift = %d, overall_bit_shift = %d", volume_shift, overall_bit_shift);
+        auto overall_bit_shift = (32 - I2S_BITS_PER_SAMPLE) - volume2_pwr;
+        ESP_LOGV(TAG, "volume2_pwr = %d, overall_bit_shift = %d", volume2_pwr, overall_bit_shift);
 
         for (auto i = 0; i < samples_read; i++) {
             /**
@@ -208,7 +193,7 @@ int I2SMEMSSampler::read()
              * Note: for esp-idf/ gcc, the sign bit seems to be preserved.
              * But this samples volume is too low, so shift left to increase volume
              *
-             * volume_shift: 31 | 30 | 29 | 28 | 27 | 26 | 25 | 24 | 23 | 22 | 21 | 20 | 19 | 18 | 17 | 16 | 15 | 14 | 13 | 12 | 11 | 10 | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0
+             * volume2_pwr: 31 | 30 | 29 | 28 | 27 | 26 | 25 | 24 | 23 | 22 | 21 | 20 | 19 | 18 | 17 | 16 | 15 | 14 | 13 | 12 | 11 | 10 | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0
              * Value -1:     0    0    0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   D   D
              * Value 0:      0    0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   D  ^^^^^^^^ DISCARDED ^^^^^^^
              * Value 1:      0    0    0    0    0    0    0    M    D    D    D    D    D    D    D    D    D    D    D    D    D    D    D   D   D   D   D   D   D   D   D   0
@@ -219,7 +204,7 @@ int I2SMEMSSampler::read()
 
             #ifdef VISUALIZE_WAVEFORM
                 int32_t shifted_sample = ((raw_samples[i] >> 8));
-                int32_t processed_sample_32bit = shifted_sample << volume_shift;
+                int32_t processed_sample_32bit = shifted_sample << volume2_pwr;
                 int16_t processed_sample_16bit = processed_sample_32bit;
             #else
                 int32_t processed_sample_32bit = raw_samples[i] >> overall_bit_shift;
@@ -355,20 +340,20 @@ int I2SMEMSSampler::read()
     // Automatic gain adjustment
     #ifdef ENABLE_AUTOMATIC_GAIN_ADJUSTMENT
     if (sample_high_count > SAMPLE_HIGH_COUNT * samples_read) {
-        // TODO(oohehir): check when volume_shift is -ve
-        if (volume_shift > 0) {
-            volume_shift = volume_shift >> 1;
+        // TODO(oohehir): check when volume2_pwr is -ve
+        if (volume2_pwr > 0) {
+            volume2_pwr = volume2_pwr >> 1;
         }
         last_gain_increase = 0;
         volume_change = true;
-        ESP_LOGV(TAG, "sample_high_count = %d, decreasing gain to %d", sample_high_count, volume_shift);
+        ESP_LOGV(TAG, "sample_high_count = %d, decreasing gain to %d", sample_high_count, volume2_pwr);
     } else if (sample_low_count < SAMPLE_LOW_COUNT * samples_read) {
         // Increase gain if not recently increased
         if (last_gain_increase > LAST_GAIN_INCREASE_THD) {
-            volume_shift = volume_shift << 1;
+            volume2_pwr = volume2_pwr << 1;
             last_gain_increase = 0;
             volume_change = true;
-            ESP_LOGV(TAG, "sample_low_count = %d, increasing gain to %d", sample_low_count, volume_shift);
+            ESP_LOGV(TAG, "sample_low_count = %d, increasing gain to %d", sample_low_count, volume2_pwr);
         } else {
             last_gain_increase++;
             ESP_LOGV(TAG, "sample_low_count = %d, last_gain_increase %d", sample_low_count, last_gain_increase);
@@ -376,14 +361,14 @@ int I2SMEMSSampler::read()
     }
 
     // Boundary check
-    if (volume_shift < -2) {
-        volume_shift = -2;
-    } else if (volume_shift > 4) {
-        volume_shift = 4;
+    if (volume2_pwr < -2) {
+        volume2_pwr = -2;
+    } else if (volume2_pwr > 4) {
+        volume2_pwr = 4;
     }
 
     if (volume_change == true) {
-        ESP_LOGI(TAG, "volume_shift = %d", volume_shift);
+        ESP_LOGI(TAG, "volume2_pwr = %d", volume2_pwr);
     }
 
     #endif

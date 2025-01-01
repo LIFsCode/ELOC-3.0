@@ -39,10 +39,9 @@ ENUM_MACRO(MicChannel_t, Left, Right, Stereo);
 /// @brief Holds all the Microphone & recording spedific settings
 typedef struct {
     String   MicType;
-    int      MicBitShift;
+    int      MicVolume2_pwr; // 2^x
     uint32_t MicSampleRate; // TODO: this should finally be moved to Mic Info for consistency
     bool     MicUseAPLL;
-    bool     MicUseTimingFix;
     MicChannel_t MicChannel;
 }micInfo_t;
 

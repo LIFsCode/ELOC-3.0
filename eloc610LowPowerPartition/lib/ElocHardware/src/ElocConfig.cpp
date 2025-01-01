@@ -46,10 +46,9 @@ extern SDCardSDIO sd_card;
 //BUGME: encapsulate these in a struct & implement a getter
 static const micInfo_t C_MicInfo_Default {
     .MicType="ns",
-    .MicBitShift=11,
+    .MicVolume2_pwr = I2S_DEFAULT_VOLUME,
     .MicSampleRate = I2S_DEFAULT_SAMPLE_RATE,
     .MicUseAPLL = true,
-    .MicUseTimingFix = true,
     .MicChannel =
 #ifdef I2S_DEFAULT_CHANNEL_FORMAT_LEFT
         MicChannel_t::Left
@@ -81,9 +80,11 @@ void updateI2sConfig() {
     switch (gMicInfo.MicChannel) {
         // TODO: check about potential wrong channel selection in ESP IDF lib
         case MicChannel_t::Left:
+            ESP_LOGI(TAG, "Mic Channel mode: Left");
             i2s_mic_Config.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;
             break;
         case MicChannel_t::Right:
+            ESP_LOGI(TAG, "Mic Channel mode: Right");
             i2s_mic_Config.channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT;
             break;
         default:
@@ -202,10 +203,9 @@ MicChannel_t ParseMicChannel(const char* str, MicChannel_t default_value) {
 
 void loadMicInfo(const JsonObject& micInfo) {
     gMicInfo.MicType         = micInfo["MicType"]         | C_MicInfo_Default.MicType;
-    gMicInfo.MicBitShift     = micInfo["MicBitShift"]     | C_MicInfo_Default.MicBitShift;
+    gMicInfo.MicVolume2_pwr  = micInfo["MicVolume2_pwr"]  | C_MicInfo_Default.MicVolume2_pwr;
     gMicInfo.MicSampleRate   = micInfo["MicSampleRate"]   | C_MicInfo_Default.MicSampleRate;
     gMicInfo.MicUseAPLL      = micInfo["MicUseAPLL"]      | C_MicInfo_Default.MicUseAPLL;
-    gMicInfo.MicUseTimingFix = micInfo["MicUseTimingFix"] | C_MicInfo_Default.MicUseTimingFix;
     gMicInfo.MicChannel = ParseMicChannel(micInfo["MicChannel"], C_MicInfo_Default.MicChannel);
 
     updateI2sConfig();
@@ -318,10 +318,9 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
 
     JsonObject micInfo = doc.createNestedObject("mic");
     micInfo["MicType"]                     = MicInfo.MicType.c_str();
-    micInfo["MicBitShift"]                 = MicInfo.MicBitShift;
+    micInfo["MicVolume2_pwr"]              = MicInfo.MicVolume2_pwr;
     micInfo["MicSampleRate"]               = MicInfo.MicSampleRate;
     micInfo["MicUseAPLL"]                  = MicInfo.MicUseAPLL;
-    micInfo["MicUseTimingFix"]             = MicInfo.MicUseTimingFix;
     micInfo["MicChannel"]                  = toString(MicInfo.MicChannel);
 }
 

@@ -177,7 +177,7 @@ void testInput()
         i2s_mic_Config.sample_rate = i;
         i2s_mic_Config.use_apll = getMicInfo().MicUseAPLL;
 
-        input.init(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift, getMicInfo().MicUseTimingFix);
+        input.init(I2S_NUM_0, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicVolume2_pwr);
         input.install_and_start();
         delay(100);
         ESP_LOGI(TAG, "Clockrate: %f", i2s_get_clk(I2S_NUM_0));
@@ -795,11 +795,7 @@ void app_main(void) {
     if (getConfig().testI2SClockInput)
         testInput();
 
-    /**
-     * @note Using MicUseTimingFix == true or false doesn't seem to effect ICS-43434 mic
-     */
-    input.init(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicBitShift,
-               getMicInfo().MicUseTimingFix);
+    input.init(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicVolume2_pwr);
 
     if (sd_card.checkSDCard() == ESP_OK) {
         // create a new wave file wav_writer & make sure sample rate is up to date

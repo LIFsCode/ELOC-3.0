@@ -15,7 +15,6 @@ TO DO:
     -- bluetooth not connecting unless reset??   BLE does not restart after calling esp_restart() (IDFGH-8517)
 
     --uncomment getvoltage
-    -- timing fix true or false   now true?
     -- take off the pm_profiling in menuconfig
     -- menuconfig disable freertos [] Enable FreeRTOS trace facility  and  [ ] Enable FreeRTOS to collect run time stats
 

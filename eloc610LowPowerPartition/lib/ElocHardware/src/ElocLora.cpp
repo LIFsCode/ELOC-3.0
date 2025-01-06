@@ -50,7 +50,7 @@ static const uint32_t C_MIN_UPLINK_INTERVAL_S = 10;
 uint8_t C_appKey[] = { RADIOLIB_LORAWAN_APP_KEY };
 uint8_t C_nwkKey[] = { RADIOLIB_LORAWAN_NWK_KEY };
 
-//#define USE_DEVEUI_FROM_NVS
+#define USE_DEVEUI_FROM_NVS
 
 
 

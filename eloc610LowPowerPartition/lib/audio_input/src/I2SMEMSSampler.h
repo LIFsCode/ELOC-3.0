@@ -1,71 +1,102 @@
-#pragma once
+/**
+ * @file I2SMEMSSampler.h
+ * @author The Authors
+ * @brief
+ * @version 0.1
+ * @date 2025-01-08
+ *
+ * @copyright Copyright (c) 2025
+ *
+ */
+#ifndef I2SMEMSSAMPLER_H
+#define I2SMEMSSAMPLER_H
 
-#include "I2SSampler.h"
 #include "WAVFileWriter.h"
 #include "../../../include/ei_inference.h"
 #include "../../../include/project_config.h"
+#include <driver/i2s.h>
 
 extern TaskHandle_t i2s_TaskHandler;
 extern TaskHandle_t ei_TaskHandler;
 
 
-class I2SMEMSSampler : public I2SSampler {
+class I2SMEMSSampler {
  private:
-    i2s_pin_config_t m_i2sPins;
-    int volume2_pwr = I2S_DEFAULT_VOLUME;
-    WAVFileWriter *writer = nullptr;
-    int32_t *raw_samples = nullptr;
 
+   /**
+    * Ideally it would be possible to probe hardware to see if it's
+    * running, but doesn't seem possible. Use this instead ..
+   */
+   bool i2s_installed_and_started = false;
 
-    // Set some reasonable values as default
-    uint32_t i2s_sampling_rate = I2S_DEFAULT_SAMPLE_RATE;
-    uint32_t ei_sampling_freq = I2S_DEFAULT_SAMPLE_RATE;
+   i2s_pin_config_t i2s_pins_config;
+   i2s_port_t i2s_port = I2S_NUM_0;
+   i2s_config_t i2s_config;
 
-    // Handle scenario where EI_CLASSIFIER_FREQUENCY != I2S sample rate
-    // Will skip packing EI buffer at this rate
-    // i.e. if I2S sample rate = 16000 Hz & EI_CLASSIFIER_FREQUENCY = 4000Hz
-    // ei_skip_rate = 4
-    int ei_skip_rate = 1;
-    inference_t *inference;
+   int volume2_pwr = I2S_DEFAULT_VOLUME;
+   WAVFileWriter *writer = nullptr;
+   int32_t *raw_samples = nullptr;
 
-    /**
-     * The number of SAMPLES (i.e. not bytes) to read in the read() thread
+   // Set some reasonable values as default
+   uint32_t i2s_sampling_rate = I2S_DEFAULT_SAMPLE_RATE;
+   uint32_t ei_sampling_freq = I2S_DEFAULT_SAMPLE_RATE;
+
+   // Handle scenario where EI_CLASSIFIER_FREQUENCY != I2S sample rate
+   // Will skip packing EI buffer at this rate
+   // i.e. if I2S sample rate = 16000 Hz & EI_CLASSIFIER_FREQUENCY = 4000Hz
+   // ei_skip_rate = 4
+   int ei_skip_rate = 1;
+   inference_t *inference;
+
+   /**
+    * The number of SAMPLES (i.e. not bytes) to read in the read() thread
     */
-    size_t i2s_samples_to_read;
+   size_t i2s_samples_to_read;
 
-    /**
-     * Stop read thread by setting to false
+   /**
+    * Stop read thread by setting to false
     */
-    bool enable_read = true;
+   bool enable_read = true;
 
-    /**
-     * @brief Read I2S samples from DMA buffer
-     * @return The number of SAMPLES (i.e. not bytes) read
+   /**
+    * @brief Read I2S samples from DMA buffer
+    * @return The number of SAMPLES (i.e. not bytes) read
     */
-    int read() override;
+   virtual int read();
+
+   /**
+    *
+    */
+   virtual void start_read_thread();
+
+   /**
+    *
+    */
+   static void start_read_thread_wrapper(void * _this);
 
     /**
+     * @brief Configure the I2S pins
      *
-    */
-    virtual void start_read_thread();
-
-    /**
-     *
-    */
-    static void start_read_thread_wrapper(void * _this);
-
- protected:
-    bool configureI2S() override;
+     * @return true
+     * @return false
+     */
+    virtual bool configureI2S();
 
  public:
     I2SMEMSSampler();
 
-    virtual void init(
-        i2s_port_t i2s_port,
-        const i2s_pin_config_t &i2s_pins,
-        i2s_config_t i2s_config,
-        int volume2_pwr = I2S_DEFAULT_VOLUME
-        );
+    /**
+     * @brief Install and start the I2S driver
+     *
+     * @return esp_err_t
+     */
+    virtual esp_err_t install_and_start();
+
+    virtual bool is_i2s_installed_and_started() { return i2s_installed_and_started; }
+
+    virtual void init(i2s_port_t _i2s_port, const i2s_pin_config_t &_i2s_pins_config, i2s_config_t _i2s_config, int _volume2_pwr = I2S_DEFAULT_VOLUME);
+
+    virtual esp_err_t uninstall();
 
     virtual ~I2SMEMSSampler();
 
@@ -75,7 +106,7 @@ class I2SMEMSSampler : public I2SSampler {
      * @note This is only required for TX (i.e. recording)
      * @return esp_err_t
     */
-    esp_err_t zero_dma_buffer(i2s_port_t i2sPort) override;
+   virtual esp_err_t zero_dma_buffer(i2s_port_t i2sPort);
 
     /**
      * @brief Register an external WAVFileWriter
@@ -84,14 +115,14 @@ class I2SMEMSSampler : public I2SSampler {
      * @param writer WAVFileWriter object
      * @return true success
      */
-    virtual bool register_wavFileWriter(WAVFileWriter *writer);
+   virtual bool register_wavFileWriter(WAVFileWriter *writer);
 
     /**
      * @brief Deregister or remove the WAVFileWriter
      * @return true
      * @return false writer not previously registered
      */
-    virtual bool deregister_wavFileWriter();
+   virtual bool deregister_wavFileWriter();
 
     /**
      * @brief Register a edge impulse inference structure
@@ -108,3 +139,5 @@ class I2SMEMSSampler : public I2SSampler {
     */
     virtual int start_read_task(int i2s_bytes_to_read);
 };
+
+#endif // I2SMEMSSAMPLER_H

@@ -2,7 +2,7 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
-#include "esp_clk.h"
+#include "esp32/clk.h"
 #include <rom/ets_sys.h>
 #include "esp_pm.h"
 #include "esp_heap_caps.h"
@@ -10,10 +10,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_task_wdt.h"
-#include "I2SSampler.h"
 #include "I2SMEMSSampler.h"
-//#include  "periph_ctrl.h"
-//#include "I2SOutput.h"
 #include "SDCardSDIO.h"
 
 #include "SDCard.h"

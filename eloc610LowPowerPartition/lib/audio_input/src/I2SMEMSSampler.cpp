@@ -1,3 +1,14 @@
+/**
+ * @file I2SMEMSSampler.cpp
+ * @author The Authors
+ * @brief
+ * @version 0.1
+ * @date 2025-01-08
+ *
+ * @copyright Copyright (c) 2025
+ *
+ */
+
 #include "I2SMEMSSampler.h"
 #include "soc/i2s_reg.h"
 #include "esp_err.h"
@@ -5,21 +16,22 @@
 
 static const char *TAG = "I2SMEMSSampler";
 
-//extern bool ai_run_enable;
 
 I2SMEMSSampler::I2SMEMSSampler() {
+    inference = {};
+    i2s_samples_to_read = I2S_DEFAULT_SAMPLE_RATE;  // Reasonable default
 }
 
-void I2SMEMSSampler::init(i2s_port_t i2s_port, const i2s_pin_config_t &i2s_pins, i2s_config_t i2s_config, int volume2_pwr_config) {
+void I2SMEMSSampler::init(i2s_port_t _i2s_port, const i2s_pin_config_t &_i2s_pins_config, i2s_config_t _i2s_config, int _volume2_pwr) {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
-    I2SSampler::init(i2s_port, i2s_config);
-    m_i2sPins = i2s_pins;
-    volume2_pwr = volume2_pwr_config;
-    i2s_sampling_rate = i2s_config.sample_rate;
-    i2s_samples_to_read = I2S_DEFAULT_SAMPLE_RATE;  // Reasonable default
+    i2s_port = _i2s_port;
+    i2s_pins_config = _i2s_pins_config;
+    i2s_config = _i2s_config;
+    volume2_pwr = _volume2_pwr;
+
+    i2s_sampling_rate = _i2s_config.sample_rate;
     writer = nullptr;
-    inference = {};
 
     if (1) {
         ESP_LOGI(TAG, "i2s_port = %d", i2s_port);
@@ -29,8 +41,29 @@ void I2SMEMSSampler::init(i2s_port_t i2s_port, const i2s_pin_config_t &i2s_pins,
 }
 
 bool I2SMEMSSampler::configureI2S() {
-    ESP_ERROR_CHECK(i2s_set_pin(m_i2sPort, &m_i2sPins));
+    ESP_ERROR_CHECK(i2s_set_pin(i2s_port , &i2s_pins_config));
     return ESP_OK;
+}
+
+esp_err_t I2SMEMSSampler::install_and_start() {
+    auto ret = i2s_driver_install(i2s_port, &i2s_config, 0, NULL);
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Func: %s, i2s_driver_install", __func__);
+        return ret;
+    }
+
+    // set up the I2S configuration
+    ret = configureI2S();
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Func: %s, configureI2S", __func__);
+        return ret;
+    }
+
+    i2s_installed_and_started = true;
+
+    return ret;
 }
 
 esp_err_t I2SMEMSSampler::zero_dma_buffer(i2s_port_t i2sPort) {
@@ -146,7 +179,7 @@ int I2SMEMSSampler::read()
     */
     auto skip_current = ei_skip_rate;  // Make sure first sample is saved, then skip if needed
 
-    auto result = i2s_read(m_i2sPort, raw_samples, sizeof(int32_t) * i2s_samples_to_read, &bytes_read, portMAX_DELAY);
+    auto result = i2s_read(i2s_port, raw_samples, sizeof(int32_t) * i2s_samples_to_read, &bytes_read, portMAX_DELAY);
 
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "Error in I2S read : %d", result);
@@ -410,5 +443,18 @@ int I2SMEMSSampler::start_read_task(int i2s_samples_to_read) {
   return ret;
 }
 
+esp_err_t I2SMEMSSampler::uninstall() {
+    // stop the i2S driver
+    auto ret = i2s_driver_uninstall(i2s_port);
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Func: %s, i2s_driver_uninstall", __func__);
+            }
+
+    i2s_installed_and_started = false;
+
+    return ret;
+}
+
 I2SMEMSSampler::~I2SMEMSSampler() {
-    }
+}

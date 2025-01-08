@@ -66,9 +66,7 @@ esp_err_t SDCard::init(const char *mount_point, gpio_num_t miso, gpio_num_t mosi
     }
     else
     {
-      ESP_LOGE(TAG, "Failed to initialize the card (%s). "
-                    "Make sure SD card lines have pull-up resistors in place.",
-               esp_err_to_name(ret));
+      ESP_LOGE(TAG, "Failed to initialize the card (%s). ", esp_err_to_name(ret));
     }
     return ret;
   }

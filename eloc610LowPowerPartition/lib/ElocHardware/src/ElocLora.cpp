@@ -341,45 +341,59 @@ void ElocLora::ElocLoraLoop() {
       ESP_LOGI(TAG, "Sending uplink");  
       lastLoraUplinkTimeS = esp_timer_get_time()/1000/1000;
       
+      sendStatusUpdateMessage();
 
-      uint8_t downlinkPayload[10];  // Make sure this fits your plans!
-      size_t  downlinkSize;         // To hold the actual payload size received
+      ESP_LOGI(TAG, "Next uplink in %d seconds\n", uplinkIntervalSeconds);
+    }
+}
 
-      // you can also retrieve additional information about an uplink or 
-      // downlink by passing a reference to LoRaWANEvent_t structure
-      LoRaWANEvent_t uplinkDetails;
-      LoRaWANEvent_t downlinkDetails;
-      
-      uint8_t fPort = 1;
+esp_err_t ElocLora::sendStatusUpdateMessage() {
 
-      // This is the place to gather the sensor inputs
-      // Instead of reading any real sensor, we just generate some random numbers as example
-      uint8_t value1 = radio.random(100);
-      uint16_t value2 = radio.random(2000);
+    // you can also retrieve additional information about an uplink or
+    // downlink by passing a reference to LoRaWANEvent_t structure
+    LoRaWANEvent_t uplinkDetails;
+    LoRaWANEvent_t downlinkDetails;
+    // This is the place to gather the sensor inputs
+    // Instead of reading any real sensor, we just generate some random numbers as example
+    uint8_t value1 = radio.random(100);
+    uint16_t value2 = radio.random(2000);
 
-      // Build payload byte array
-      uint8_t uplinkPayload[3];
-      uplinkPayload[0] = value1;
-      uplinkPayload[1] = highByte(value2);   // See notes for high/lowByte functions
-      uplinkPayload[2] = lowByte(value2);
-      
-      ESP_LOGI(TAG, "Sending data: val1 = %d, val2 = %d", value1, value2);
-      // Perform an uplink
-      int16_t state = node.sendReceive(uplinkPayload, sizeof(uplinkPayload), fPort, downlinkPayload, &downlinkSize, false, &uplinkDetails, &downlinkDetails);    
-      debug(state < RADIOLIB_ERR_NONE, F("Error in sendReceive"), state, false);
+    // Build payload byte array
+    uint8_t uplinkPayload[3];
+    uplinkPayload[0] = value1;
+    uplinkPayload[1] = highByte(value2); // See notes for high/lowByte functions
+    uplinkPayload[2] = lowByte(value2);
 
-      // Check if a downlink was received 
-      // (state 0 = no downlink, state 1/2 = downlink in window Rx1/Rx2)
-      if(state > 0) {
-        ESP_LOGI(TAG, "Received a downlink");    
-        
+    ESP_LOGI(TAG, "Sending data: val1 = %d, val2 = %d", value1, value2);
+    // Perform an uplink
+    int16_t state = node.sendReceive(uplinkPayload, sizeof(uplinkPayload), mFPort, mDownlinkPayload, &mDownlinkSize, false, &uplinkDetails,
+                                     &mDownlinkDetails);
+    debug(state < RADIOLIB_ERR_NONE, F("Error in sendReceive"), state, false);
+
+    if (state < RADIOLIB_ERR_NONE) {
+      return ESP_FAIL;
+    }
+    return parseResponse(state);
+}
+esp_err_t ElocLora::sendEventMessage() {
+  
+  return ESP_OK;
+}
+
+esp_err_t ElocLora::parseResponse(int16_t state) {
+
+    // Check if a downlink was received
+    // (state 0 = no downlink, state 1/2 = downlink in window Rx1/Rx2)
+    if (state > 0) {
+        ESP_LOGI(TAG, "Received a downlink");
+
         // Did we get a downlink with data for us
-        if(downlinkSize > 0) {
-          ESP_LOGI(TAG, "Downlink data: ");
-          arrayDump(downlinkPayload, downlinkSize);
-          printDecodedPayload(downlinkPayload, downlinkSize);
+        if (mDownlinkSize > 0) {
+            ESP_LOGI(TAG, "Downlink data: ");
+            arrayDump(mDownlinkPayload, mDownlinkSize);
+            printDecodedPayload(mDownlinkPayload, mDownlinkSize);
         } else {
-          ESP_LOGI(TAG, "<MAC commands only>");
+            ESP_LOGI(TAG, "<MAC commands only>");
         }
 
         // print RSSI (Received Signal Strength Indicator)
@@ -390,20 +404,16 @@ void ElocLora::ElocLoraLoop() {
 
         // print extra information about the event
         ESP_LOGI(TAG, "[LoRaWAN] Event information:");
-        ESP_LOGI(TAG, "[LoRaWAN] Confirmed:\t %s", downlinkDetails.confirmed ? "true" : "false");
-        ESP_LOGI(TAG, "[LoRaWAN] Confirming:\t %s", downlinkDetails.confirming ? "true" : "false");
-        ESP_LOGI(TAG, "[LoRaWAN] Datarate:\t %d", downlinkDetails.datarate);
-        ESP_LOGI(TAG, "[LoRaWAN] Frequency:\t %.3f MHz", downlinkDetails.freq);
-        ESP_LOGI(TAG, "[LoRaWAN] Frame count:\t %d", downlinkDetails.fCnt);
-        ESP_LOGI(TAG, "[LoRaWAN] Port:\t\t %d", downlinkDetails.fPort);
+        ESP_LOGI(TAG, "[LoRaWAN] Confirmed:\t %s", mDownlinkDetails.confirmed ? "true" : "false");
+        ESP_LOGI(TAG, "[LoRaWAN] Confirming:\t %s", mDownlinkDetails.confirming ? "true" : "false");
+        ESP_LOGI(TAG, "[LoRaWAN] Datarate:\t %d", mDownlinkDetails.datarate);
+        ESP_LOGI(TAG, "[LoRaWAN] Frequency:\t %.3f MHz", mDownlinkDetails.freq);
+        ESP_LOGI(TAG, "[LoRaWAN] Frame count:\t %d", mDownlinkDetails.fCnt);
+        ESP_LOGI(TAG, "[LoRaWAN] Port:\t\t %d", mDownlinkDetails.fPort);
         ESP_LOGI(TAG, "[LoRaWAN] Time-on-air: \t %ld ms", node.getLastToA());
         ESP_LOGI(TAG, "[LoRaWAN] Rx window: \t %d", state);
-      } else {
+    } else {
         ESP_LOGI(TAG, "No downlink received");
-      }
-
-      ESP_LOGI(TAG, "Next uplink in %d seconds\n", uplinkIntervalSeconds);
     }
+    return ESP_OK;
 }
-
-

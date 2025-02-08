@@ -30,6 +30,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 
+#define LORA_MAX_PAYLOAD 20
 
 class ElocLora
 {
@@ -58,8 +59,15 @@ private:
     LoRaWANBand_t Region = EU868;
     uint8_t subBand = 0;  // For US915, change this to 2, otherwise leave on 0
 
+    //TODO: does it make sense to set fport via config?
+    uint8_t mFPort = 1;
+
     // create the LoRaWAN node
     LoRaWANNode node;
+
+    uint8_t mDownlinkPayload[LORA_MAX_PAYLOAD];  // Make sure this fits your plans!
+    size_t  mDownlinkSize;         // To hold the actual payload size received
+    LoRaWANEvent_t mDownlinkDetails;
 
     // This MUST fit the loraWAN application setting
     // if not this may cause buffer overruns & memory violations.
@@ -74,6 +82,11 @@ private:
     esp_err_t getRegionFromConfig();
 
     void calcDevEUIfromMAC();
+
+    esp_err_t sendStatusUpdateMessage();
+    esp_err_t sendEventMessage();
+    esp_err_t parseResponse(int16_t state);
+
 public:
     virtual ~ElocLora();
     static ElocLora& GetInstance() {

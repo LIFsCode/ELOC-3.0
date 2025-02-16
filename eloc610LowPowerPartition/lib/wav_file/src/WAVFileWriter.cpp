@@ -8,6 +8,10 @@ extern SDCardSDIO sd_card;
 
 static const char *TAG = "WAVFileWriter";
 
+#ifndef WAV_BUFFER_IN_PSRAM
+  static signed short wav_static_buffers[2][wav_static_buffer_size];
+#endif
+
 /**
  * @note Ideally recording time would be retrieved with esp_timer_get_time()
  * but found to be inaccurate. Hence, using the ESP32Time.

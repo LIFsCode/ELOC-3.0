@@ -528,6 +528,9 @@ void ei_callback_func() {
                         result.timing.dsp, result.timing.classification, result.timing.anomaly);
 
                 String file_str;
+                String detectedSounds = "";
+                ei_impulse_result_classification_t detectedEvents[EI_CLASSIFIER_LABEL_COUNT];
+                uint32_t numEventsDetected = 0;
 
                 for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
                     ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
@@ -545,6 +548,8 @@ void ei_callback_func() {
                         (strcmp(result.classification[ix].label, "others") != 0) &&
                         result.classification[ix].value > AI_RESULT_THRESHOLD) {
                         ESP_LOGI(TAG, "Target sound detected: %s", result.classification[ix].label);
+                        detectedEvents[numEventsDetected] = result.classification[ix];
+                        numEventsDetected++;
                         edgeImpulse.increment_detectedEvents();
                         target_sound_detected = true;
                         // Start recording??
@@ -554,6 +559,9 @@ void ei_callback_func() {
                             start_sound_recording();
                         }
                     }
+                }
+                if (target_sound_detected) {
+                    edgeImpulse.updateEventInfo(detectedEvents, numEventsDetected);
                 }
 
                 // ESP_LOGI(TAG, "detectedEvents = %d", edgeImpulse.get_detectedEvents());

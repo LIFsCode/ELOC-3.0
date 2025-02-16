@@ -44,6 +44,13 @@ class EdgeImpulse {
 
     enum class Status { not_running = 0, running = 1};
 
+    struct DetectedEventInfo {
+        int64_t time;
+        uint8_t numClassifierMatch;
+        float classifierValue[EI_CLASSIFIER_LABEL_COUNT];
+        String label[EI_CLASSIFIER_LABEL_COUNT];
+    };
+
  private:
     bool debug_nn = false;  // Set this to true to see e.g. features generated from the raw signal
     Status status = Status::not_running;
@@ -80,6 +87,8 @@ class EdgeImpulse {
      * @brief Number of characteristic sounds detected
      */
     uint32_t detectedEvents = 0;
+
+    DetectedEventInfo lastEventInfo;
 
  public:
     /**
@@ -254,6 +263,19 @@ class EdgeImpulse {
      * @return uint32_t
      */
     uint32_t get_detectedEvents() const {return detectedEvents;}
+
+    /**
+     * @brief Store the information from result in the lastEventInfo
+     *
+     */
+    void updateEventInfo(const ei_impulse_result_classification_t* results, uint32_t numMatches);
+
+    /**
+     * @brief Getter for lastEventInfo
+     *
+     * @return DetectedEventInfo
+     */
+    DetectedEventInfo get_lastEventInfo() const {return lastEventInfo;}
 
     /**
      * @brief Wrapper to access the ei classifier inferencing categories object

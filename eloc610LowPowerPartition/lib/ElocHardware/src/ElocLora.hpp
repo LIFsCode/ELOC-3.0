@@ -30,11 +30,21 @@
 #include <Arduino.h>
 #include <SPI.h>
 
-#define LORA_MAX_PAYLOAD 20
+#define LORA_MAX_RX_PAYLOAD 20
+#define LORA_MAX_TX_PAYLOAD 30
+// if anything in the lora payload format is changed which is incompatible with existing payload fields
+// the version must be increasd. If only additinal bytes are added this is not mandatory
+#define LORA_MSG_VERS 0
 
 class ElocLora
 {
 private:
+    enum t_LoraMsgType {
+        STATUS_MSG = 0,
+        EVENT_MSG = 1,
+    };
+
+
     bool mInitDone;
     /* data */
     SPIClass loraSPI;
@@ -65,7 +75,7 @@ private:
     // create the LoRaWAN node
     LoRaWANNode node;
 
-    uint8_t mDownlinkPayload[LORA_MAX_PAYLOAD];  // Make sure this fits your plans!
+    uint8_t mDownlinkPayload[LORA_MAX_RX_PAYLOAD];  // Make sure this fits your plans!
     size_t  mDownlinkSize;         // To hold the actual payload size received
     LoRaWANEvent_t mDownlinkDetails;
 

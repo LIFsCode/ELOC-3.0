@@ -36,6 +36,9 @@
 #include "ElocLora.hpp"
 #include "ElocConfig.hpp"
 #include "ElocSystem.hpp"
+#include "ElocStatus.hpp"
+#include "Battery.hpp"
+#include "WAVFileWriter.h"
 #include "config.h"
 #include "strutils.h"
 
@@ -52,6 +55,53 @@ uint8_t C_nwkKey[] = { RADIOLIB_LORAWAN_NWK_KEY };
 
 #define USE_DEVEUI_FROM_NVS
 
+
+
+//BUGME: global timeobject should be in ESP23Time.h
+extern ESP32Time timeObject;
+
+//BUGME: this should be shared with ElocCommands
+#define ENUM_MACRO(name, v0, v1, v2, v3, v4, v5)\
+    enum class name { v0, v1, v2, v3, v4, v5};\
+    constexpr const char *name##Strings[] = {  #v0, #v1, #v2, #v3, #v4, #v5}; \
+    constexpr const char *toString(name value) {  return name##Strings[static_cast<int>(value)]; }
+
+ENUM_MACRO (RecState, recInvalid, recordOff_detectOff, recordOn_detectOff, recordOn_detectOn, recordOff_detectOn, recordOnEvent);
+
+
+static RecState calcRecordingState() {
+    RecState recState = RecState::recInvalid;
+
+    WAVFileWriter::Mode recMode = wav_writer.get_mode();
+    ESP_LOGI("COMMANDS", "WavWriterMode = %s(%d), AI = %s", wav_writer.get_mode_str(), wav_writer.get_mode_int(), ai_run_enable ? "ON" : "OFF");
+    switch (recMode) {
+        case WAVFileWriter::Mode::disabled:
+            if (ai_run_enable) {
+                recState = RecState::recordOff_detectOn;
+            }
+            else {
+                recState = RecState::recordOff_detectOff;
+            }
+            break;
+        case WAVFileWriter::Mode::continuous:
+            if (ai_run_enable) {
+                recState = RecState::recordOn_detectOn;
+            }
+            else {
+                recState = RecState::recordOn_detectOff;
+            }
+            break;
+        case WAVFileWriter::Mode::single:
+            if (ai_run_enable) {
+                recState = RecState::recordOnEvent;
+            }
+            else {
+                recState = RecState::recInvalid;
+            }
+            break;
+    }
+    return recState;
+}
 
 
 // joinEUI - previous versions of LoRaWAN called this AppEUI
@@ -352,21 +402,29 @@ esp_err_t ElocLora::sendStatusUpdateMessage() {
     // you can also retrieve additional information about an uplink or
     // downlink by passing a reference to LoRaWANEvent_t structure
     LoRaWANEvent_t uplinkDetails;
-    LoRaWANEvent_t downlinkDetails;
     // This is the place to gather the sensor inputs
     // Instead of reading any real sensor, we just generate some random numbers as example
     uint8_t value1 = radio.random(100);
     uint16_t value2 = radio.random(2000);
 
     // Build payload byte array
-    uint8_t uplinkPayload[3];
-    uplinkPayload[0] = value1;
-    uplinkPayload[1] = highByte(value2); // See notes for high/lowByte functions
-    uplinkPayload[2] = lowByte(value2);
+    int64_t time = timeObject.getEpoch();
 
-    ESP_LOGI(TAG, "Sending data: val1 = %d, val2 = %d", value1, value2);
+    uint8_t uplinkPayload[LORA_MAX_TX_PAYLOAD];
+    uint8_t idx = 0;
+    uint8_t msgType = t_LoraMsgType::STATUS_MSG;
+    if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (msgType << 4) | (LORA_MSG_VERS & 0x0F);
+    for (int i = sizeof(time) -1; i >= 0; i--) {
+      if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (time >> (i*8))  & 0xFF; // See notes for high/lowByte functions
+    }
+    uint8_t batSoC = static_cast<uint8_t>(Battery::GetInstance().getSoC());
+    if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = batSoC;
+    if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = static_cast<int>(calcRecordingState());
+    
+    ESP_LOGI(TAG, "Sending data (%d bytes): type = %d, time = %lld, SoC=%hu", idx, msgType, time, batSoC);
+    arrayDump(uplinkPayload, idx);
     // Perform an uplink
-    int16_t state = node.sendReceive(uplinkPayload, sizeof(uplinkPayload), mFPort, mDownlinkPayload, &mDownlinkSize, false, &uplinkDetails,
+    int16_t state = node.sendReceive(uplinkPayload, idx, mFPort, mDownlinkPayload, &mDownlinkSize, false, &uplinkDetails,
                                      &mDownlinkDetails);
     debug(state < RADIOLIB_ERR_NONE, F("Error in sendReceive"), state, false);
 
@@ -377,7 +435,37 @@ esp_err_t ElocLora::sendStatusUpdateMessage() {
 }
 esp_err_t ElocLora::sendEventMessage() {
   
-  return ESP_OK;
+
+    // you can also retrieve additional information about an uplink or
+    // downlink by passing a reference to LoRaWANEvent_t structure
+    LoRaWANEvent_t uplinkDetails;
+    // This is the place to gather the sensor inputs
+    // Instead of reading any real sensor, we just generate some random numbers as example
+    uint8_t value1 = radio.random(100);
+    uint16_t value2 = radio.random(2000);
+
+    // Build payload byte array
+    int64_t time = timeObject.getEpoch();
+
+    uint8_t uplinkPayload[LORA_MAX_TX_PAYLOAD];
+    uint8_t idx = 0;
+
+    if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (t_LoraMsgType::EVENT_MSG << 4) | (LORA_MSG_VERS & 0x0F);
+    for (int i = sizeof(time) -1; i < 0; i--) {
+      if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (time >> (i))  & 0xFF; // See notes for high/lowByte functions
+    }
+    // TODO: Add AI Detected event here
+
+    ESP_LOGI(TAG, "Sending data: type = %d, time = %lld", t_LoraMsgType::STATUS_MSG, time);
+    // Perform an uplink
+    int16_t state = node.sendReceive(uplinkPayload, sizeof(uplinkPayload), mFPort, mDownlinkPayload, &mDownlinkSize, false, &uplinkDetails,
+                                     &mDownlinkDetails);
+    debug(state < RADIOLIB_ERR_NONE, F("Error in sendReceive"), state, false);
+
+    if (state < RADIOLIB_ERR_NONE) {
+      return ESP_FAIL;
+    }
+    return parseResponse(state);
 }
 
 esp_err_t ElocLora::parseResponse(int16_t state) {

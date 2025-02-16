@@ -10,17 +10,36 @@
  *                 
  ******************************************************************************/
 
+function timeConverter(UNIX_timestamp){
+    var a = new Date(UNIX_timestamp * 1000);
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var year = a.getFullYear();
+    var month = months[a.getMonth()];
+    var date = a.getDate();
+    var hour = a.getHours();
+    var min = a.getMinutes();
+    var sec = a.getSeconds();
+    var time = date + ' ' + month + ' ' + year + ' ' + hour + ':' + min + ':' + sec ;
+    return time;
+  }
+
 function decodeUplink(input) {
-    var msgType;
-    msgType = input.bytes[0];
+    var idx=0;
+    var msgType, msgVers;
+    msgType = input.bytes[idx++] & 0xF0;
+    msgVers = input.bytes[0] & 0x0F;
+    // TODO: check msgVersion for incompatibility
     var batterySoC, timestamp, recordingState;
     var state
     switch(msgType) {
         case 0:     // status messages
-            timestamp = (input.bytes[1] << 24 | input.bytes[2] << 16 | input.bytes[3] << 8 | input.bytes[4]);
-            var date = new Date(timestamp * 1000);
-            batterySoC = input.bytes[5];
-            switch (input.bytes[6]) {
+            timestamp = 0
+            for (let i = 0; i < 8; i++) {  // retrieve 64 bit timestamp
+                timestamp = timestamp | (input.bytes[idx++] << (64 -(i+1)*8));
+            }
+            var date = timeConverter(timestamp);
+            batterySoC = input.bytes[idx++];
+            switch (input.bytes[idx++]) {
                 case 0:
                     recordingState = "recordOff_detectOff";
                     break;
@@ -43,7 +62,9 @@ function decodeUplink(input) {
             return {
                 data: {
                 msgType: msgType,
+                msgVers: msgVers,
                 time: date,
+                timestamp: timestamp,
                 state: recordingState,
                 Battery: batterySoC,
                 bytes: input.bytes

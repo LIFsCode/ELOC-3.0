@@ -106,19 +106,19 @@ static esp_err_t print_real_time_stats(TickType_t xTicksToWait)
         if (k >= 0) {
             uint32_t task_elapsed_time = end_array[k].ulRunTimeCounter - start_array[i].ulRunTimeCounter;
             uint32_t percentage_time = (task_elapsed_time * 100UL) / (total_elapsed_time * portNUM_PROCESSORS);
-            printf("\t| %12s | %4d | %10"PRIu16" | %10"PRIu32" | %3"PRIu32"%%\n", start_array[i].pcTaskName, start_array[i].xCoreID, start_array[i].usStackHighWaterMark, task_elapsed_time, percentage_time);
+            printf("\t| %12.12s | %4d | %10"PRIu16" | %10"PRIu32" | %3"PRIu32"%%\n", start_array[i].pcTaskName, start_array[i].xCoreID, start_array[i].usStackHighWaterMark, task_elapsed_time, percentage_time);
         }
     }
 
     //Print unmatched tasks
     for (int i = 0; i < start_array_size; i++) {
         if (start_array[i].xHandle != NULL) {
-            printf("\t| %12s | Deleted\n", start_array[i].pcTaskName);
+            printf("\t| %12.12s | Deleted\n", start_array[i].pcTaskName);
         }
     }
     for (int i = 0; i < end_array_size; i++) {
         if (end_array[i].xHandle != NULL) {
-            printf("\t| %12s | Created\n", end_array[i].pcTaskName);
+            printf("\t| %12.12s | Created\n", end_array[i].pcTaskName);
         }
     }
     printf("\t-----------------------------------\n");

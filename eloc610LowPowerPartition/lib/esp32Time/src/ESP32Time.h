@@ -56,6 +56,7 @@ class ESP32Time {
         };
 
         long getEpoch();
+        long getLocalEpoch();
         long getMillis();
         long getMicros();
         int getSecond();

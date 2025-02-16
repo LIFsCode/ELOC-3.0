@@ -304,6 +304,26 @@ long ESP32Time::getEpoch() {
 }
 
 /*!
+    @brief  get the current local (incl. TZ) epoch seconds as long
+*/
+long ESP32Time::getLocalEpoch() {
+    struct tm timeinfo = getTimeStruct();
+    time_t timeSinceEpoch = mktime(&timeinfo);
+
+    struct tm gmTm  = *gmtime(&timeSinceEpoch);
+    time_t gmTime = mktime(&gmTm);
+    time_t tz_offset = timeSinceEpoch - gmTime;
+
+    time_t localTimeSinceEpoch = timeSinceEpoch + tz_offset;
+
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    ESP_LOGI(TAG, "getLocalEpoch: %ld, gmTime: %ld, timeval: %ld", 
+        timeSinceEpoch, gmTime, localTimeSinceEpoch);
+    return localTimeSinceEpoch;
+}
+
+/*!
     @brief  get the current seconds as int
 */
 int ESP32Time::getSecond() {

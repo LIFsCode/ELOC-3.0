@@ -32,6 +32,7 @@
 
 #define LORA_MAX_RX_PAYLOAD 20
 #define LORA_MAX_TX_PAYLOAD 30
+#define LORA_LABEL_LEN 5
 // if anything in the lora payload format is changed which is incompatible with existing payload fields
 // the version must be increasd. If only additinal bytes are added this is not mandatory
 #define LORA_MSG_VERS 0

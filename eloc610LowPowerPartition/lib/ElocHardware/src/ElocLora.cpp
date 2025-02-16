@@ -42,6 +42,10 @@
 #include "config.h"
 #include "strutils.h"
 
+#ifdef EDGE_IMPULSE_ENABLED
+#include "EdgeImpulse.hpp"
+#endif
+
 const char* TAG = "LoraWAN";
 
 static const uint32_t C_MIN_UPLINK_INTERVAL_S = 10;
@@ -386,6 +390,22 @@ void ElocLora::ElocLoraLoop() {
       return;
     }
     static int64_t lastLoraUplinkTimeS = 0;
+#ifdef EDGE_IMPULSE_ENABLED
+    static int64_t lastEiDetectedEvents = 0;
+     //TODO: Check if we really want all classifier to trigger an event
+     //      this implementation does not differentiate between which classifier has been triggered
+     //BUGME: Currntly this task runs completely separated from the AI task. There is no guarantee that
+     //       no Events are lost. This is ok since we only detect Elephants. And if 2 Events occur it is fine
+    //        to notify only the last one. 
+    //        This changes once different kind of events trigger LoRa messages. then we have to accumulate different events
+    //        so no information is lost.
+    if (edgeImpulse.get_detectedEvents() != lastEiDetectedEvents) {
+      ESP_LOGI(TAG, "Sending uplink with detected Event");  
+      lastLoraUplinkTimeS = esp_timer_get_time()/1000/1000;
+      lastEiDetectedEvents = edgeImpulse.get_detectedEvents(); // also update the send time to skip next status update
+      sendEventMessage();
+    }
+#endif
     int64_t timeDiff = esp_timer_get_time()/1000/1000 - lastLoraUplinkTimeS;
     if  (timeDiff >= uplinkIntervalSeconds) {
       ESP_LOGI(TAG, "Sending uplink");  
@@ -398,17 +418,12 @@ void ElocLora::ElocLoraLoop() {
 }
 
 esp_err_t ElocLora::sendStatusUpdateMessage() {
-
     // you can also retrieve additional information about an uplink or
     // downlink by passing a reference to LoRaWANEvent_t structure
     LoRaWANEvent_t uplinkDetails;
-    // This is the place to gather the sensor inputs
-    // Instead of reading any real sensor, we just generate some random numbers as example
-    uint8_t value1 = radio.random(100);
-    uint16_t value2 = radio.random(2000);
 
     // Build payload byte array
-    int64_t time = timeObject.getEpoch();
+    int64_t time = timeObject.getLocalEpoch();
 
     uint8_t uplinkPayload[LORA_MAX_TX_PAYLOAD];
     uint8_t idx = 0;
@@ -422,7 +437,7 @@ esp_err_t ElocLora::sendStatusUpdateMessage() {
     if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = static_cast<int>(calcRecordingState());
     
     ESP_LOGI(TAG, "Sending data (%d bytes): type = %d, time = %lld, SoC=%hu", idx, msgType, time, batSoC);
-    arrayDump(uplinkPayload, idx);
+    //arrayDump(uplinkPayload, idx);
     // Perform an uplink
     int16_t state = node.sendReceive(uplinkPayload, idx, mFPort, mDownlinkPayload, &mDownlinkSize, false, &uplinkDetails,
                                      &mDownlinkDetails);
@@ -434,31 +449,47 @@ esp_err_t ElocLora::sendStatusUpdateMessage() {
     return parseResponse(state);
 }
 esp_err_t ElocLora::sendEventMessage() {
-  
+  // event messages only make sense if the ELOC Build is made for AI
+  // if no AI model is running no event messages can be generated
+#ifdef EDGE_IMPULSE_ENABLED
 
     // you can also retrieve additional information about an uplink or
     // downlink by passing a reference to LoRaWANEvent_t structure
     LoRaWANEvent_t uplinkDetails;
-    // This is the place to gather the sensor inputs
-    // Instead of reading any real sensor, we just generate some random numbers as example
-    uint8_t value1 = radio.random(100);
-    uint16_t value2 = radio.random(2000);
 
     // Build payload byte array
-    int64_t time = timeObject.getEpoch();
+    EdgeImpulse::DetectedEventInfo info = edgeImpulse.get_lastEventInfo();
+    int64_t time = info.time;
 
     uint8_t uplinkPayload[LORA_MAX_TX_PAYLOAD];
     uint8_t idx = 0;
-
-    if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (t_LoraMsgType::EVENT_MSG << 4) | (LORA_MSG_VERS & 0x0F);
-    for (int i = sizeof(time) -1; i < 0; i--) {
-      if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (time >> (i))  & 0xFF; // See notes for high/lowByte functions
+    uint8_t msgType = t_LoraMsgType::EVENT_MSG;
+    if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (msgType << 4) | (LORA_MSG_VERS & 0x0F);
+    for (int i = sizeof(time) -1; i >= 0; i--) {
+      if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (time >> (i*8))  & 0xFF; // See notes for high/lowByte functions
     }
-    // TODO: Add AI Detected event here
 
-    ESP_LOGI(TAG, "Sending data: type = %d, time = %lld", t_LoraMsgType::STATUS_MSG, time);
+    // List of all detected events durint the last run
+    if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = info.numClassifierMatch;
+
+    //TODO: Check if we really want all classifier to be sent here
+    for (int i = 0; i < info.numClassifierMatch; i++) {
+      if (idx + LORA_LABEL_LEN< LORA_MAX_TX_PAYLOAD) {
+        strncpy((char*)&uplinkPayload[idx], info.label[i].c_str(), LORA_LABEL_LEN);
+        idx += LORA_LABEL_LEN;
+      }
+      // convert classifier value to a number between 0 & 100 
+      uint8_t confidenceLevel = info.classifierValue[i] > 1 ? 100 : static_cast<uint8_t>(100 * info.classifierValue[i]);
+      if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = confidenceLevel;
+    }
+    if (idx >= LORA_MAX_TX_PAYLOAD) {
+      ESP_LOGE(TAG, "Lora TX Payload exceeds its maximum payload of %d Bytes!", LORA_MAX_TX_PAYLOAD);
+    }
+
+    ESP_LOGI(TAG, "Sending data (%d bytes): type = %d, time = %lld, Events=%hu", idx, msgType, time, info.numClassifierMatch);
+    //arrayDump(uplinkPayload, idx);
     // Perform an uplink
-    int16_t state = node.sendReceive(uplinkPayload, sizeof(uplinkPayload), mFPort, mDownlinkPayload, &mDownlinkSize, false, &uplinkDetails,
+    int16_t state = node.sendReceive(uplinkPayload, idx, mFPort, mDownlinkPayload, &mDownlinkSize, false, &uplinkDetails,
                                      &mDownlinkDetails);
     debug(state < RADIOLIB_ERR_NONE, F("Error in sendReceive"), state, false);
 
@@ -466,6 +497,9 @@ esp_err_t ElocLora::sendEventMessage() {
       return ESP_FAIL;
     }
     return parseResponse(state);
+#else
+    return ESP_OK;
+#endif
 }
 
 esp_err_t ElocLora::parseResponse(int16_t state) {

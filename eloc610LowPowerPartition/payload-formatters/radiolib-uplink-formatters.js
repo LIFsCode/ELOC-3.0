@@ -54,18 +54,21 @@ function decodeUplink(input) {
             batterySoC = input.bytes[idx++];
             switch (input.bytes[idx++]) {
                 case 0:
-                    recordingState = "recordOff_detectOff";
+                    recordingState = "recInvalid";
                     break;
                 case 1:
-                    recordingState = "recordOn_detectOff";
+                    recordingState = "recordOff_detectOff";
                     break;
                 case 2:
-                    recordingState = "recordOn_detectOn";
+                    recordingState = "recordOn_detectOff";
                     break;
                 case 3:
-                    recordingState = "recordOff_detectOn";
+                    recordingState = "recordOn_detectOn";
                     break;
                 case 4:
+                    recordingState = "recordOff_detectOn";
+                    break;
+                case 5:
                     recordingState = "recordOnEvent";
                     break;
                 default:

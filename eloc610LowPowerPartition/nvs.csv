@@ -1,10 +1,9 @@
 key,type,encoding,value
 factory,namespace,,
 hw_gen,data,u16,3
-hw_rev,data,u16,5
-serial,data,u32,240100191
+hw_rev,data,u16,6
+serial,data,u32,250600188
 loraKeys,namespace,,
-devEUI,data,hex2bin,70B3D57ED0062B25
-appKey,file,hex2bin,LoraWAN_appKey.hex
-nwkKey,file,hex2bin,LoraWAN_nwkKey.hex
-
+devEUI,data,hex2bin,539F618C0E685165
+appKey,data,hex2bin,F6DFBAABD62FFEE162ABE6198288A4D5
+nwkKey,data,hex2bin,5024CB6A7E9A1EB44FA429C3F1A28037

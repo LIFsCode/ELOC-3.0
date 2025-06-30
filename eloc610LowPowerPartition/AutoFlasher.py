@@ -149,7 +149,7 @@ class AutoFlasher:
                 rows.append({
                     'key': 'devEUI',
                     'type': 'data',
-                    'encoding': 'string',
+                    'encoding': 'hex2bin',
                     'value': devEUI
                 })
             if appKey is None:
@@ -157,7 +157,7 @@ class AutoFlasher:
                 rows.append({
                     'key': 'appKey',
                     'type': 'data',
-                    'encoding': 'string',
+                    'encoding': 'hex2bin',
                     'value': appKey
                 })
             if nwkKey is None:
@@ -165,7 +165,7 @@ class AutoFlasher:
                 rows.append({
                     'key': 'nwkKey',
                     'type': 'data',
-                    'encoding': 'string',
+                    'encoding': 'hex2bin',
                     'value': nwkKey
                 })
 

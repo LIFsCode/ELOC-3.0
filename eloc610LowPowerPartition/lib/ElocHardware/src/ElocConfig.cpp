@@ -107,7 +107,7 @@ void updateI2sConfig() {
 
 
 static const elocConfig_T C_ElocConfig_Default {
-    .secondsPerFile = 6000,
+    .secondsPerFile = 36000,
     // Power management
     .cpuMaxFrequencyMHZ = 80,    // minimum 80
     .cpuMinFrequencyMHZ = 10,

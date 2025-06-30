@@ -6,6 +6,8 @@
 .vscode/*
 *.code-workspace
 dependencies.lock
+nvs.csv
+keyfile.csv
 
 # ignore auto generated sdkconfig files and only keep  the defaults under version control
 sdkconfig*

@@ -52,4 +52,10 @@ Build using 'esp32dev-ei' in the 'Project Tasks':
     Solution: Comment out this line in platform.io: -DEI_CLASSIFIER_ALLOCATION_STATIC=1
     It's a RAM issue. More info here: https://github.com/LIFsCode/ELOC-3.0/issues/79
 
+5. Compile Error:
+    ```
+    src/main.cpp:716:55: error: static assertion failed: TEST_SAMPLE_LENGTH must be at least equal to EI_CLASSIFIER_RAW_SAMPLE_COUNT
+         static_assert((EI_CLASSIFIER_RAW_SAMPLE_COUNT <= TEST_SAMPLE_LENGTH),
+     ```
+    Solution: The code starting at line 710 in main.cpp runs a test sample through the EI inference process as a test at startup. It seems that this test sample length is shorter than the model input & hence the error. You     could, just to get the code compiling, comment out lines 710 to 777
 

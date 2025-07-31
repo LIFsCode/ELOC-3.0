@@ -194,10 +194,6 @@ String stateDecode(const int16_t result) {
     return "RADIOLIB_ERR_COMMAND_QUEUE_ITEM_NOT_FOUND";
   case RADIOLIB_ERR_JOIN_NONCE_INVALID:
     return "RADIOLIB_ERR_JOIN_NONCE_INVALID";
-  case RADIOLIB_ERR_N_FCNT_DOWN_INVALID:
-    return "RADIOLIB_ERR_N_FCNT_DOWN_INVALID";
-  case RADIOLIB_ERR_A_FCNT_DOWN_INVALID:
-    return "RADIOLIB_ERR_A_FCNT_DOWN_INVALID";
   case RADIOLIB_ERR_DWELL_TIME_EXCEEDED:
     return "RADIOLIB_ERR_DWELL_TIME_EXCEEDED";
   case RADIOLIB_ERR_CHECKSUM_MISMATCH:
@@ -246,7 +242,7 @@ esp_err_t ElocLora::getRegionFromConfig() {
     Region= KR920;
   }
   else if (cfgRegion == "CN500") {
-    Region= CN500;
+    Region= CN470;  // CN500 is not available, using CN470 instead
   }
   else {
     ESP_LOGE(TAG, "Invalid Lora Region Config: %s", cfgRegion.c_str());

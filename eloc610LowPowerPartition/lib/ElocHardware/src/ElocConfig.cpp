@@ -135,8 +135,8 @@ static const elocConfig_T C_ElocConfig_Default {
         .noBatteryMode  = false,
     },
     .loraConfig = {
-        .loraEnable = false,
-        .upLinkIntervalS = 60,
+        .loraEnable = true,
+        .upLinkIntervalS = 3600,
         .loraRegion = "EU868",
     },
 };

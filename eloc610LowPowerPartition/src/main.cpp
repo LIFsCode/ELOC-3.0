@@ -833,6 +833,9 @@ void app_main(void) {
         #ifdef AI_CONTINUOUS_INFERENCE
             // Init static vars
             edgeImpulse.run_classifier_init();
+            edgeImpulse.buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
+        #else
+            edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
         #endif  // AI_CONTINUOUS_INFERENCE
 
         input.register_ei_inference(&edgeImpulse.getInference(), EI_CLASSIFIER_FREQUENCY);

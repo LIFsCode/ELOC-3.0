@@ -7,7 +7,7 @@
 
 #include "../../../include/project_config.h"
 #include "EdgeImpulse.hpp"
-#include "a3_Sec_Background_Marc_-_Exactly_trimmed_trumpets_inferencing.h"
+#include "Chain_ELOC_inferencing.h"
 #include "ESP32Time.h"
 
 /**

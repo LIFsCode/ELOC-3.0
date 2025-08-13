@@ -1,23 +1,35 @@
-/* Edge Impulse inferencing library
- * Copyright (c) 2022 EdgeImpulse Inc.
+/* The Clear BSD License
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Copyright (c) 2025 EdgeImpulse Inc.
+ * All rights reserved.
  *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted (subject to the limitations in the disclaimer
+ * below) provided that the following conditions are met:
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
+ *   * Redistributions of source code must retain the above copyright notice,
+ *   this list of conditions and the following disclaimer.
+ *
+ *   * Redistributions in binary form must reproduce the above copyright
+ *   notice, this list of conditions and the following disclaimer in the
+ *   documentation and/or other materials provided with the distribution.
+ *
+ *   * Neither the name of the copyright holder nor the names of its
+ *   contributors may be used to endorse or promote products derived from this
+ *   software without specific prior written permission.
+ *
+ * NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY
+ * THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+ * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+ * IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef EI_CLASSIFIER_INFERENCING_ENGINE_AKIDA_H
@@ -54,7 +66,6 @@
 #include "edge-impulse-sdk/tensorflow/lite/kernels/custom/tree_ensemble_classifier.h"
 #include "edge-impulse-sdk/classifier/ei_model_types.h"
 #include "edge-impulse-sdk/porting/ei_classifier_porting.h"
-#include "edge-impulse-sdk/classifier/ei_fill_result_struct.h"
 #include "tensorflow-lite/tensorflow/lite/kernels/internal/reference/softmax.h"
 #undef EI_CLASSIFIER_INFERENCING_ENGINE
 #define EI_CLASSIFIER_INFERENCING_ENGINE EI_CLASSIFIER_TFLITE_FULL
@@ -192,7 +203,7 @@ bool init_akida(const uint8_t *model_arr, size_t model_arr_size, bool debug)
     // get list of available devices
     py::list devices = akida.attr("devices")();
     if(devices.empty() == true) {
-        ei_printf("ERR: AKD1000 device not found!\n");
+        ei_printf("ERR: Akida device not found!\n");
         return false;
     }
 
@@ -203,16 +214,18 @@ bool init_akida(const uint8_t *model_arr, size_t model_arr_size, bool debug)
     else {
         device = devices[0];
     }
-    //TODO: check if selected device is correct (compare versions)
-    // enable power measurement
-    device.attr("soc").attr("power_measurement_enabled") = true;
+
+    // TODO: check if selected device is correct (compare versions)
+    // power measurement not avaliable on akida1500, commenting out for now
+    //device.attr("soc").attr("power_measurement_enabled") = true;
+
 
     // map model to the device
     try {
         model.attr("map")(device);
     }
     catch (py::error_already_set &e) {
-        ei_printf("ERR: Can't load the ML model onto the AKD1000 SoC\n");
+        ei_printf("ERR: Can't load the ML model onto the Akida SoC\n");
         ei_printf("ERR: %s\n", e.what());
         return false;
     }
@@ -272,9 +285,7 @@ EI_IMPULSE_ERROR run_nn_inference(
     bool debug)
 {
     ei_learning_block_config_tflite_graph_t *block_config = ((ei_learning_block_config_tflite_graph_t*)config_ptr);
-    ei_config_tflite_graph_t *graph_config = ((ei_config_tflite_graph_t*)block_config->graph_config);
-
-    EI_IMPULSE_ERROR fill_res = EI_IMPULSE_OK;
+    ei_config_akida_graph_t *graph_config = ((ei_config_akida_graph_t*)block_config->graph_config);
 
     // init Python embedded interpreter (should be called once!)
     static py::scoped_interpreter guard{};
@@ -306,8 +317,8 @@ EI_IMPULSE_ERROR run_nn_inference(
 
     size_t mtx_size = impulse->dsp_blocks_size + impulse->learning_blocks_size;
     for (size_t i = 0; i < input_block_ids_size; i++) {
-        uint16_t cur_mtx = input_block_ids[i];
 #if EI_CLASSIFIER_SINGLE_FEATURE_INPUT == 0
+        uint16_t cur_mtx = input_block_ids[i];
         ei::matrix_t* matrix = NULL;
 
         if (!find_mtx_by_idx(fmatrix, &matrix, cur_mtx, mtx_size)) {
@@ -328,7 +339,7 @@ EI_IMPULSE_ERROR run_nn_inference(
         }
     }
 
-    // Run inference on AKD1000
+    // Run inference on Akida
     uint64_t ctx_start_us = ei_read_timer_us();
     py::array_t<float> potentials;
     try {
@@ -346,14 +357,14 @@ EI_IMPULSE_ERROR run_nn_inference(
 
     if(debug) {
         std::string ret_str = py::str(potentials).cast<std::string>();
-        ei_printf("AKD1000 raw output:\n%s\n", ret_str.c_str());
+        ei_printf("Akida raw output:\n%s\n", ret_str.c_str());
     }
 
     // convert to vector of floats to make further processing much easier
     std::vector<float> potentials_v;// = potentials.cast<std::vector<float>>();
 
     // TODO: output conversion depending on output shape?
-    if (block_config->object_detection == false) {
+    if (graph_config->object_detection_last_layer == EI_CLASSIFIER_LAST_LAYER_UNKNOWN) {
         potentials_v = potentials.squeeze().cast<std::vector<float>>();
     }
     else {
@@ -368,7 +379,7 @@ EI_IMPULSE_ERROR run_nn_inference(
         }
     }
 
-    if(block_config->object_detection_last_layer != EI_CLASSIFIER_LAST_LAYER_YOLOV2) {
+    if(graph_config->object_detection_last_layer != EI_CLASSIFIER_LAST_LAYER_YOLOV2) {
         // apply softmax, becuase Akida is not supporting this operation
         tflite::reference_ops::Softmax(dummy_params, softmax_shape, potentials_v.data(), softmax_shape, potentials_v.data());
     }
@@ -380,14 +391,16 @@ EI_IMPULSE_ERROR run_nn_inference(
 
     float active_power = 0;
 #if (defined(EI_CLASSIFIER_USE_AKIDA_HARDWARE))
+    // the ADK1500 does not have power measurements, commenting out for now
+    // TODO: check betweewn Akida1000 and Akida1500 or reanble when available
     // power measurement post-processing
-    float floor_power = device.attr("soc").attr("power_meter").attr("floor").cast<float>();
-    py::array pwr_events = device.attr("soc").attr("power_meter").attr("events")();
-    auto events = pwr_events.mutable_unchecked<py::object>();
-    for (py::ssize_t i = 0; i < events.shape(0); i++) {
-        active_power += events(i).attr("power").cast<float>();
-    }
-    active_power = (active_power/pwr_events.size()) - floor_power;
+    //float floor_power = device.attr("soc").attr("power_meter").attr("floor").cast<float>();
+    //py::array pwr_events = device.attr("soc").attr("power_meter").attr("events")();
+    //auto events = pwr_events.mutable_unchecked<py::object>();
+    //for (py::ssize_t i = 0; i < events.shape(0); i++) {
+    //    active_power += events(i).attr("power").cast<float>();
+    //}
+    //active_power = (active_power/pwr_events.size()) - floor_power;
 #endif
 
     result->timing.classification_us = ctx_end_us - ctx_start_us;
@@ -398,49 +411,16 @@ EI_IMPULSE_ERROR run_nn_inference(
     engine_info << "Power consumption: " << std::fixed << std::setprecision(2) << active_power << " mW\n";
     engine_info << "Inferences per second: " << (1000000 / result->timing.classification_us);
 
-    if (block_config->object_detection) {
-        switch (block_config->object_detection_last_layer) {
-            case EI_CLASSIFIER_LAST_LAYER_FOMO: {
-                fill_res = fill_result_struct_f32_fomo(
-                    impulse,
-                    block_config,
-                    result,
-                    potentials_v.data(),
-                    impulse->fomo_output_size,
-                    impulse->fomo_output_size);
-                break;
-            }
-            case EI_CLASSIFIER_LAST_LAYER_YOLOV2: {
-                fill_res = fill_result_struct_f32_yolov2(
-                    impulse,
-                    block_config,
-                    result,
-                    potentials_v.data(),
-                    impulse->tflite_output_features_count);
-                break;
-            }
-            case EI_CLASSIFIER_LAST_LAYER_SSD: {
-                ei_printf("ERR: MobileNet SSD models are not implemented for Akida (%d)\n",
-                    block_config->object_detection_last_layer);
-                return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-            }
-            case EI_CLASSIFIER_LAST_LAYER_YOLOV5: {
-                ei_printf("ERR: YOLO v5 models are not implemented for Akida (%d)\n",
-                    block_config->object_detection_last_layer);
-                return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-            }
-            default: {
-                ei_printf("ERR: Unsupported object detection last layer (%d)\n",
-                    block_config->object_detection_last_layer);
-                return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-            }
-        }
-    }
-    else {
-        fill_res = fill_result_struct_f32(impulse, result, potentials_v.data(), debug);
+    size_t output_size = potentials_v.size();
+
+    result->_raw_outputs[learn_block_index].matrix = new matrix_t(1, output_size);
+    result->_raw_outputs[learn_block_index].blockId = block_config->block_id;
+
+    for (size_t i = 0; i < output_size; i++) {
+        result->_raw_outputs[learn_block_index].matrix->buffer[i] = potentials_v[i];
     }
 
-    return fill_res;
+    return EI_IMPULSE_OK;
 }
 
 /**
@@ -550,16 +530,14 @@ __attribute__((unused)) int extract_tflite_features(signal_t *signal, matrix_t *
         .arena_size = dsp_config->arena_size
     };
 
+    const uint8_t ei_output_tensor_indices[1] = { 0 };
+    const uint8_t ei_output_tensor_size = 1;
+
     ei_learning_block_config_tflite_graph_t ei_learning_block_config = {
         .implementation_version = 1,
-        .classification_mode = EI_CLASSIFIER_CLASSIFICATION_MODE_DSP,
         .block_id = dsp_config->block_id,
-        .object_detection = false,
-        .object_detection_last_layer = EI_CLASSIFIER_LAST_LAYER_UNKNOWN,
-        .output_data_tensor = 0,
-        .output_labels_tensor = 255,
-        .output_score_tensor = 255,
-        .threshold = 0,
+        .output_tensors_indices = ei_output_tensor_indices,
+        .output_tensors_size = ei_output_tensor_size,
         .quantized = 0,
         .compiled = 1,
         .graph_config = &ei_config_tflite_graph_0
@@ -574,5 +552,4 @@ __attribute__((unused)) int extract_tflite_features(signal_t *signal, matrix_t *
 }
 
 #endif // EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_AKIDA
-
 #endif /* EI_CLASSIFIER_INFERENCING_ENGINE_AKIDA_H */

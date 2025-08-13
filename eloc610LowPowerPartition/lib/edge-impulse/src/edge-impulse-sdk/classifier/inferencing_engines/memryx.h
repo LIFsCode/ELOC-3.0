@@ -1,23 +1,35 @@
-/* Edge Impulse inferencing library
- * Copyright (c) 2023 EdgeImpulse Inc.
+/* The Clear BSD License
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Copyright (c) 2025 EdgeImpulse Inc.
+ * All rights reserved.
  *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted (subject to the limitations in the disclaimer
+ * below) provided that the following conditions are met:
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
+ *   * Redistributions of source code must retain the above copyright notice,
+ *   this list of conditions and the following disclaimer.
+ *
+ *   * Redistributions in binary form must reproduce the above copyright
+ *   notice, this list of conditions and the following disclaimer in the
+ *   documentation and/or other materials provided with the distribution.
+ *
+ *   * Neither the name of the copyright holder nor the names of its
+ *   contributors may be used to endorse or promote products derived from this
+ *   software without specific prior written permission.
+ *
+ * NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY
+ * THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+ * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+ * IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef EI_CLASSIFIER_INFERENCING_ENGINE_MEMRYX_H
@@ -49,7 +61,6 @@
 #endif
 
 #include "edge-impulse-sdk/porting/ei_classifier_porting.h"
-#include "edge-impulse-sdk/classifier/ei_fill_result_struct.h"
 #include "tensorflow-lite/tensorflow/lite/kernels/internal/reference/softmax.h"
 #include <vector>
 #include <fstream>
@@ -238,10 +249,12 @@ EI_IMPULSE_ERROR run_nn_inference(
     float* ofmap = new float [ofmap_width * ofmap_height * ofmap_channel_number];
 
 #if EI_CLASSIFIER_SINGLE_FEATURE_INPUT == 0
-    size_t mtx_size = impulse->dsp_blocks_size + impulse->learning_blocks_size;
+    size_t mtx_size = impulse->dsp_blocks_size;
     ei::matrix_t* matrix = NULL;
 
-    ei::matrix_t combined_matrix(1, impulse->nn_input_frame_size);
+    size_t combined_matrix_size = get_feature_size(fmatrix, input_block_ids_size, input_block_ids, mtx_size);
+    ei::matrix_t combined_matrix(1, combined_matrix_size);
+
     uint32_t buf_pos = 0;
 
     for (size_t i = 0; i < input_block_ids_size; i++) {
@@ -305,36 +318,16 @@ EI_IMPULSE_ERROR run_nn_inference(
     // apply softmax, becuase MX3 does not support this operation
     tflite::reference_ops::Softmax(dummy_params, softmax_shape, ofmap, softmax_shape, ofmap);
 
-    // handle inference outputs
-    if (block_config->object_detection) {
-        switch (block_config->object_detection_last_layer) {
-            case EI_CLASSIFIER_LAST_LAYER_FOMO: {
-                ei_printf("FOMO executed on Memryx\n");
-                fill_result_struct_f32_fomo(
-                    impulse,
-                    block_config,
-                    result,
-                    ofmap,
-                    impulse->fomo_output_size,
-                    impulse->fomo_output_size);
-                break;
-            }
-            case EI_CLASSIFIER_LAST_LAYER_SSD: {
-                ei_printf("Mobilenet SSD is not implemented for Edge Impulse MemryX engine, please contact Edge Impulse Support\n");
-                break;
-            }
-            default: {
-                ei_printf("ERR: Unsupported object detection last layer (%d)\n",
-                    block_config->object_detection_last_layer);
-                return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-            }
-        }
-    }
-    else {
-        fill_result_struct_f32(impulse, result, ofmap, debug);
+    size_t output_size = ofmap_width * ofmap_height * ofmap_channel_number;
+
+    result->_raw_outputs[learn_block_index].matrix = new matrix_t(1, output_size);
+    result->_raw_outputs[learn_block_index].blockId = block_config->block_id;
+
+    for (size_t i = 0; i < output_size; i++) {
+        result->_raw_outputs[learn_block_index].matrix->buffer[i] = ofmap[i];
     }
 
-    delete ofmap;
+    delete[] ofmap;
     // Device is closed only at EIM exit, therefore we do not use memx_close()
     return EI_IMPULSE_OK;
 }
@@ -350,6 +343,7 @@ EI_IMPULSE_ERROR run_nn_inference(
     bool debug = false)
 {
     ei_learning_block_config_tflite_graph_t *block_config = (ei_learning_block_config_tflite_graph_t*)config_ptr;
+    ei_config_memryx_graph_t *graph_config = (ei_config_memryx_graph_t*)block_config->graph_config;
 
     // init Python embedded interpreter (should be called once!)
     static py::scoped_interpreter guard{};
@@ -418,7 +412,7 @@ EI_IMPULSE_ERROR run_nn_inference(
 
     potentials = outputs.squeeze().cast<py::array_t<float>>();
 
-    if (block_config->object_detection == false) {
+    if (graph_config->object_detection_last_layer == EI_CLASSIFIER_LAST_LAYER_UNKNOWN) {
         potentials_v = outputs.squeeze().cast<std::vector<float>>();
     }
     else {
@@ -437,32 +431,13 @@ EI_IMPULSE_ERROR run_nn_inference(
         ei_printf("Memryx raw output:\n%s\n", ret_str.c_str());
     }
 
-    if (block_config->object_detection) {
-        switch (block_config->object_detection_last_layer) {
-            case EI_CLASSIFIER_LAST_LAYER_FOMO: {
-                ei_printf("FOMO executed on Memryx\n");
-                fill_result_struct_f32_fomo(
-                    impulse,
-                    block_config,
-                    result,
-                    potentials_v.data(),
-                    impulse->fomo_output_size,
-                    impulse->fomo_output_size);
-                break;
-            }
-            case EI_CLASSIFIER_LAST_LAYER_SSD: {
-                ei_printf("Mobilenet SSD executed on Memryx\n");
-                break;
-            }
-            default: {
-                ei_printf("ERR: Unsupported object detection last layer (%d)\n",
-                    impulse->object_detection_last_layer);
-                return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-            }
-        }
-    }
-    else {
-        fill_result_struct_f32(impulse, result, potentials_v.data(), debug);
+    size_t output_size = potentials_v.size();
+
+    result->_raw_outputs[learn_block_index].matrix = new matrix_t(1, output_size);
+    result->_raw_outputs[learn_block_index].blockId = block_config->block_id;
+
+    for (size_t i = 0; i < output_size; i++) {
+        result->_raw_outputs[learn_block_index].matrix->buffer[i] = potentials_v[i];
     }
 
     return EI_IMPULSE_OK;
@@ -470,7 +445,5 @@ EI_IMPULSE_ERROR run_nn_inference(
 #else
 #error "Neither EI_CLASSIFIER_USE_MEMRYX_HARDWARE or EI_CLASSIFIER_USE_MEMRYX_SOFTWARE are defined or set to 1"
 #endif // USE_HARDWARE
-
 #endif // EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_MEMRYX
-
 #endif /* EI_CLASSIFIER_INFERENCING_ENGINE_MEMRYX_H */

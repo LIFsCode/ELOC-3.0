@@ -1,18 +1,35 @@
-/*
- * Copyright (c) 2022 EdgeImpulse Inc.
+/* The Clear BSD License
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- * http://www.apache.org/licenses/LICENSE-2.0
+ * Copyright (c) 2025 EdgeImpulse Inc.
+ * All rights reserved.
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an "AS
- * IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language
- * governing permissions and limitations under the License.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted (subject to the limitations in the disclaimer
+ * below) provided that the following conditions are met:
  *
- * SPDX-License-Identifier: Apache-2.0
+ *   * Redistributions of source code must retain the above copyright notice,
+ *   this list of conditions and the following disclaimer.
+ *
+ *   * Redistributions in binary form must reproduce the above copyright
+ *   notice, this list of conditions and the following disclaimer in the
+ *   documentation and/or other materials provided with the distribution.
+ *
+ *   * Neither the name of the copyright holder nor the names of its
+ *   contributors may be used to endorse or promote products derived from this
+ *   software without specific prior written permission.
+ *
+ * NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY
+ * THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+ * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+ * IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef _EI_CLASSIFIER_INFERENCING_ENGINE_DRPAI_H_
@@ -51,15 +68,12 @@
 #include "tensorflow-lite/tensorflow/lite/optional_debug_tools.h"
 #endif
 #include "edge-impulse-sdk/tensorflow/lite/kernels/custom/tree_ensemble_classifier.h"
-#include "edge-impulse-sdk/classifier/ei_fill_result_struct.h"
 #include "edge-impulse-sdk/classifier/ei_model_types.h"
 #include "edge-impulse-sdk/classifier/ei_run_dsp.h"
 #include "edge-impulse-sdk/porting/ei_logging.h"
 
 #include <linux/drpai.h>
 #include <tflite-model/drpai_model.h>
-
-
 
 /*****************************************
  * Macro
@@ -455,12 +469,8 @@ EI_IMPULSE_ERROR drpai_close(uint32_t input_frame_size) {
 #if ((EI_CLASSIFIER_OBJECT_DETECTION == 1) && (EI_CLASSIFIER_OBJECT_DETECTION_LAST_LAYER == EI_CLASSIFIER_LAST_LAYER_YOLOV5_V5_DRPAI))
 EI_IMPULSE_ERROR drpai_run_yolov5_postprocessing(
     const ei_impulse_t *impulse,
-    ei_learning_block_config_tflite_graph_t *block_config,
-    signal_t *signal,
-    ei_impulse_result_t *result,
-    bool debug = false)
+    float** output)
 {
-
     static std::unique_ptr<tflite::FlatBufferModel> model = nullptr;
     static std::unique_ptr<tflite::Interpreter> interpreter = nullptr;
 
@@ -541,32 +551,13 @@ EI_IMPULSE_ERROR drpai_run_yolov5_postprocessing(
     }
 
     uint64_t ctx_start_us = ei_read_timer_us();
-
     interpreter->Invoke();
-
     uint64_t ctx_end_us = ei_read_timer_us();
-
     EI_LOGD("Invoke took %d ms.\n", (int)((ctx_end_us - ctx_start_us) / 1000));
 
-    float* out_data = interpreter->typed_output_tensor<float>(0);
+    *output = interpreter->typed_output_tensor<float>(0);
 
-    const size_t out_size = impulse->tflite_output_features_count;
-
-    if (debug) {
-      printf("First 20 bytes: ");
-      for (size_t ix = 0; ix < 20; ix++) {
-          ei_printf("%f ", out_data[ix]);
-      }
-      ei_printf("\n");
-    }
-
-    // printf("Last 5 bytes: ");
-    // for (size_t ix = out_size - 5; ix < out_size; ix++) {
-    //     printf("%f ", out_data[ix]);
-    // }
-    // printf("\n");
-
-    return fill_result_struct_f32_yolov5(impulse, block_config, result, 5, out_data, out_size);
+    return EI_IMPULSE_OK;
 }
 #endif
 
@@ -600,11 +591,13 @@ EI_IMPULSE_ERROR run_nn_inference(
 EI_IMPULSE_ERROR run_nn_inference_image_quantized(
     const ei_impulse_t *impulse,
     signal_t *signal,
+    uint32_t learn_block_index,
     ei_impulse_result_t *result,
     void *config_ptr,
     bool debug = false)
 {
-    ei_learning_block_config_tflite_graph_t *block_config = (ei_learning_block_config_tflite_graph_t*)config_ptr;
+  ei_learning_block_config_tflite_graph_t *block_config = (ei_learning_block_config_tflite_graph_t*)config_ptr;
+  ei_config_drpai_graph_t *graph_config = (ei_config_drpai_graph_t*)block_config->graph_config;
 
     // this needs to be changed for multi-model, multi-impulse
     static bool first_run = true;
@@ -680,67 +673,29 @@ EI_IMPULSE_ERROR run_nn_inference_image_quantized(
         first_run = false;
     }
 
-    EI_IMPULSE_ERROR fill_res = EI_IMPULSE_OK;
+    // default point to the output of the drpai
+    float *drpai_output = drpai_output_buf;
 
-    if (block_config->object_detection) {
-        switch (block_config->object_detection_last_layer) {
-            case EI_CLASSIFIER_LAST_LAYER_FOMO: {
-                if (debug) {
-                    ei_printf("DEBUG: raw drpai output");
-                    ei_printf("\n[");
-                    for (uint32_t i = 0; i < impulse->tflite_output_features_count; i++) {
-                        ei_printf_float(drpai_output_buf[i]);
-                        ei_printf(" ");
-                    }
-                    ei_printf("]\n");
-                }
-
-                fill_res = fill_result_struct_f32_fomo(
-                    impulse,
-                    block_config,
-                    result,
-                    drpai_output_buf,
-                    impulse->fomo_output_size,
-                    impulse->fomo_output_size);
-                break;
-            }
-            case EI_CLASSIFIER_LAST_LAYER_SSD: {
-                ei_printf("ERR: MobileNet SSD models are not implemented for DRP-AI (%d)\n",
-                    block_config->object_detection_last_layer);
-                return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-            }
-            case EI_CLASSIFIER_LAST_LAYER_YOLOV5_V5_DRPAI: {
-                if (debug) {
-                    ei_printf("DEBUG: raw drpai output");
-                    ei_printf("\n[");
-                    // impulse->tflite_output_features_count can't be used here as this is not the final output
-                    // so print only the first 10 values.
-                    for (uint32_t i = 0; i < 10; i++) {
-                        ei_printf_float(drpai_output_buf[i]);
-                        ei_printf(" ");
-                    }
-                    ei_printf("]\n");
-                }
-
+    if (graph_config->object_detection_last_layer == EI_CLASSIFIER_LAST_LAYER_YOLOV5_V5_DRPAI) {
 #if ((EI_CLASSIFIER_OBJECT_DETECTION == 1) && (EI_CLASSIFIER_OBJECT_DETECTION_LAST_LAYER == EI_CLASSIFIER_LAST_LAYER_YOLOV5_V5_DRPAI))
-                  // do post processing
-                  fill_res = drpai_run_yolov5_postprocessing(impulse, block_config, signal, result, debug);
+        // do post processing
+        drpai_run_yolov5_postprocessing(impulse, &drpai_output);
 #endif
-                break;
-            }
-            default: {
-                ei_printf("ERR: Unsupported object detection last layer (%d)\n",
-                    block_config->object_detection_last_layer);
-                return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-            }
-        }
-    }
-    else {
-        fill_res = fill_result_struct_f32(impulse, result, drpai_output_buf, debug);
     }
 
-    if (fill_res != EI_IMPULSE_OK) {
-        return fill_res;
+#if EI_LOG_LEVEL == EI_LOG_LEVEL_DEBUG
+    ei_printf("First 20 bytes: ");
+    for (size_t ix = 0; ix < 20; ix++) {
+        ei_printf("%f ", drpai_output[ix]);
+    }
+    ei_printf("\n");
+#endif
+
+    result->_raw_outputs[learn_block_index].matrix = new matrix_t(1, graph_config->output_features_count);
+    result->_raw_outputs[learn_block_index].blockId = block_config->block_id;
+
+    for (size_t i = 0; i < graph_config->output_features_count; i++) {
+        result->_raw_outputs[learn_block_index].matrix->buffer[i] = drpai_output[i];
     }
 
     result->timing.classification_us = ei_read_timer_us() - ctx_start_us;

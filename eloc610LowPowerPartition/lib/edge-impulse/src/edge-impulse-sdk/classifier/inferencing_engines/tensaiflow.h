@@ -1,18 +1,35 @@
-/*
- * Copyright (c) 2022 EdgeImpulse Inc.
+/* The Clear BSD License
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- * http://www.apache.org/licenses/LICENSE-2.0
+ * Copyright (c) 2025 EdgeImpulse Inc.
+ * All rights reserved.
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an "AS
- * IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language
- * governing permissions and limitations under the License.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted (subject to the limitations in the disclaimer
+ * below) provided that the following conditions are met:
  *
- * SPDX-License-Identifier: Apache-2.0
+ *   * Redistributions of source code must retain the above copyright notice,
+ *   this list of conditions and the following disclaimer.
+ *
+ *   * Redistributions in binary form must reproduce the above copyright
+ *   notice, this list of conditions and the following disclaimer in the
+ *   documentation and/or other materials provided with the distribution.
+ *
+ *   * Neither the name of the copyright holder nor the names of its
+ *   contributors may be used to endorse or promote products derived from this
+ *   software without specific prior written permission.
+ *
+ * NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY
+ * THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+ * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+ * IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef _EI_CLASSIFIER_INFERENCING_ENGINE_TENSAILFOW_H_
@@ -22,7 +39,6 @@
 
 #include "model-parameters/model_metadata.h"
 #include "edge-impulse-sdk/porting/ei_classifier_porting.h"
-#include "edge-impulse-sdk/classifier/ei_fill_result_struct.h"
 #include "edge-impulse-sdk/classifier/ei_run_dsp.h"
 
 #include "mcu.h"
@@ -48,12 +64,12 @@ extern "C" void get_data(const void *impulse_arg, int8_t *in_buf_0, uint16_t in_
     }
 }
 
-extern "C" void post_process(const void *impulse_arg, int8_t *out_buf_0, int8_t *out_buf_1)
+extern "C" void post_process(const void *block_config_arg, int8_t *out_buf_0, int8_t *out_buf_1)
 {
-    ei_impulse_t *impulse = (ei_impulse_t *) impulse_arg;
+    ei_config_tensaiflow_graph_t *block_config = (ei_config_tensaiflow_graph_t *) block_config_arg;
 
     #ifdef EI_CLASSIFIER_NN_OUTPUT_COUNT
-    memcpy(infer_result, out_buf_0, impulse->tflite_output_features_count);
+    memcpy(infer_result, out_buf_0, block_config->output_features_count);
     #else
     memcpy(infer_result, out_buf_0, impulse->label_count);
     #endif
@@ -81,39 +97,24 @@ EI_IMPULSE_ERROR run_nn_inference(
     ei_learning_block_config_tflite_graph_t *block_config = (ei_learning_block_config_tflite_graph_t*)config_ptr;
     ei_config_tensaiflow_graph_t *graph_config = (ei_config_tensaiflow_graph_t*)block_config->graph_config;
 
-    if (block_config->object_detection) {
-        ei_printf("ERR: Object detection models are not supported with TensaiFlow\n");
-        return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-    }
-
     uint64_t ctx_start_us = ei_read_timer_us();
     uint32_t time, cycles;
 
     /* Run tensaiflow inference */
-    infer((const void *)impulse, &time, &cycles);
+    infer((const void *)graph_config, &time, &cycles);
 
     // Inference results returned by post_process() and copied into infer_results
 
     result->timing.classification_us = ei_read_timer_us() - ctx_start_us;
     result->timing.classification = (int)(result->timing.classification_us / 1000);
 
+    result->_raw_outputs[learn_block_index].matrix = new matrix_t(1, graph_config->output_features_count);
+    result->_raw_outputs[learn_block_index].blockId = block_config->block_id;
+
     for (uint32_t ix = 0; ix < impulse->label_count; ix++) {
-        float value;
-        // Dequantize the output if it is int8
-        value = static_cast<float>(infer_result[ix] - graph_config->output_zeropoint) *
-            graph_config->output_scale;
-
-        if (debug) {
-            ei_printf("%s:\t", impulse->categories[ix]);
-            ei_printf_float(value);
-            ei_printf("\n");
-        }
-        result->classification[ix].label = impulse->categories[ix];
-        result->classification[ix].value = value;
+        result->_raw_outputs[learn_block_index].matrix->buffer[ix] = infer_result[ix];
     }
-
     return EI_IMPULSE_OK;
-
 }
 
 /**
@@ -124,6 +125,7 @@ EI_IMPULSE_ERROR run_nn_inference(
 EI_IMPULSE_ERROR run_nn_inference_image_quantized(
     const ei_impulse_t *impulse,
     signal_t *signal,
+    uint32_t learn_block_index,
     ei_impulse_result_t *result,
     void *config_ptr,
     bool debug = false)
@@ -176,59 +178,18 @@ EI_IMPULSE_ERROR run_nn_inference_image_quantized(
 
     // Inference results returned by post_process() and copied into infer_results
 
-    EI_IMPULSE_ERROR fill_res = EI_IMPULSE_OK;
+    size_t output_size = graph_config->output_features_count;
 
-    if (block_config->object_detection) {
-        switch (block_config->object_detection_last_layer) {
-            case EI_CLASSIFIER_LAST_LAYER_FOMO: {
-                if (block_config->quantized == 1) {
-                    fill_res = fill_result_struct_i8_fomo(
-                        impulse,
-                        block_config,
-                        result,
-                        infer_result,
-                        graph_config->output_zeropoint,
-                        graph_config->output_scale,
-                        impulse->fomo_output_size,
-                        impulse->fomo_output_size);
-                }
-                else {
-                    ei_printf("ERR: TensaiFlow does not support float32 inference\n");
-                    return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-                }
-            break;
-            }
-            default: {
-                ei_printf("ERR: Unsupported object detection last layer (%d)\n",
-                    block_config->object_detection_last_layer);
-                return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-            }
-        }
-    }
-    else {
-        if (block_config->quantized == 1) {
-            fill_res = fill_result_struct_i8(
-                impulse,
-                result,
-                infer_result,
-                graph_config->output_zeropoint,
-                graph_config->output_scale,
-                debug);
-        }
-        else {
-            ei_printf("ERR: TensaiFlow does not support float32 inference\n");
-            return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-        }
-    }
+    result->_raw_outputs[learn_block_index].matrix = new matrix_t(1, output_size);
+    result->_raw_outputs[learn_block_index].blockId = block_config->block_id;
 
-    if (fill_res != EI_IMPULSE_OK) {
-        return fill_res;
+    for (size_t i = 0; i < output_size; i++) {
+        result->_raw_outputs[learn_block_index].matrix->buffer[i] = infer_result[i];
     }
 
     result->timing.classification_us = ei_read_timer_us() - ctx_start_us;
     result->timing.classification = (int)(result->timing.classification_us / 1000);
     return EI_IMPULSE_OK;
-
 }
 
 #endif // #if (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TENSAILFOW)

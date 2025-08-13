@@ -1,18 +1,35 @@
-/*
- * Copyright (c) 2022 EdgeImpulse Inc.
+/* The Clear BSD License
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- * http://www.apache.org/licenses/LICENSE-2.0
+ * Copyright (c) 2025 EdgeImpulse Inc.
+ * All rights reserved.
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an "AS
- * IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language
- * governing permissions and limitations under the License.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted (subject to the limitations in the disclaimer
+ * below) provided that the following conditions are met:
  *
- * SPDX-License-Identifier: Apache-2.0
+ *   * Redistributions of source code must retain the above copyright notice,
+ *   this list of conditions and the following disclaimer.
+ *
+ *   * Redistributions in binary form must reproduce the above copyright
+ *   notice, this list of conditions and the following disclaimer in the
+ *   documentation and/or other materials provided with the distribution.
+ *
+ *   * Neither the name of the copyright holder nor the names of its
+ *   contributors may be used to endorse or promote products derived from this
+ *   software without specific prior written permission.
+ *
+ * NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY
+ * THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+ * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+ * IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef _EDGE_IMPULSE_RUN_CLASSIFIER_TYPES_H_
@@ -21,6 +38,7 @@
 #include <stdint.h>
 // needed for standalone C example
 #include "model-parameters/model_metadata.h"
+#include "edge-impulse-sdk/dsp/numpy_types.h"
 
 #ifndef EI_CLASSIFIER_MAX_OBJECT_DETECTION_COUNT
 #define EI_CLASSIFIER_MAX_OBJECT_DETECTION_COUNT 10
@@ -270,12 +288,21 @@ typedef struct {
      * Timing information for the processing (DSP) and inference blocks.
      */
     ei_impulse_result_timing_t timing;
-
+#ifdef __cplusplus
     /**
-     * Copy the output data to a buffer. If set to false, the output data will be
-     * returned as a pointer to the internal buffer. If set to true, the output data
-     * will be copied to the buffer provided in `ei_impulse_output_t`.
+     * Raw outputs from the neural network. The number of elements in this array is
+     * equal to the number of learning blocks in the model.
+     * INTERNAL
+     * EXPERIMENTAL
      */
+    ei_feature_t* _raw_outputs;
+#else
+    /** padding for C bindings to make sure the struct is the same size
+     * INTERNAL
+     * EXPERIMENTAL
+     */
+    void* _padding;
+#endif
     bool copy_output;
 #if EI_CLASSIFIER_HAS_VISUAL_ANOMALY || __DOXYGEN__
     /**
@@ -297,7 +324,7 @@ typedef struct {
 #endif // EI_CLASSIFIER_HAS_VISUAL_ANOMALY
     ei_post_processing_output_t postprocessed_output;
 
-#if EI_DSP_ENABLE_RUNTIME_HR == 1
+#if EI_CLASSIFIER_HR_ENABLED == 1
     ei_impulse_result_hr_t hr_calcs;
 #endif
 } ei_impulse_result_t;

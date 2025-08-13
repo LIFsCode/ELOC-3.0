@@ -477,8 +477,13 @@ int save_inference_result_SD(String results_string) {
 void ei_callback_func() {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
+    // Get inference configuration at function start
+    auto inferenceConfig = getInferenceConfig();
+    float threshold = inferenceConfig.threshold / 100.0f; // Convert from 0-100 to 0.0-1.0
+
     if (ai_run_enable == true &&
         edgeImpulse.get_status() == EdgeImpulse::Status::running) {
+        
         ESP_LOGV(TAG, "Running inference");
         bool m = edgeImpulse.microphone_inference_record();
         // Blocking function - unblocks when buffer is full
@@ -540,37 +545,56 @@ void ei_callback_func() {
                     file_str += result.classification[ix].value;
 
                     /**
-                     * If target sound detected, save result to SD card
+                     * If target sound detected, check against new inference configuration
                      * Note: 'Target' sound is any sound that is not classified as 'background', 'other' or 'others'
                      */
+                    
                     if ((strcmp(result.classification[ix].label, "background") != 0) &&
                         (strcmp(result.classification[ix].label, "other") != 0) &&
                         (strcmp(result.classification[ix].label, "others") != 0) &&
-                        result.classification[ix].value > AI_RESULT_THRESHOLD) {
-                        ESP_LOGI(TAG, "Target sound detected: %s", result.classification[ix].label);
+                        result.classification[ix].value > threshold) {
+                        
+                        ESP_LOGI(TAG, "Detection above threshold: %s (%.3f > %.3f)", 
+                                result.classification[ix].label, result.classification[ix].value, threshold);
+                        
+                        // Always save detections above threshold to CSV and start recording (immediate actions)
                         detectedEvents[numEventsDetected] = result.classification[ix];
                         numEventsDetected++;
-                        edgeImpulse.increment_detectedEvents();
-                        target_sound_detected = true;
-                        // Start recording??
+                        
+                        // Start recording immediately for every detection
                         if (wav_writer.wav_recording_in_progress == false &&
                             wav_writer.get_mode() == WAVFileWriter::Mode::single &&
                             sd_card.checkSDCard() == ESP_OK) {
                             start_sound_recording();
                         }
+                        
+                        // Add detection to window and check if criteria are met for additional actions
+                        uint32_t currentTime = timeObject.getEpoch();
+                        edgeImpulse.addDetectionToWindow(currentTime);
+                        
+                        if (edgeImpulse.checkDetectionCriteria(currentTime)) {
+                            ESP_LOGI(TAG, "Detection criteria met - triggering additional actions");
+                            edgeImpulse.increment_detectedEvents();
+                            target_sound_detected = true;
+                            
+                            // Clear detection window after successful detection
+                            edgeImpulse.clearDetectionWindow();
+                        }
                     }
                 }
-                if (target_sound_detected) {
+                
+                // Always update event info for LoRa messaging if any detections occurred
+                if (numEventsDetected > 0) {
                     edgeImpulse.updateEventInfo(detectedEvents, numEventsDetected);
                 }
 
                 // ESP_LOGI(TAG, "detectedEvents = %d", edgeImpulse.get_detectedEvents());
 
                 file_str += "\n";
-                // Only save results & wav file if classification value exceeds a threshold
+                // Save results to CSV if any detection above threshold occurred (not just LoRa criteria)
                 if (save_ai_results_to_sd == true &&
                     sd_card.checkSDCard() == ESP_OK &&
-                    target_sound_detected == true) {
+                    numEventsDetected > 0) {
                     save_inference_result_SD(file_str);
                 }
 

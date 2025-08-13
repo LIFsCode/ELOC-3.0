@@ -9,6 +9,7 @@
 #include "EdgeImpulse.hpp"
 #include "Chain_ELOC_inferencing.h"
 #include "ESP32Time.h"
+#include "ElocConfig.hpp"
 
 /**
  * @note Ideally recording time would be retrieved with esp_timer_get_time()
@@ -249,4 +250,57 @@ void EdgeImpulse::updateEventInfo(const ei_impulse_result_classification_t* resu
         lastEventInfo.label[i] = String(results[i].label);
         lastEventInfo.classifierValue[i] = results[i].value;
     }
+}
+
+void EdgeImpulse::addDetectionToWindow(uint32_t timestamp) {
+    ESP_LOGV(TAG, "Func: %s", __func__);
+    
+    // Add detection to circular buffer
+    detectionWindow.detectionTimes[detectionWindow.writeIndex] = timestamp;
+    detectionWindow.writeIndex = (detectionWindow.writeIndex + 1) % 128;
+    
+    // Update count (max 128)
+    if (detectionWindow.count < 128) {
+        detectionWindow.count++;
+    }
+    
+    ESP_LOGV(TAG, "Added detection at time %u, count now %d", timestamp, detectionWindow.count);
+}
+
+bool EdgeImpulse::checkDetectionCriteria(uint32_t currentTime) {
+    ESP_LOGV(TAG, "Func: %s", __func__);
+    
+    // Get inference configuration
+    extern const inferenceConfig_t& getInferenceConfig();
+    const inferenceConfig_t& config = getInferenceConfig();
+    
+    // Legacy mode: observationWindowS = 0 means immediate action
+    if (config.observationWindowS == 0) {
+        ESP_LOGV(TAG, "Legacy mode: immediate action");
+        return true;
+    }
+    
+    // Count valid detections within the observation window
+    uint32_t validDetections = 0;
+    uint32_t windowStart = currentTime - config.observationWindowS;
+    
+    for (int i = 0; i < detectionWindow.count; i++) {
+        uint32_t detectionTime = detectionWindow.detectionTimes[i];
+        if (detectionTime >= windowStart && detectionTime <= currentTime) {
+            validDetections++;
+        }
+    }
+    
+    ESP_LOGV(TAG, "Valid detections in window: %u, required: %u", validDetections, config.requiredDetections);
+    
+    return validDetections >= config.requiredDetections;
+}
+
+void EdgeImpulse::clearDetectionWindow() {
+    ESP_LOGV(TAG, "Func: %s", __func__);
+    
+    detectionWindow.writeIndex = 0;
+    detectionWindow.count = 0;
+    
+    ESP_LOGV(TAG, "Detection window cleared");
 }

@@ -139,6 +139,11 @@ static const elocConfig_T C_ElocConfig_Default {
         .upLinkIntervalS = 3600,
         .loraRegion = "EU868",
     },
+    .inferenceConfig = {
+        .threshold = 85,           // Default to 85 (0.85 confidence)
+        .observationWindowS = 10,   // Default to legacy immediate mode
+        .requiredDetections = 5,   // Default to single detection
+    },
 };
 elocConfig_T gElocConfig = C_ElocConfig_Default;
 const elocConfig_T& getConfig() {
@@ -154,6 +159,10 @@ static const elocDeviceInfo_T C_ElocDeviceInfo_Default {
 elocDeviceInfo_T gElocDeviceInfo = C_ElocDeviceInfo_Default;
 const elocDeviceInfo_T& getDeviceInfo() {
     return gElocDeviceInfo;
+}
+
+const inferenceConfig_t& getInferenceConfig() {
+    return gElocConfig.inferenceConfig;
 }
 
 /**************************************************************************************************/
@@ -195,6 +204,10 @@ void loadConfig(const JsonObject& config) {
     gElocConfig.loraConfig.loraEnable          = config["lorawan"]["loraEnable"]       | C_ElocConfig_Default.loraConfig.loraEnable;
     gElocConfig.loraConfig.upLinkIntervalS     = config["lorawan"]["upLinkIntervalS"]  | C_ElocConfig_Default.loraConfig.upLinkIntervalS;
     gElocConfig.loraConfig.loraRegion          = config["lorawan"]["loraRegion"]       | C_ElocConfig_Default.loraConfig.loraRegion;
+    /** inference config*/
+    gElocConfig.inferenceConfig.threshold           = config["inference"]["threshold"]           | C_ElocConfig_Default.inferenceConfig.threshold;
+    gElocConfig.inferenceConfig.observationWindowS = config["inference"]["observationWindowS"] | C_ElocConfig_Default.inferenceConfig.observationWindowS;
+    gElocConfig.inferenceConfig.requiredDetections = config["inference"]["requiredDetections"] | C_ElocConfig_Default.inferenceConfig.requiredDetections;
 }
 
 MicChannel_t ParseMicChannel(const char* str, MicChannel_t default_value) {
@@ -326,6 +339,9 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     config["lorawan"]["loraEnable"]       = ElocConfig.loraConfig.loraEnable;
     config["lorawan"]["upLinkIntervalS"]  = ElocConfig.loraConfig.upLinkIntervalS;
     config["lorawan"]["loraRegion"]       = ElocConfig.loraConfig.loraRegion;
+    config["inference"]["threshold"]           = ElocConfig.inferenceConfig.threshold;
+    config["inference"]["observationWindowS"] = ElocConfig.inferenceConfig.observationWindowS;
+    config["inference"]["requiredDetections"] = ElocConfig.inferenceConfig.requiredDetections;
 
 
     JsonObject micInfo = doc.createNestedObject("mic");

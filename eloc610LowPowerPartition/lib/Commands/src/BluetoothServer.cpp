@@ -39,7 +39,7 @@
 #include "ESP32Time.h"
 
 #include "../../../include/project_config.h"
-#include "config.h"
+#include "../../ElocHardware/src/config.h"
 #include "lis3dh.h"
 #include "strutils.h"
 #include "CmdAdvCallback.hpp"

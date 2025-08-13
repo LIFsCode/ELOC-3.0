@@ -36,7 +36,7 @@
 #include "ElocConfig.hpp"
 #include "ElocStatus.hpp"
 #include "Battery.hpp"
-#include "config.h"
+#include "../../ElocHardware/src/config.h"
 #include "macros.hpp"
 #include "logging.hpp"
 #include "ffsutils.h"

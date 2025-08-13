@@ -73,6 +73,12 @@ typedef struct {
     String loraRegion;        // Lora Region, e.g. EU868
 }loraConfig_T;
 
+typedef struct {
+    uint32_t threshold;           // AI confidence threshold (0-100, e.g. 83 = 0.83)
+    uint32_t observationWindowS;  // observation window in seconds (0 = legacy immediate mode)
+    uint32_t requiredDetections;  // number of detections required within window
+}inferenceConfig_t;
+
 /// @brief holds all the device specific configuration settings
 typedef struct {
     int  secondsPerFile;
@@ -88,6 +94,7 @@ typedef struct {
     intruderConfig_t IntruderConfig;
     batteryConfig_t batteryConfig;
     loraConfig_T loraConfig;
+    inferenceConfig_t inferenceConfig;
 }elocConfig_T;
 
 const elocConfig_T& getConfig();
@@ -102,6 +109,8 @@ typedef struct {
 const elocDeviceInfo_T& getDeviceInfo();
 
 const loraConfig_T& getLoraConfig();
+
+const inferenceConfig_t& getInferenceConfig();
 
 /**
  * @brief Load configuration (.config)

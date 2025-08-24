@@ -349,7 +349,17 @@ esp_err_t BluetoothServerSetup(bool installGpioIsr) {
     gpio_set_intr_type(LIS3DH_INT_PIN, GPIO_INTR_POSEDGE);
 
     if (installGpioIsr) {
-        ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
+        // Install GPIO ISR service only if not already installed
+        // Handle the case where another component (like LoRaWAN) may have already installed it
+        esp_err_t gpio_isr_err = gpio_install_isr_service(GPIO_INTR_PRIO);
+        if (gpio_isr_err == ESP_OK) {
+            ESP_LOGI(TAG, "GPIO ISR service installed successfully");
+        } else if (gpio_isr_err == ESP_ERR_INVALID_STATE) {
+            ESP_LOGI(TAG, "GPIO ISR service already installed, skipping");
+        } else {
+            ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(gpio_isr_err));
+            ESP_ERROR_CHECK(gpio_isr_err); // This will cause abort if it's a different error
+        }
     }
     ESP_ERROR_CHECK(gpio_isr_handler_add(LIS3DH_INT_PIN, int_signal_handler, (void *)LIS3DH_INT_PIN));
 

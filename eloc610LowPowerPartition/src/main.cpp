@@ -714,10 +714,18 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "Setup LoraWAN");
     ElocLora::GetInstance();
-    // do not install GPIO ISR. This is already done wiithin Eloc Lora Setup 
-    // TODO: this must be correctly handled for non LORA setups
-    if (!getConfig().loraConfig.loraEnable) {
-        ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
+    
+    // Install GPIO ISR service only if not already installed
+    // The GPIO ISR service is needed for BluetoothServer (LIS3DH interrupt) and button handling
+    // LoRaWAN (RadioLib) may have already installed it, so we need to handle the error gracefully
+    esp_err_t gpio_isr_err = gpio_install_isr_service(GPIO_INTR_PRIO);
+    if (gpio_isr_err == ESP_OK) {
+        ESP_LOGI(TAG, "GPIO ISR service installed successfully");
+    } else if (gpio_isr_err == ESP_ERR_INVALID_STATE) {
+        ESP_LOGI(TAG, "GPIO ISR service already installed, skipping");
+    } else {
+        ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(gpio_isr_err));
+        ESP_ERROR_CHECK(gpio_isr_err); // This will cause abort if it's a different error
     }
 
     ESP_LOGI(TAG, "Creating Bluetooth  task...");

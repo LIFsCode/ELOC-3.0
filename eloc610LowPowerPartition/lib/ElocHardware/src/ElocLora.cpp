@@ -50,6 +50,9 @@ const char* TAG = "LoraWAN";
 
 static const uint32_t C_MIN_UPLINK_INTERVAL_S = 10;
 
+// RTC memory storage for session persistence across deep sleep
+RTC_DATA_ATTR rtc_lorawan_session_t rtc_session = {0};
+
 #include "RadioLib.h"
 #include "../../../include/project_config.h"
 
@@ -367,15 +370,35 @@ esp_err_t ElocLora::init() {
     return ESP_ERR_NOT_FINISHED;
   }
 
+  // CRITICAL: Load nonces from NVS IMMEDIATELY after beginOTAA()
+  // This ensures DevNonce continues from last used value
+  ESP_LOGI(TAG, "Loading nonces from NVS");
+  loadNoncesFromNVS();
+
+  // Attempt to restore session from RTC memory (for faster wake-up)
+  ESP_LOGI(TAG, "Attempting session restoration from RTC");
+  bool sessionRestored = loadSessionFromRTC();
+
   ESP_LOGI(TAG, "Join ('login') the LoRaWAN Network");
   state = node.activateOTAA();
-  if (state != RADIOLIB_LORAWAN_NEW_SESSION) {
-    this->errMsg(F("Join failed"), state);
+  
+  // Handle different activation states
+  if (state == RADIOLIB_LORAWAN_SESSION_RESTORED) {
+    ESP_LOGI(TAG, "Session successfully restored from RTC memory");
+    mInitDone = true;
+  } else if (state == RADIOLIB_LORAWAN_NEW_SESSION) {
+    ESP_LOGI(TAG, "New OTAA session established");
+    // CRITICAL: Set mInitDone BEFORE saving session
+    // (saveSessionToRTC checks mInitDone)
+    mInitDone = true;
+    // Save the new session and nonces after successful join
+    saveSessionToRTC();
+  } else {
+    this->errMsg(F("Join/Restore failed"), state);
     return ESP_ERR_NOT_FINISHED;
   }
 
   ESP_LOGI(TAG, "Ready!\n");
-  mInitDone = true;
   return ESP_OK;
 }
 
@@ -533,5 +556,10 @@ esp_err_t ElocLora::parseResponse(int16_t state) {
     } else {
         ESP_LOGI(TAG, "No downlink received");
     }
+    
+    // Save session and nonces after successful uplink
+    // This ensures session state is preserved for next wake-up
+    saveSessionToRTC();
+    
     return ESP_OK;
 }

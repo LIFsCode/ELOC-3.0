@@ -138,7 +138,11 @@ bool ElocLora::loadNoncesFromNVS() {
     nvs_handle_t nvs_handle;
     esp_err_t err = nvs_open("lorawan", NVS_READONLY, &nvs_handle);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to open NVS for reading: %s", esp_err_to_name(err));
+        if (err == ESP_ERR_NVS_NOT_FOUND) {
+            ESP_LOGI(TAG, "No NVS partition found - first boot, will use default nonces");
+        } else {
+            ESP_LOGW(TAG, "Failed to open NVS for reading: %s", esp_err_to_name(err));
+        }
         return false;
     }
     
@@ -147,8 +151,18 @@ bool ElocLora::loadNoncesFromNVS() {
     err = nvs_get_blob(nvs_handle, "nonces", noncesBuffer, &required_size);
     nvs_close(nvs_handle);
     
-    if (err != ESP_OK || required_size != RADIOLIB_LORAWAN_NONCES_BUF_SIZE) {
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGI(TAG, "No nonces saved in NVS - first boot, will start fresh");
+        return false;
+    }
+    
+    if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to load nonces from NVS: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    if (required_size != RADIOLIB_LORAWAN_NONCES_BUF_SIZE) {
+        ESP_LOGW(TAG, "Invalid nonces size in NVS: %d bytes (expected %d)", required_size, RADIOLIB_LORAWAN_NONCES_BUF_SIZE);
         return false;
     }
     

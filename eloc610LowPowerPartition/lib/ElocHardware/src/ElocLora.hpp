@@ -37,6 +37,20 @@
 // the version must be increasd. If only additinal bytes are added this is not mandatory
 #define LORA_MSG_VERS 0
 
+// LoRaWAN session persistence constants
+#define LORAWAN_SESSION_MAGIC 0x4C4F5241  // "LORA" in ASCII
+#define RADIOLIB_LORAWAN_SESSION_BUF_SIZE 512
+#define RADIOLIB_LORAWAN_NONCES_BUF_SIZE 56
+
+// Structure for RTC memory session persistence
+typedef struct {
+    uint32_t magic;
+    uint32_t crc32;
+    uint16_t sessionSize;
+    uint8_t sessionData[RADIOLIB_LORAWAN_SESSION_BUF_SIZE];
+    uint8_t noncesData[RADIOLIB_LORAWAN_NONCES_BUF_SIZE];
+} rtc_lorawan_session_t;
+
 class ElocLora
 {
 private:
@@ -97,6 +111,14 @@ private:
     esp_err_t sendStatusUpdateMessage();
     esp_err_t sendEventMessage();
     esp_err_t parseResponse(int16_t state);
+
+    // Session persistence functions
+    uint32_t calculateCRC32(const uint8_t* data, size_t length);
+    bool isValidSession();
+    bool saveSessionToRTC();
+    bool loadSessionFromRTC();
+    bool saveNoncesToNVS();
+    bool loadNoncesFromNVS();
 
 public:
     virtual ~ElocLora();

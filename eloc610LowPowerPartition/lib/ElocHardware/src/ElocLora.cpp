@@ -41,6 +41,7 @@
 #include "WAVFileWriter.h"
 #include "config.h"
 #include "strutils.h"
+#include "EasyBuzzer.h"
 
 #ifdef EDGE_IMPULSE_ENABLED
 #include "EdgeImpulse.hpp"
@@ -386,6 +387,8 @@ esp_err_t ElocLora::init() {
   if (state == RADIOLIB_LORAWAN_SESSION_RESTORED) {
     ESP_LOGI(TAG, "Session successfully restored from RTC memory");
     mInitDone = true;
+    // Play success audio feedback
+    playJoinFeedback(true);
   } else if (state == RADIOLIB_LORAWAN_NEW_SESSION) {
     ESP_LOGI(TAG, "New OTAA session established");
     // CRITICAL: Set mInitDone BEFORE saving session
@@ -393,8 +396,12 @@ esp_err_t ElocLora::init() {
     mInitDone = true;
     // Save the new session and nonces after successful join
     saveSessionToRTC();
+    // Play success audio feedback
+    playJoinFeedback(true);
   } else {
     this->errMsg(F("Join/Restore failed"), state);
+    // Play failure audio feedback
+    playJoinFeedback(false);
     return ESP_ERR_NOT_FINISHED;
   }
 
@@ -519,6 +526,31 @@ esp_err_t ElocLora::sendEventMessage() {
 #else
     return ESP_OK;
 #endif
+}
+
+void ElocLora::playJoinFeedback(bool success) {
+    if (success) {
+        // Success: 3 quick ascending beeps (sounds positive)
+        // Frequencies: 523 Hz (C5), 659 Hz (E5), 784 Hz (G5)
+        ESP_LOGI(TAG, "Playing LoRa join SUCCESS audio feedback");
+        EasyBuzzer.singleBeep(523, 100);  // C5 - 100ms
+        vTaskDelay(pdMS_TO_TICKS(150));
+        EasyBuzzer.singleBeep(659, 100);  // E5 - 100ms
+        vTaskDelay(pdMS_TO_TICKS(150));
+        EasyBuzzer.singleBeep(784, 100);  // G5 - 100ms
+        vTaskDelay(pdMS_TO_TICKS(150));   // Wait for last beep to complete
+    } else {
+        // Failure: 2 descending low beeps (sounds negative)
+        // Frequencies: 400 Hz, 300 Hz
+        ESP_LOGI(TAG, "Playing LoRa join FAILURE audio feedback");
+        EasyBuzzer.singleBeep(400, 200);  // 200ms
+        vTaskDelay(pdMS_TO_TICKS(250));
+        EasyBuzzer.singleBeep(300, 200);  // 200ms
+        vTaskDelay(pdMS_TO_TICKS(250));   // Wait for last beep to complete
+    }
+    // Explicitly stop the buzzer - EasyBuzzer is non-blocking and requires
+    // update() to be called to auto-stop, which may not happen immediately
+    EasyBuzzer.stopBeep();
 }
 
 esp_err_t ElocLora::parseResponse(int16_t state) {

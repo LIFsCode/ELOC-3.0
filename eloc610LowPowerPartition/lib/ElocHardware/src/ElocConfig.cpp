@@ -137,7 +137,7 @@ static const elocConfig_T C_ElocConfig_Default {
     .loraConfig = {
         .loraEnable = true,
         .upLinkIntervalS = 3600,
-        .loraRegion = "EU868",
+        .loraRegion = "AS923_2",
     },
     .inferenceConfig = {
         .threshold = 85,           // Default to 85 (0.85 confidence)

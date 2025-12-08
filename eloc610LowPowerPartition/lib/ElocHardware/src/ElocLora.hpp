@@ -81,8 +81,8 @@ private:
 
     //TODO: Retrieve Region from Config
     // regional choices: EU868, US915, AU915, AS923, AS923_2, AS923_3, AS923_4, IN865, KR920, CN500
-    LoRaWANBand_t Region = EU868;
-    uint8_t subBand = 0;  // For US915, change this to 2, otherwise leave on 0
+    LoRaWANBand_t Region = AS923_2;
+    uint8_t subBand = 0;  // For US915 and AU915, change this to 2, otherwise leave on 0
 
     //TODO: does it make sense to set fport via config?
     uint8_t mFPort = 1;
@@ -111,6 +111,9 @@ private:
     esp_err_t sendStatusUpdateMessage();
     esp_err_t sendEventMessage();
     esp_err_t parseResponse(int16_t state);
+
+    // Audio feedback for join events
+    void playJoinFeedback(bool success);
 
     // Session persistence functions
     uint32_t calculateCRC32(const uint8_t* data, size_t length);

@@ -96,7 +96,11 @@ private:
 
     // This MUST fit the loraWAN application setting
     // if not this may cause buffer overruns & memory violations.
-    static const size_t C_DOWNLINK_PAYLOAD = 10; 
+    static const size_t C_DOWNLINK_PAYLOAD = 10;
+
+    // Conservative auto-rejoin on explicit NOT_JOINED errors
+    static constexpr int64_t C_REJOIN_MIN_INTERVAL_S = 10 * 60; // 10 minutes
+    int64_t mLastRejoinAttemptS = -C_REJOIN_MIN_INTERVAL_S;
 
     void printDecodedPayload(const uint8_t* payload, size_t  payloadSize);
 
@@ -111,6 +115,13 @@ private:
     esp_err_t sendStatusUpdateMessage();
     esp_err_t sendEventMessage();
     esp_err_t parseResponse(int16_t state);
+
+    // Conservative recovery helpers
+    bool attemptRejoin(const char* reason);
+    bool shouldAttemptRejoin() const;
+    int16_t sendReceiveWithRecovery(const uint8_t* uplinkPayload,
+                                    size_t uplinkSize,
+                                    LoRaWANEvent_t* uplinkDetails);
 
     // Audio feedback for join events
     void playJoinFeedback(bool success);

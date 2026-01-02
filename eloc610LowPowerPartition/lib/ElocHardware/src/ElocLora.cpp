@@ -409,6 +409,14 @@ esp_err_t ElocLora::init() {
     return ESP_ERR_NOT_FINISHED;
   }
 
+  // Disable dwell time limits for AS923 regions to allow higher spreading factors (SF10-SF12)
+  // This enables longer range communication but may not be compliant in all jurisdictions
+  const String& cfgRegion = getConfig().loraConfig.loraRegion;
+  if (cfgRegion.startsWith("AS923")) {
+    ESP_LOGI(TAG, "Disabling dwell time limits for %s region (allows SF10-SF12)", cfgRegion.c_str());
+    node.setDwellTime(false);
+  }
+
   ESP_LOGI(TAG, "Ready!\n");
   return ESP_OK;
 }

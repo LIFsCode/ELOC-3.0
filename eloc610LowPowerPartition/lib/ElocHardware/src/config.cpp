@@ -12,15 +12,37 @@ i2s_config_t i2s_mic_Config = {
         .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT,
     #endif
 
-    .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+    #ifdef I2S_PUI_DMM_4026_B_I2S_R
+        // DMM-4026-B-I2S-R requires specific communication format for 32-bit word size
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+    #else
+        // Standard I2S format for other microphones
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+    #endif
+
     .intr_alloc_flags = I2S_INTR_PIRO,
     .dma_buf_count = I2S_DMA_BUFFER_COUNT,  //  so 2000 sample  buffer at 16khz sr gives us 125ms to do our writing
     .dma_buf_len = I2S_DMA_BUFFER_LEN,      //  8 buffers gives us half  second
-    .use_apll = true,                       //  the only thing that works with LowPower/APLL is 16khz 12khz??
+    
+    #ifdef I2S_PUI_DMM_4026_B_I2S_R
+        // DMM-4026-B-I2S-R has specific clock requirements
+        // BCLK range: 3.072-12.288 MHz, Input clock: 2.048-4.096 MHz
+        .use_apll = true,                   // Use APLL for better clock precision
+    #else
+        // Standard settings for ICS-43434 and other mics
+        .use_apll = true,                   //  the only thing that works with LowPower/APLL is 16khz 12khz??
+    #endif
+    
     .tx_desc_auto_clear = false,
     .fixed_mclk = 0,
-    .mclk_multiple =I2S_MCLK_MULTIPLE_DEFAULT,   // I2S_MCLK_MULTIPLE_DEFAULT= 0,       /*!< Default value. mclk = sample_rate * 256 */
-    .bits_per_chan=I2S_BITS_PER_CHAN_DEFAULT
+    
+    #ifdef I2S_PUI_DMM_4026_B_I2S_R
+        .mclk_multiple = I2S_MCLK_MULTIPLE_256,  // 256x sample rate for proper BCLK generation
+    #else
+        .mclk_multiple = I2S_MCLK_MULTIPLE_DEFAULT,   // I2S_MCLK_MULTIPLE_DEFAULT= 0,       /*!< Default value. mclk = sample_rate * 256 */
+    #endif
+    
+    .bits_per_chan = I2S_BITS_PER_CHAN_DEFAULT
     };
 
 // i2s microphone pins

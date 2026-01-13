@@ -13,10 +13,14 @@ i2s_config_t i2s_mic_Config = {
     #endif
 
     #ifdef I2S_PUI_DMM_4026_B_I2S_R
-        // DMM-4026-B-I2S-R requires specific communication format for 32-bit word size
-        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        // DMM-4026-B-I2S-R uses MSB-aligned (Left-justified) format
+        // According to the timing diagram, data appears immediately after WCLK setup
+        // (same BCLK edge), NOT one BCLK cycle later as in Philips I2S standard.
+        // TSWCLK (setup time) -> BCLK falls -> TDV (18ns) -> data valid
+        // This timing corresponds to I2S_COMM_FORMAT_STAND_MSB, not I2S_COMM_FORMAT_STAND_I2S
+        .communication_format = I2S_COMM_FORMAT_STAND_MSB,
     #else
-        // Standard I2S format for other microphones
+        // Standard I2S Philips format for ICS-43434 and other microphones
         .communication_format = I2S_COMM_FORMAT_STAND_I2S,
     #endif
 

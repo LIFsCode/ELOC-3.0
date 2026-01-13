@@ -38,8 +38,8 @@
         #define I2S_MIC_SERIAL_DATA         GPIO_NUM_19
 
         // I2S Mic type - Select one of the following:
-        //#define I2S_TDK_INVENSENSE_ICS_43434
-         #define I2S_PUI_DMM_4026_B_I2S_R
+        #define I2S_TDK_INVENSENSE_ICS_43434
+        //#define I2S_PUI_DMM_4026_B_I2S_R
 
         // sdcard (unused, as SDIO is fixed to its Pins)
         #define PIN_NUM_MISO    GPIO_NUM_2

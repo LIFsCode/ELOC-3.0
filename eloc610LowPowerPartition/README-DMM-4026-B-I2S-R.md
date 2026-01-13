@@ -12,6 +12,7 @@ The DMM-4026-B-I2S-R microphone has different timing and data format requirement
 |---------|-----------|-------------------|
 | Data Format | 24-bit full precision | 24-bit with 18-bit precision (6 null bits) |
 | Word Size | 24-bit | 32-bit word size required |
+| **I2S Format** | **Standard I2S (Philips)** | **MSB-aligned (Left-justified)** |
 | BCLK Range | Calculated from sample rate | 3.072-12.288 MHz |
 | Input Clock | Calculated | 2.048-4.096 MHz |
 | Sensitivity | -26 dB FS ±1 dB | -26 dB FS ±1 dB |
@@ -143,6 +144,29 @@ filtered_sample = sample - dc_filter_state;
 - **Sample Rates**: Should work within the 8-48 kHz range for DMM-4026-B-I2S-R
 
 ## Troubleshooting
+
+### I2S Timing and Communication Format
+
+**IMPORTANT**: The DMM-4026-B-I2S-R uses a different I2S communication format than the ICS-43434.
+
+Based on the timing diagram in the datasheet:
+- **TSWCLK** (Setup time): min 20 nS - WCLK must be stable before BCLK falling edge
+- **TDV** (Data Valid): max 18 nS - Data becomes valid after BCLK falling edge
+- **THWCLK** (Hold time): 32 (1/BCLK) for two mic mode
+
+The key observation is that in the DMM-4026-B-I2S-R timing diagram for "Two microphone Mode":
+- WCLK transitions → BCLK falls → Data appears immediately (within TDV)
+
+This corresponds to **MSB-aligned (Left-justified) format**, NOT standard I2S Philips format.
+
+| Format | WS Transition | First Data Bit |
+|--------|---------------|----------------|
+| **Standard I2S (Philips)** | BCLK edge [N] | BCLK edge [N+1] (one cycle later) |
+| **MSB-aligned (Left-justified)** | BCLK edge [N] | BCLK edge [N] (same cycle) |
+
+**The fix**: Changed from `I2S_COMM_FORMAT_STAND_I2S` to `I2S_COMM_FORMAT_STAND_MSB` for the DMM-4026-B-I2S-R microphone in `lib/ElocHardware/src/config.cpp`.
+
+**Symptoms of wrong format**: Using standard I2S format with the DMM-4026-B-I2S-R causes noise spikes at sample boundaries because each sample is off by one bit position.
 
 ### Common Issues
 

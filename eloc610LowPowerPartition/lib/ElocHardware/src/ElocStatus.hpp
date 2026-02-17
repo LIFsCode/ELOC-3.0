@@ -45,6 +45,7 @@ extern int64_t gTotalUPTimeSinceReboot;  //esp_timer_get_time returns 64-bit tim
 extern int64_t gTotalRecordTimeSinceReboot;
 extern int64_t gSessionRecordTime;
 extern String gSessionIdentifier;
+extern String gFirmwareVersion;
 
 /* Deferred AI start mechanism:
  * When AI mode is enabled via BT command, the actual AI thread start is deferred
@@ -56,5 +57,47 @@ extern int64_t g_ai_deferred_start_time;
 
 /// @brief Delay in microseconds before actually starting the AI thread after setRecordMode
 #define AI_DEFERRED_START_DELAY_US  3000000LL  // 3 seconds
+
+/*******************************************************************************
+ * Duty-Cycle Deep Sleep State Machine
+ ******************************************************************************/
+
+/// @brief Magic number to validate RTC duty cycle state (0xE10CDC1E = "ELOC DC IE")
+#define DUTY_CYCLE_RTC_MAGIC 0xE10CDC1E
+
+/// @brief Sleep cycle state machine states
+typedef enum {
+    SLEEP_CYCLE_DISABLED = 0,       // Normal operation (duty cycle off)
+    SLEEP_CYCLE_INFERENCE_ACTIVE,   // Awake, running AI inference
+    SLEEP_CYCLE_PREPARING,          // Shutting down for sleep
+    SLEEP_CYCLE_ENTERING_SLEEP      // About to enter deep sleep
+} SleepCycleState_t;
+
+/// @brief RTC-persistent state that survives deep sleep
+///        Contains both duty cycle counters and LoRa event cooldown state
+typedef struct {
+    uint32_t magic;                  // Validation: DUTY_CYCLE_RTC_MAGIC
+    uint32_t bootCount;              // Wake-up counter
+    uint32_t totalDetections;        // Running detection count across cycles
+    int64_t  lastEventLoraTimeS;     // Cooldown: when last event LoRa sent (epoch seconds)
+    int64_t  lastDetectionTimeS;     // Cooldown: when last detection occurred (epoch seconds)
+    uint8_t  eventState;             // EVENT_IDLE(0) or EVENT_ACTIVE(1)
+    uint32_t detectionsSinceLastMsg; // Aggregation counter for ongoing msgs
+    int64_t  eventStartTimeS;        // When current event session started (epoch seconds)
+    char     sessionId[80];          // Session folder name, persisted across sleep cycles
+} rtc_duty_cycle_t;
+
+/// @brief Global sleep cycle state (non-persistent, reset each boot)
+extern SleepCycleState_t gSleepCycleState;
+
+/// @brief Timestamp (microseconds, esp_timer_get_time) when duty cycle was activated
+///        Used to measure awake duration from activation, not from boot
+extern int64_t gDutyCycleActivationTimeUS;
+
+/// @brief Whether this boot was a timer wake from duty cycle deep sleep
+extern bool gIsTimerWake;
+
+/// @brief RTC-persistent duty cycle state (survives deep sleep)
+extern rtc_duty_cycle_t rtc_duty_cycle;
 
 #endif // ELOCSTATUS_HPP_

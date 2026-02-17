@@ -24,7 +24,7 @@ ELOC provides an automated, low-cost acoustic monitoring solution that can be de
 
 1. **Pre-deployment:** Technician configures the ELOC via the Android **ELOC Control Panel** app over Bluetooth — sets device name, location code, microphone settings, recording mode, AI model parameters, and LoRa settings.
 
-2. **Deployment:** Device is mounted at the monitoring site (typically strapped to a tree). Recording begins automatically or is started via the app. The device enters low-power mode.
+2. **Deployment:** Device is mounted at the monitoring site (typically strapped to a tree). Recording is started via the app. The device enters low-power mode.
 
 3. **Active Monitoring:** The device continuously records audio to SD card as WAV files. If AI inference is enabled, it simultaneously analyzes audio for target sounds. On detection, it:
    - Logs the event to a CSV file on SD card
@@ -39,9 +39,9 @@ ELOC provides an automated, low-cost acoustic monitoring solution that can be de
 
 | Mode | Audio Recording | AI Inference | Power Usage | Use Case |
 |------|----------------|-------------|-------------|----------|
-| Continuous Recording | ✅ Always | Optional | Higher | Full acoustic survey |
-| AI-Triggered (Single) | On detection only | ✅ Always | Medium | Event-focused monitoring |
-| AI Only (No Recording) | ❌ | ✅ Always | Lower | Detection counting / alerting |
+| Continuous Recording | ✅ Always | Optional | Medium | Full acoustic survey |
+| AI-Triggered (Single) | On detection only | ✅ Always | High | Event-focused monitoring |
+| AI Only (No Recording) | ❌ | ✅ Always | High | Detection counting / alerting |
 | Disabled | ❌ | ❌ | Minimal | Transit / storage |
 
 ## User Experience Goals

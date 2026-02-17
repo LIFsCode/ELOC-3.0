@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**ELOC** (Electronic Listening and Observation Console) is an open-source, ESP32-based wildlife acoustic monitoring device developed for the **International Elephant Project** in partnership with **Wildlife Conservation International (WCI)**. The firmware runs on the ELOC 3.0 hardware platform and is designed for long-duration, low-power field deployment to continuously record environmental audio and optionally perform on-device AI inference to detect target animal sounds (e.g., elephant vocalizations).
+**ELOC**  is an open-source, ESP32-based wildlife acoustic monitoring device developed for the **International Elephant Project** in partnership with **Wildlife Conservation International (WCI)**. The firmware runs on the ELOC 3.0 hardware platform and is designed for long-duration, low-power field deployment to continuously record environmental audio and optionally perform on-device AI inference to detect target animal sounds (e.g., elephant vocalizations).
 
 **Repository:** [https://github.com/LIFsCode/ELOC-3.0](https://github.com/LIFsCode/ELOC-3.0)  
 **License:** MIT  

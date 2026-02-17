@@ -39,6 +39,7 @@ class ESP32Time {
         void setTime(int sc, int mn, int hr, int dy, int mt, int yr, int ms = 0);
         void setTime(const char* timeStr, const char* format);
         void initBuildTime(uint64_t epochBuildDate, int32_t tz_offset);
+        void setBuildTimeOnly(uint64_t epochBuildDate);
         tm getTimeStruct();
         String getTime(String format);
 

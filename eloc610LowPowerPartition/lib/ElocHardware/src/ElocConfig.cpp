@@ -37,7 +37,7 @@
 #include "SDCardSDIO.h"
 
 static const char* TAG = "CONFIG";
-static const uint32_t JSON_DOC_SIZE = 1024;
+static const uint32_t JSON_DOC_SIZE = 3072;
 static const char* CFG_FILE = "/spiffs/eloc.config";
 static const char* CFG_FILE_SD = "/sdcard/eloctest.txt";
 
@@ -138,11 +138,18 @@ static const elocConfig_T C_ElocConfig_Default {
         .loraEnable = true,
         .upLinkIntervalS = 3600,
         .loraRegion = "AS923_2",
+        .eventCooldownS = 900,      // 15 minutes between event LoRa msgs
+        .eventEndTimeoutS = 300,    // 5 minutes without detection = event ended
     },
     .inferenceConfig = {
         .threshold = 85,           // Default to 85 (0.85 confidence)
         .observationWindowS = 10,   // Default to legacy immediate mode
         .requiredDetections = 5,   // Default to single detection
+    },
+    .dutyCycleConfig = {
+        .enable = true,           // Disabled by default (normal continuous operation)
+        .sleepDurationS = 120,     // 5 minutes deep sleep
+        .awakeDurationS = 30,      // 30 seconds active inference
     },
 };
 elocConfig_T gElocConfig = C_ElocConfig_Default;
@@ -163,6 +170,63 @@ const elocDeviceInfo_T& getDeviceInfo() {
 
 const inferenceConfig_t& getInferenceConfig() {
     return gElocConfig.inferenceConfig;
+}
+
+const dutyCycleConfig_t& getDutyCycleConfig() {
+    return gElocConfig.dutyCycleConfig;
+}
+
+/// Clamp helper
+static uint32_t clampU32(uint32_t val, uint32_t minVal, uint32_t maxVal, const char* name) {
+    if (val < minVal) {
+        ESP_LOGW(TAG, "Clamping %s from %u to min %u", name, val, minVal);
+        return minVal;
+    }
+    if (val > maxVal) {
+        ESP_LOGW(TAG, "Clamping %s from %u to max %u", name, val, maxVal);
+        return maxVal;
+    }
+    return val;
+}
+
+void validateDutyCycleConfig() {
+    static const uint32_t AWAKE_MIN = 20;
+    static const uint32_t AWAKE_MAX = 120;
+    static const uint32_t SLEEP_MIN = 60;
+    static const uint32_t SLEEP_MAX = 900;
+    static const uint32_t STARTUP_OVERHEAD_S = 5; // seconds for boot + mic settle
+
+    if (!gElocConfig.dutyCycleConfig.enable) {
+        return; // No validation needed if duty cycle is disabled
+    }
+
+    gElocConfig.dutyCycleConfig.awakeDurationS = clampU32(
+        gElocConfig.dutyCycleConfig.awakeDurationS, AWAKE_MIN, AWAKE_MAX, "awakeDurationS");
+
+    gElocConfig.dutyCycleConfig.sleepDurationS = clampU32(
+        gElocConfig.dutyCycleConfig.sleepDurationS, SLEEP_MIN, SLEEP_MAX, "sleepDurationS");
+
+    // Validate inference observation window fits within awake duration
+    uint32_t maxObsWindow = gElocConfig.dutyCycleConfig.awakeDurationS - STARTUP_OVERHEAD_S;
+    if (gElocConfig.inferenceConfig.observationWindowS > maxObsWindow) {
+        ESP_LOGW(TAG, "Clamping observationWindowS from %u to %u (awakeDurationS=%u - overhead=%u)",
+            gElocConfig.inferenceConfig.observationWindowS, maxObsWindow,
+            gElocConfig.dutyCycleConfig.awakeDurationS, STARTUP_OVERHEAD_S);
+        gElocConfig.inferenceConfig.observationWindowS = maxObsWindow;
+    }
+
+    // Validate requiredDetections fits within observation window (~1 inference/sec)
+    if (gElocConfig.inferenceConfig.requiredDetections > gElocConfig.inferenceConfig.observationWindowS) {
+        ESP_LOGW(TAG, "Clamping requiredDetections from %u to %u (observationWindowS)",
+            gElocConfig.inferenceConfig.requiredDetections,
+            gElocConfig.inferenceConfig.observationWindowS);
+        gElocConfig.inferenceConfig.requiredDetections = gElocConfig.inferenceConfig.observationWindowS;
+    }
+
+    ESP_LOGI(TAG, "Duty cycle config validated: enable=%d, sleep=%us, awake=%us",
+        gElocConfig.dutyCycleConfig.enable,
+        gElocConfig.dutyCycleConfig.sleepDurationS,
+        gElocConfig.dutyCycleConfig.awakeDurationS);
 }
 
 /**************************************************************************************************/
@@ -204,10 +268,16 @@ void loadConfig(const JsonObject& config) {
     gElocConfig.loraConfig.loraEnable          = config["lorawan"]["loraEnable"]       | C_ElocConfig_Default.loraConfig.loraEnable;
     gElocConfig.loraConfig.upLinkIntervalS     = config["lorawan"]["upLinkIntervalS"]  | C_ElocConfig_Default.loraConfig.upLinkIntervalS;
     gElocConfig.loraConfig.loraRegion          = config["lorawan"]["loraRegion"]       | C_ElocConfig_Default.loraConfig.loraRegion;
+    gElocConfig.loraConfig.eventCooldownS      = config["lorawan"]["eventCooldownS"]   | C_ElocConfig_Default.loraConfig.eventCooldownS;
+    gElocConfig.loraConfig.eventEndTimeoutS    = config["lorawan"]["eventEndTimeoutS"] | C_ElocConfig_Default.loraConfig.eventEndTimeoutS;
     /** inference config*/
     gElocConfig.inferenceConfig.threshold           = config["inference"]["threshold"]           | C_ElocConfig_Default.inferenceConfig.threshold;
     gElocConfig.inferenceConfig.observationWindowS = config["inference"]["observationWindowS"] | C_ElocConfig_Default.inferenceConfig.observationWindowS;
     gElocConfig.inferenceConfig.requiredDetections = config["inference"]["requiredDetections"] | C_ElocConfig_Default.inferenceConfig.requiredDetections;
+    /** duty cycle config*/
+    gElocConfig.dutyCycleConfig.enable         = config["dutyCycle"]["enable"]         | C_ElocConfig_Default.dutyCycleConfig.enable;
+    gElocConfig.dutyCycleConfig.sleepDurationS = config["dutyCycle"]["sleepDurationS"] | C_ElocConfig_Default.dutyCycleConfig.sleepDurationS;
+    gElocConfig.dutyCycleConfig.awakeDurationS = config["dutyCycle"]["awakeDurationS"] | C_ElocConfig_Default.dutyCycleConfig.awakeDurationS;
 }
 
 MicChannel_t ParseMicChannel(const char* str, MicChannel_t default_value) {
@@ -256,9 +326,9 @@ bool readConfigFile(const char* filename) {
         fread(input, fsize, 1, f);
 
         ESP_LOGI(TAG, "Read this Configuration:");
-        printf(input);
+        printf("%s\n", input);
 
-        StaticJsonDocument<JSON_DOC_SIZE> doc;
+        DynamicJsonDocument doc(JSON_DOC_SIZE);
 
         DeserializationError error = deserializeJson(doc, input, fsize);
 
@@ -339,10 +409,14 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     config["lorawan"]["loraEnable"]       = ElocConfig.loraConfig.loraEnable;
     config["lorawan"]["upLinkIntervalS"]  = ElocConfig.loraConfig.upLinkIntervalS;
     config["lorawan"]["loraRegion"]       = ElocConfig.loraConfig.loraRegion;
+    config["lorawan"]["eventCooldownS"]   = ElocConfig.loraConfig.eventCooldownS;
+    config["lorawan"]["eventEndTimeoutS"] = ElocConfig.loraConfig.eventEndTimeoutS;
     config["inference"]["threshold"]           = ElocConfig.inferenceConfig.threshold;
     config["inference"]["observationWindowS"] = ElocConfig.inferenceConfig.observationWindowS;
     config["inference"]["requiredDetections"] = ElocConfig.inferenceConfig.requiredDetections;
-
+    config["dutyCycle"]["enable"]         = ElocConfig.dutyCycleConfig.enable;
+    config["dutyCycle"]["sleepDurationS"] = ElocConfig.dutyCycleConfig.sleepDurationS;
+    config["dutyCycle"]["awakeDurationS"] = ElocConfig.dutyCycleConfig.awakeDurationS;
 
     JsonObject micInfo = doc.createNestedObject("mic");
     micInfo["MicType"]                     = MicInfo.MicType.c_str();
@@ -354,7 +428,7 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
 
 bool printConfig(String& buf, CfgType cfgType/* = CfgType::RUNTIME*/) {
 
-    StaticJsonDocument<JSON_DOC_SIZE> doc;
+    DynamicJsonDocument doc(JSON_DOC_SIZE);
     buildConfigFile(doc, cfgType);
     if (serializeJsonPretty(doc, buf) == 0) {
         ESP_LOGE(TAG, "Failed serialize JSON config!");

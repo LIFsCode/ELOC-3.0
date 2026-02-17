@@ -78,6 +78,20 @@ void ESP32Time::initBuildTime(uint64_t epochBuildDate, int32_t tz_offset) {
             getEpoch(), tz_offset, time.c_str());
 }
 
+/**
+ * @brief Set build_time and boot_time references WITHOUT calling settimeofday().
+ *        Used on timer wake from deep sleep where the RTC already has the correct time.
+ * @param  epochBuildDate
+ *         Build date in UNIX Time epoch format
+ */
+void ESP32Time::setBuildTimeOnly(uint64_t epochBuildDate) {
+    build_time_unix = epochBuildDate;
+    // Set boot_time to current RTC time (which was preserved during deep sleep)
+    boot_time_unix = getEpoch();
+    ESP_LOGI(TAG, "setBuildTimeOnly: build_time=%lld, boot_time=%lld (RTC preserved)", 
+            build_time_unix, boot_time_unix);
+}
+
 /*!
     @brief  set the internal RTC time
     @param  sc

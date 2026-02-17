@@ -322,6 +322,11 @@ bool createSessionFolder()
 
     session_folder_created = true;
 
+    // Persist session ID in RTC memory for duty cycle wake continuity
+    strncpy(rtc_duty_cycle.sessionId, gSessionIdentifier.c_str(), sizeof(rtc_duty_cycle.sessionId) - 1);
+    rtc_duty_cycle.sessionId[sizeof(rtc_duty_cycle.sessionId) - 1] = '\0';
+    ESP_LOGI(TAG, "Session ID saved to RTC: %s", rtc_duty_cycle.sessionId);
+
     return true;
 }
 
@@ -613,10 +618,162 @@ void ei_callback_func() {
 
 #endif
 
+/*******************************************************************************
+ * Duty-Cycle Deep Sleep Functions
+ ******************************************************************************/
+
+/**
+ * @brief Determine wake-up cause and set duty cycle state accordingly.
+ *        Called FIRST in app_main() before any other initialization.
+ *
+ * Timer wake → fast boot path (skip BT, Battery, etc.)
+ * Button wake or normal boot → normal operation (duty cycle disabled)
+ */
+void handleWakeUpCause() {
+    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+
+    switch (wakeup_reason) {
+        case ESP_SLEEP_WAKEUP_TIMER:
+            ESP_LOGI(TAG, "Wake-up cause: TIMER (duty cycle)");
+            gIsTimerWake = true;
+            // Validate and increment RTC state
+            if (rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC) {
+                rtc_duty_cycle.bootCount++;
+                ESP_LOGI(TAG, "Duty cycle boot #%u, total detections: %u",
+                    rtc_duty_cycle.bootCount, rtc_duty_cycle.totalDetections);
+            } else {
+                ESP_LOGW(TAG, "RTC duty cycle state invalid, initializing");
+                memset(&rtc_duty_cycle, 0, sizeof(rtc_duty_cycle));
+                rtc_duty_cycle.magic = DUTY_CYCLE_RTC_MAGIC;
+                rtc_duty_cycle.bootCount = 1;
+            }
+            gDutyCycleActivationTimeUS = esp_timer_get_time(); // Timer wake: start counting from boot
+            gSleepCycleState = SLEEP_CYCLE_INFERENCE_ACTIVE;
+            break;
+
+        case ESP_SLEEP_WAKEUP_EXT0:
+            ESP_LOGI(TAG, "Wake-up cause: BUTTON (EXT0) - normal boot");
+            gIsTimerWake = false;
+            gSleepCycleState = SLEEP_CYCLE_DISABLED;
+            break;
+
+        default:
+            ESP_LOGI(TAG, "Wake-up cause: %d (normal boot / power-on)", wakeup_reason);
+            gIsTimerWake = false;
+            gSleepCycleState = SLEEP_CYCLE_DISABLED;
+            // Initialize RTC state on fresh boot if duty cycle is going to be enabled
+            // (will be checked after config is loaded)
+            break;
+    }
+}
+
+/**
+ * @brief Clean shutdown before entering cyclic deep sleep.
+ *        Stops AI inference, stops I2S, saves RTC state, configures timer.
+ */
+void prepareCyclicDeepSleep() {
+    ESP_LOGI(TAG, "Preparing for cyclic deep sleep...");
+    gSleepCycleState = SLEEP_CYCLE_PREPARING;
+
+    const dutyCycleConfig_t& dcCfg = getDutyCycleConfig();
+
+    // Sync detection count to RTC before sleep
+    #ifdef EDGE_IMPULSE_ENABLED
+    {
+        uint32_t thisWakeDetections = edgeImpulse.get_detectedEvents();
+        rtc_duty_cycle.totalDetections += thisWakeDetections;
+        ESP_LOGI(TAG, "This wake detections: %u, total across cycles: %u",
+            thisWakeDetections, rtc_duty_cycle.totalDetections);
+    }
+
+    // Stop AI inference if running
+    if (edgeImpulse.get_status() == EdgeImpulse::Status::running) {
+        ESP_LOGI(TAG, "Stopping AI inference for sleep");
+        ai_run_enable = false;
+        edgeImpulse.set_status(EdgeImpulse::Status::not_running);
+        delay(100); // Give inference thread time to stop
+    }
+    #endif
+
+    // Stop I2S if running
+    if (input.is_i2s_installed_and_started()) {
+        ESP_LOGI(TAG, "Stopping I2S for sleep");
+        input.uninstall();
+    }
+
+    // Save LoRa session before sleep (already persisted in RTC by ElocLora)
+    // The LoRaWAN session is saved after each uplink in ElocLora::parseResponse()
+
+    // Turn off LEDs before sleep — IO expander retains register state during deep sleep,
+    // so LEDs would stay ON if not explicitly turned off
+    gpio_set_level(STATUS_LED, 0);
+    gpio_set_level(BATTERY_LED, 0);
+    if (ElocSystem::GetInstance().hasIoExpander()) {
+        ElocSystem::GetInstance().getIoExpander().setOutputBit(ELOC_IOEXP::LED_STATUS, false);
+        ElocSystem::GetInstance().getIoExpander().setOutputBit(ELOC_IOEXP::LED_BATTERY, false);
+        ESP_LOGI(TAG, "LEDs turned off for deep sleep");
+    }
+
+    // Configure timer wake-up
+    uint64_t sleepTimeUS = static_cast<uint64_t>(dcCfg.sleepDurationS) * 1000000ULL;
+    ESP_LOGI(TAG, "Setting deep sleep timer for %u seconds", dcCfg.sleepDurationS);
+    esp_sleep_enable_timer_wakeup(sleepTimeUS);
+
+    // Also allow button press to wake (for manual intervention / normal boot)
+    esp_sleep_enable_ext0_wakeup(GPIO_BUTTON, 0);
+
+    ESP_LOGI(TAG, "Boot #%u complete. Total detections across cycles: %u. Entering sleep...",
+        rtc_duty_cycle.bootCount, rtc_duty_cycle.totalDetections);
+}
+
+/**
+ * @brief Enter deep sleep. Does not return.
+ */
+void enterCyclicDeepSleep() {
+    gSleepCycleState = SLEEP_CYCLE_ENTERING_SLEEP;
+    ESP_LOGI(TAG, "Entering deep sleep NOW");
+    delay(50); // Allow log to flush
+    esp_deep_sleep_start();
+    // Never reached
+}
+
+/**
+ * @brief Called each main loop iteration to manage the duty cycle state machine.
+ *        Tracks awake duration and triggers sleep when time is up.
+ */
+void handleSleepCycleStateMachine() {
+    if (gSleepCycleState != SLEEP_CYCLE_INFERENCE_ACTIVE) {
+        return; // Not in duty cycle mode or already preparing to sleep
+    }
+
+    const dutyCycleConfig_t& dcCfg = getDutyCycleConfig();
+    // Calculate how long since duty cycle was activated (not since boot)
+    int64_t awakeTimeS = (esp_timer_get_time() - gDutyCycleActivationTimeUS) / 1000000LL;
+
+    if (awakeTimeS >= static_cast<int64_t>(dcCfg.awakeDurationS)) {
+        ESP_LOGI(TAG, "Awake duration (%lld s) reached limit (%u s), preparing to sleep",
+            awakeTimeS, dcCfg.awakeDurationS);
+
+        // Run LoRa loop one final time to send any pending messages
+        ElocLora::GetInstance().ElocLoraLoop();
+
+        prepareCyclicDeepSleep();
+        enterCyclicDeepSleep();
+        // Never returns
+    }
+}
+
+/*******************************************************************************
+ * End Duty-Cycle Functions
+ ******************************************************************************/
+
 void app_main(void) {
     ESP_LOGI(TAG, "\nSETUP--start\n");
     initArduino();
     ESP_LOGI(TAG, "initArduino done");
+
+    // Determine wake-up cause FIRST — sets gIsTimerWake and gSleepCycleState
+    handleWakeUpCause();
 
     printPartitionInfo();  // So if reboots, always boot into the bluetooth partition
 
@@ -632,7 +789,18 @@ void app_main(void) {
 
 #endif
 
-    timeObject.initBuildTime(__TIME_UNIX__, TIMEZONE_OFFSET);
+    // On timer wake (duty cycle), the RTC hardware maintains accurate time during deep sleep.
+    // Only set build time on fresh boot — on timer wake, just set the internal reference
+    // without calling settimeofday() which would reset the correct RTC time.
+    if (gIsTimerWake) {
+        // RTC time is already correct from before sleep. Just set the build_time reference
+        // so getUpTimeSecs() and other functions work correctly.
+        timeObject.setBuildTimeOnly(__TIME_UNIX__);
+        timeObject.setTimeZone(TIMEZONE_OFFSET);  // TZ env var lost during deep sleep
+        ESP_LOGI(TAG, "Timer wake: preserving RTC time (epoch=%ld)", timeObject.getEpoch());
+    } else {
+        timeObject.initBuildTime(__TIME_UNIX__, TIMEZONE_OFFSET);
+    }
 
     printRevision();
 
@@ -695,6 +863,43 @@ void app_main(void) {
 
     readConfig();
 
+    // Validate duty cycle config after loading
+    validateDutyCycleConfig();
+
+    // On fresh boot with duty cycle enabled, initialize RTC state but do NOT
+    // activate the sleep cycle. Duty cycle only activates when the user
+    // explicitly enters recordOFF_detectON mode via BT command.
+    if (!gIsTimerWake && getDutyCycleConfig().enable) {
+        ESP_LOGI(TAG, "Fresh boot with duty cycle enabled - initializing RTC state (duty cycle will activate on recordOFF_detectON)");
+        memset(&rtc_duty_cycle, 0, sizeof(rtc_duty_cycle));
+        rtc_duty_cycle.magic = DUTY_CYCLE_RTC_MAGIC;
+        rtc_duty_cycle.bootCount = 0;
+        // gSleepCycleState remains SLEEP_CYCLE_DISABLED until user starts recordOFF_detectON mode
+    }
+
+    // On timer wake, restore session ID from RTC so all duty cycle wakes
+    // share the same session folder and append to the same CSV file.
+    if (gIsTimerWake && rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC 
+        && rtc_duty_cycle.sessionId[0] != '\0') {
+        gSessionIdentifier = String(rtc_duty_cycle.sessionId);
+        session_folder_created = true;  // Folder already exists from initial session
+        ESP_LOGI(TAG, "Timer wake: restored session ID from RTC: %s", gSessionIdentifier.c_str());
+
+        #ifdef EDGE_IMPULSE_ENABLED
+        // Build the CSV filename so save_inference_result_SD() can append directly
+        // without calling create_inference_result_file_SD() which would overwrite with headers
+        ei_results_filename = "/sdcard/eloc/";
+        ei_results_filename += gSessionIdentifier;
+        ei_results_filename += "/EI-results-ID-";
+        ei_results_filename += EI_CLASSIFIER_PROJECT_ID;
+        ei_results_filename += "-DEPLOY-VER-";
+        ei_results_filename += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
+        ei_results_filename += ".csv";
+        inference_result_file_SD_available = true;  // Skip header re-creation, just append
+        ESP_LOGI(TAG, "Timer wake: will append to existing CSV: %s", ei_results_filename.c_str());
+        #endif
+    }
+
     // Setup persistent logging only if SD card is mounted
     if (sd_card.isMounted()) {
         const logConfig_t& cfg = getConfig().logConfig;
@@ -709,11 +914,16 @@ void app_main(void) {
                   "-----------------------------------------------------------------\n",
              VERSIONTAG);
 
-    ESP_LOGI(TAG, "Setting up Battery...");
-    Battery::GetInstance();
+    // Skip heavy subsystems on timer wake (duty cycle fast boot path)
+    if (!gIsTimerWake) {
+        ESP_LOGI(TAG, "Setting up Battery...");
+        Battery::GetInstance();
 
-    // check if a firmware update is triggered via SD card
-    checkForFirmwareUpdateFile();
+        // check if a firmware update is triggered via SD card
+        checkForFirmwareUpdateFile();
+    } else {
+        ESP_LOGI(TAG, "Timer wake: skipping Battery and FirmwareUpdate");
+    }
 
     // Queue for recording requests
     rec_req_evt_queue = xQueueCreate(10, sizeof(rec_req_t));
@@ -728,24 +938,29 @@ void app_main(void) {
     ElocLora::GetInstance();
     // GPIO ISR service is now installed earlier in the initialization sequence
 
-    ESP_LOGI(TAG, "Creating Bluetooth  task...");
-    if (esp_err_t err = BluetoothServerSetup(false)) {
-        ESP_LOGI(TAG, "BluetoothServerSetup failed with %s", esp_err_to_name(err));
-    }
+    // Skip Bluetooth, PerfMonitor, UART test on timer wake
+    if (!gIsTimerWake) {
+        ESP_LOGI(TAG, "Creating Bluetooth  task...");
+        if (esp_err_t err = BluetoothServerSetup(false)) {
+            ESP_LOGI(TAG, "BluetoothServerSetup failed with %s", esp_err_to_name(err));
+        }
 
-#ifdef USE_PERF_MONITOR
-    ESP_LOGI(TAG, "Creating Performance Monitor task...");
-    if (esp_err_t err = PerfMonitor::setup()) {
-        ESP_LOGI(TAG, "Performance Monitor failed with %s", esp_err_to_name(err));
-    }
-#endif
+    #ifdef USE_PERF_MONITOR
+        ESP_LOGI(TAG, "Creating Performance Monitor task...");
+        if (esp_err_t err = PerfMonitor::setup()) {
+            ESP_LOGI(TAG, "Performance Monitor failed with %s", esp_err_to_name(err));
+        }
+    #endif
 
-#ifdef ENABLE_TEST_UART
-    ESP_LOGI(TAG, "Creating UART task...");
-    uart_eloc::UART_ELOC uart_test;
-    uart_test.init(UART_NUM_0);
-    uart_test.start_thread();
-#endif
+    #ifdef ENABLE_TEST_UART
+        ESP_LOGI(TAG, "Creating UART task...");
+        uart_eloc::UART_ELOC uart_test;
+        uart_test.init(UART_NUM_0);
+        uart_test.start_thread();
+    #endif
+    } else {
+        ESP_LOGI(TAG, "Timer wake: skipping Bluetooth, PerfMonitor, UART");
+    }
 
 #ifdef EDGE_IMPULSE_ENABLED
 
@@ -873,7 +1088,23 @@ void app_main(void) {
         input.register_ei_inference(&edgeImpulse.getInference(), EI_CLASSIFIER_FREQUENCY);
         // edgeImpulse.set_status(EdgeImpulse::Status::running);
         // edgeImpulse.start_ei_thread(ei_callback_func);
+
+        // Auto-start AI on timer wake (duty cycle mode)
+        if (gIsTimerWake && getDutyCycleConfig().enable) {
+            ESP_LOGI(TAG, "Duty cycle timer wake: auto-starting AI inference");
+            ai_run_enable = true;
+            bool enable = true;
+            xQueueSend(rec_ai_evt_queue, &enable, (TickType_t)0);
+        }
     #endif
+
+    // For timer wake: reset the awake duration timer AFTER all initialization completes
+    // so the full awakeDurationS is available for actual inference, not eaten by boot overhead
+    if (gIsTimerWake) {
+        gDutyCycleActivationTimeUS = esp_timer_get_time();
+        ESP_LOGI(TAG, "Timer wake: awake timer reset after init (boot took %lld ms)",
+            gDutyCycleActivationTimeUS / 1000);
+    }
 
     auto loopCnt = 0;
 
@@ -986,6 +1217,9 @@ void app_main(void) {
         delay(300);
 
 #endif  // EDGE_IMPULSE_ENABLED
+
+        // Duty cycle sleep state machine - check if awake time expired
+        handleSleepCycleStateMachine();
 
         // Don't forget the watchdog
         delay(1);

@@ -350,8 +350,10 @@ esp_err_t ElocLora::init() {
   ESP_LOGI(TAG, "MOSI: %u", PIN_LORA_MOSI);
   ESP_LOGI(TAG, "MISO: %u", PIN_LORA_MISO);
   ESP_LOGI(TAG, "SCK: %u", PIN_LORA_CLK);
-  ESP_LOGI(TAG, "SS: %u", PIN_LORA_CS);  
-  delay(5000);  // Give time to switch to the serial monitor
+  ESP_LOGI(TAG, "SS: %u", PIN_LORA_CS);
+  if (!gIsTimerWake) {
+    delay(5000);  // Give time to switch to the serial monitor (skip on duty cycle wake)
+  }
   ESP_LOGI(TAG, "Setup ... ");
 
   loraSPI.begin(PIN_LORA_CLK, PIN_LORA_MISO, PIN_LORA_MOSI, PIN_LORA_CS);
@@ -539,6 +541,11 @@ esp_err_t ElocLora::sendEventMessage() {
 }
 
 void ElocLora::playJoinFeedback(bool success) {
+    // Skip buzzer on timer wake (duty cycle) - no one is around to hear it
+    if (gIsTimerWake) {
+        ESP_LOGI(TAG, "Timer wake: skipping LoRa join audio feedback");
+        return;
+    }
     if (success) {
         // Success: 3 quick ascending beeps (sounds positive)
         // Frequencies: 523 Hz (C5), 659 Hz (E5), 784 Hz (G5)

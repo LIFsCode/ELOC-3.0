@@ -218,13 +218,18 @@ ElocSystem::ElocSystem():
         }
         else {
             mIOExpInstance = &ioExp;
-            // turn on status LED on ELOC board
-            ioExp.setOutputBit(ELOC_IOEXP::LED_STATUS, true);
-            for (int i=0; i<10; i++) {
-                // toggle Battery & Status LED in oposing order with 0.5 Hz
-                ioExp.toggleOutputBit(ELOC_IOEXP::LED_STATUS);
-                ioExp.toggleOutputBit(ELOC_IOEXP::LED_BATTERY);
-                vTaskDelay(pdMS_TO_TICKS(500));
+            // Skip LED dance on timer wake (duty cycle) - saves 5 seconds of boot time
+            if (!gIsTimerWake) {
+                // turn on status LED on ELOC board
+                ioExp.setOutputBit(ELOC_IOEXP::LED_STATUS, true);
+                for (int i=0; i<10; i++) {
+                    // toggle Battery & Status LED in oposing order with 0.5 Hz
+                    ioExp.toggleOutputBit(ELOC_IOEXP::LED_STATUS);
+                    ioExp.toggleOutputBit(ELOC_IOEXP::LED_BATTERY);
+                    vTaskDelay(pdMS_TO_TICKS(500));
+                }
+            } else {
+                ESP_LOGI(TAG, "Timer wake: skipping LED startup animation");
             }
         }
         ESP_LOGI(TAG, "\t: LIS3DH Accelerometer");

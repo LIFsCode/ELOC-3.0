@@ -22,7 +22,9 @@
  */
 
 #include "ElocStatus.hpp"
+#include "config.h"
 #include "esp_timer.h"
+#include "esp_attr.h"
 
 int64_t gTotalUPTimeSinceReboot=esp_timer_get_time();  //esp_timer_get_time returns 64-bit time since startup, in microseconds.
 int64_t gTotalRecordTimeSinceReboot=0;
@@ -30,7 +32,16 @@ int64_t gSessionRecordTime=0;
 
 //session stuff
 String gSessionIdentifier="";
+String gFirmwareVersion=VERSION;
 
 // Deferred AI start mechanism
 bool g_ai_start_pending = false;
 int64_t g_ai_deferred_start_time = 0;
+
+// Duty-cycle deep sleep state
+SleepCycleState_t gSleepCycleState = SLEEP_CYCLE_DISABLED;
+int64_t gDutyCycleActivationTimeUS = 0;
+bool gIsTimerWake = false;
+
+// RTC-persistent duty cycle state (survives deep sleep, lost on power cycle)
+RTC_DATA_ATTR rtc_duty_cycle_t rtc_duty_cycle = {0};

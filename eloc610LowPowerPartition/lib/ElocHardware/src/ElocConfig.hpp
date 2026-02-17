@@ -71,6 +71,8 @@ typedef struct {
     bool loraEnable;          // enable/disable Lora communication
     uint32_t upLinkIntervalS; // time between lora uplink messages in seconds
     String loraRegion;        // Lora Region, e.g. EU868
+    uint32_t eventCooldownS;  // Min seconds between event LoRa msgs (0 = legacy mode, send every detection)
+    uint32_t eventEndTimeoutS;// Seconds without detection before event is considered ended
 }loraConfig_T;
 
 typedef struct {
@@ -78,6 +80,13 @@ typedef struct {
     uint32_t observationWindowS;  // observation window in seconds (0 = legacy immediate mode)
     uint32_t requiredDetections;  // number of detections required within window
 }inferenceConfig_t;
+
+/// @brief Duty-cycle deep sleep configuration
+typedef struct {
+    bool     enable;           // Enable duty-cycle mode (default: false)
+    uint32_t sleepDurationS;   // Deep sleep duration in seconds (default: 300 = 5 min)
+    uint32_t awakeDurationS;   // Active inference duration in seconds (default: 30)
+}dutyCycleConfig_t;
 
 /// @brief holds all the device specific configuration settings
 typedef struct {
@@ -95,6 +104,7 @@ typedef struct {
     batteryConfig_t batteryConfig;
     loraConfig_T loraConfig;
     inferenceConfig_t inferenceConfig;
+    dutyCycleConfig_t dutyCycleConfig;
 }elocConfig_T;
 
 const elocConfig_T& getConfig();
@@ -111,6 +121,11 @@ const elocDeviceInfo_T& getDeviceInfo();
 const loraConfig_T& getLoraConfig();
 
 const inferenceConfig_t& getInferenceConfig();
+
+const dutyCycleConfig_t& getDutyCycleConfig();
+
+/// @brief Validate and clamp duty cycle config values to safe ranges
+void validateDutyCycleConfig();
 
 /**
  * @brief Load configuration (.config)

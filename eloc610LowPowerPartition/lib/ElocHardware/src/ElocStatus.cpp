@@ -30,3 +30,7 @@ int64_t gSessionRecordTime=0;
 
 //session stuff
 String gSessionIdentifier="";
+
+// Deferred AI start mechanism
+bool g_ai_start_pending = false;
+int64_t g_ai_deferred_start_time = 0;

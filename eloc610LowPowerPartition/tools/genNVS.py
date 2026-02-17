@@ -1,13 +1,7 @@
-import copy
-import json
 import subprocess
 import sys
 import os
-import pkg_resources
 import csv
-
-import click
-import semantic_version
 
 def get_python_exe():
     def _create_venv(venv_dir):
@@ -90,19 +84,26 @@ print(partition_file)
 nvs_tool = FRAMEWORK_DIR + "/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py"
 print(nvs_tool)
 
+build_dir = env.subst("$BUILD_DIR")
+nvs_bin_path = os.path.join(build_dir, 'nvs.bin')
+
 with open(partition_file) as csv_file:
     csv_reader = csv.reader(csv_file, delimiter=',')
     nvs_base = 0
     nvs_size = 0
     for row in csv_reader:
         print(row)
-        if (row[0] == "nvs"):
-            print(f'NVS base: {row[3]}')
-            nvs_base = row[3]
-            nvs_size = row[4]
-        if (row[0] == "partition0"):
-            print(f'partition0 base: {row[3]}')
-            partition_base = row[3]
-    subprocess.call([get_python_exe(), nvs_tool,'generate', 'nvs.csv','.pio/build/esp32dev/nvs.bin', nvs_size])
-    print("NVS generated successuflly")
+        if (row[0].strip() == "nvs"):
+            print(f'NVS base: {row[3].strip()}')
+            nvs_base = row[3].strip()
+            nvs_size = row[4].strip()
+        if (row[0].strip() == "partition0"):
+            print(f'partition0 base: {row[3].strip()}')
+            partition_base = row[3].strip()
+    print(f'Generating NVS binary: {nvs_bin_path} (size: {nvs_size})')
+    ret = subprocess.call([get_python_exe(), nvs_tool, 'generate', 'nvs.csv', nvs_bin_path, nvs_size])
+    if ret != 0:
+        print(f"ERROR: NVS generation failed with return code: {ret}")
+    else:
+        print("NVS generated successfully")
    

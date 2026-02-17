@@ -7,6 +7,9 @@
 *.code-workspace
 dependencies.lock
 
+keyfile.csv
+nvs.csv
+
 # ignore auto generated sdkconfig files and only keep  the defaults under version control
 sdkconfig*
 !sdkconfig.defaults

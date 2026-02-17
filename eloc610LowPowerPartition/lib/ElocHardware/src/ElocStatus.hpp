@@ -46,5 +46,15 @@ extern int64_t gTotalRecordTimeSinceReboot;
 extern int64_t gSessionRecordTime;
 extern String gSessionIdentifier;
 
+/* Deferred AI start mechanism:
+ * When AI mode is enabled via BT command, the actual AI thread start is deferred
+ * by a few seconds to allow BT to serve follow-up commands (getStatus/getConfig)
+ * before the AI thread consumes most CPU/memory resources.
+ */
+extern bool g_ai_start_pending;
+extern int64_t g_ai_deferred_start_time;
+
+/// @brief Delay in microseconds before actually starting the AI thread after setRecordMode
+#define AI_DEFERRED_START_DELAY_US  3000000LL  // 3 seconds
 
 #endif // ELOCSTATUS_HPP_

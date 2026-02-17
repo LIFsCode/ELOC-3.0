@@ -24,7 +24,7 @@
 
         #define BLUETOOTH_CLASSIC
 
-        #define VERSION "ELOC_V1.41"
+        #define VERSION "ELOC_V1.42"
 
         #define STATUS_LED          GPIO_NUM_4
         #define BATTERY_LED         GPIO_NUM_4

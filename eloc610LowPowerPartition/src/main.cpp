@@ -952,6 +952,17 @@ void app_main(void) {
 
         #ifdef EDGE_IMPULSE_ENABLED
 
+        // Check for deferred AI start (non-blocking)
+        // When AI mode is enabled via BT, the actual thread start is deferred by a few seconds
+        // to allow BT to serve follow-up commands (getStatus/getConfig) before the AI thread
+        // consumes most CPU/memory resources.
+        if (g_ai_start_pending && esp_timer_get_time() >= g_ai_deferred_start_time) {
+            ESP_LOGI(TAG, "Deferred AI start timer expired, sending AI enable to queue");
+            g_ai_start_pending = false;
+            bool enable = true;
+            xQueueSend(rec_ai_evt_queue, &enable, (TickType_t)0);
+        }
+
         if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);
             auto ei_status = (edgeImpulse.get_status() == EdgeImpulse::Status::running ? "running" : "not running");

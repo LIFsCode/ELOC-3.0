@@ -36,27 +36,12 @@ class AutoFlasher:
         # Where to log updated values
         self.keyfile_csv = os.path.join(self.project_dir, 'keyfile.csv')
 
-        # Hardcoded paths - adjust environment/folder names to match your build output
-        self.bootloader_bin_path = os.path.join(
-            self.project_dir,
-            '.pio', 'build', 'esp32dev-ei',
-            'bootloader.bin'
-        )
-        self.partitions_bin_path = os.path.join(
-            self.project_dir,
-            '.pio', 'build', 'esp32dev-ei',
-            'partitions.bin'
-        )
-        self.firmware_bin_path = os.path.join(
-            self.project_dir,
-            '.pio', 'build', 'esp32dev-ei',
-            'firmware.bin'
-        )
-        self.nvs_bin_path = os.path.join(
-            self.project_dir,
-            '.pio', 'build', 'esp32dev',
-            'nvs.bin'
-        )
+        # Build output paths - derived from the selected PlatformIO environment
+        build_dir = os.path.join(self.project_dir, '.pio', 'build', self.env)
+        self.bootloader_bin_path = os.path.join(build_dir, 'bootloader.bin')
+        self.partitions_bin_path = os.path.join(build_dir, 'partitions.bin')
+        self.firmware_bin_path = os.path.join(build_dir, 'firmware.bin')
+        self.nvs_bin_path = os.path.join(build_dir, 'nvs.bin')
 
     @staticmethod
     def detect_com_ports() -> list:

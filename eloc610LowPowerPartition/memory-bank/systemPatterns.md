@@ -100,6 +100,76 @@ LoRaWAN state uses a dual-storage strategy:
 
 This ensures fast wake-up from deep sleep while maintaining DevNonce sequence across power cycles.
 
+### 8. Duty-Cycle Deep Sleep State Machine
+
+The device can alternate between deep sleep and active AI inference for extended battery life:
+
+```
+┌──────────┐    timer     ┌──────────────┐    awake time    ┌──────────┐
+│Deep Sleep │───wakeup───▶│ Active: AI + │───elapsed──────▶│  Prepare │──▶ Deep Sleep
+│(5 min)    │             │ LoRa (30s)   │                 │  Sleep   │
+└──────────┘              └──────────────┘                 └──────────┘
+     ▲                          │
+     │         button press     │
+     │         ───────────────▶ Normal boot (BT enabled, duty cycle off)
+     │
+     └──── repeat ─────────────────────────────────────────┘
+```
+
+State machine enum in `ElocStatus.hpp`:
+```cpp
+typedef enum {
+    SLEEP_CYCLE_DISABLED = 0,       // Normal operation (no duty cycle)
+    SLEEP_CYCLE_INFERENCE_ACTIVE,   // Awake, running AI inference
+    SLEEP_CYCLE_PREPARING,          // Shutting down for sleep
+    SLEEP_CYCLE_ENTERING_SLEEP      // About to enter deep sleep
+} SleepCycleState_t;
+```
+
+Key functions in `main.cpp`:
+- `handleWakeUpCause()` — Called FIRST in `app_main()`, determines timer vs button wake
+- `prepareCyclicDeepSleep()` — Clean shutdown: sync detections → stop AI → stop I2S → turn off LEDs
+- `enterCyclicDeepSleep()` — Calls `esp_deep_sleep_start()`, never returns
+- `handleSleepCycleStateMachine()` — Called each main loop iteration, triggers sleep when awake time expires
+
+### 9. RTC Persistence for Duty Cycle
+
+State that survives deep sleep is stored in `RTC_DATA_ATTR` memory:
+
+```cpp
+RTC_DATA_ATTR rtc_duty_cycle_t rtc_duty_cycle;
+
+typedef struct {
+    uint32_t magic;                  // 0xE10CDC1E — validates RTC data
+    uint32_t bootCount;              // Wake-up counter
+    uint32_t totalDetections;        // Running detection count across cycles
+    int64_t  lastEventLoraTimeS;     // Cooldown: when last event LoRa sent
+    int64_t  lastDetectionTimeS;     // Cooldown: when last detection occurred
+    uint8_t  eventState;             // EVENT_IDLE or EVENT_ACTIVE
+    uint32_t detectionsSinceLastMsg; // Aggregation counter
+    int64_t  eventStartTimeS;        // When current event session started
+    char     sessionId[80];          // Session folder name for SD card persistence
+} rtc_duty_cycle_t;
+```
+
+Session ID persistence ensures all wake cycles write to the same SD card folder and CSV file.
+
+### 10. Timer Wake Fast-Boot Path
+
+On timer wake (vs button wake or fresh boot), heavy subsystems are skipped to minimize boot time:
+
+| Skipped on Timer Wake | Why |
+|-----------------------|-----|
+| `Battery::GetInstance()` | Not needed for 30s cycle |
+| Firmware update check | Not during duty cycle |
+| LoRa `delay(5000)` | Serial monitor helper, wastes 5s |
+| LED startup animation | No one watching |
+| LoRa buzzer feedback | No one listening |
+| Bluetooth setup | Major time/power saving |
+| PerfMonitor | Debug only |
+
+Detection via `esp_sleep_get_wakeup_cause()` returning `ESP_SLEEP_WAKEUP_TIMER`.
+
 ## Component Relationships
 
 ```

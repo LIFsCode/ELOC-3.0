@@ -2,21 +2,27 @@
 
 ## Current Work Focus
 
-The project is in an active development phase with the core recording, AI inference, LoRaWAN, and Bluetooth subsystems all operational. Recent work has focused on:
+**Duty-Cycle Deep Sleep (Phase 1) — COMPLETE.** The device can now cycle between 5-minute deep sleep and 30-second active AI inference, providing ~10-15× battery life extension. Next focus is Phase 2: LoRa Event Cooldown to reduce daily LoRa messages from hundreds to ~10-15.
 
-1. **LoRaWAN session persistence** — RadioLib 7.2.1 upgrade with full session (RTC) and nonces (NVS) persistence to eliminate DevNonce exhaustion issues
-2. **AI inference configuration** — Configurable detection threshold, observation window, and required detections count for more nuanced event triggering
-3. **Microphone support expansion** — Added PUI DMM-4026-B-I2S-R microphone support with DC offset filtering
-4. **Deferred AI startup** — AI thread start deferred by 3 seconds after BT command to allow status queries to complete
+Recent completed work:
+1. **Duty-cycle deep sleep** — Timer-based wake/sleep cycling with configurable durations
+2. **Fast boot path** — Skips Bluetooth, Battery, PerfMonitor on timer wake (~5s faster)
+3. **RTC state persistence** — Boot count, total detections, session ID survive across sleep cycles
+4. **Session continuity** — Same SD card folder and CSV file shared across all wake cycles
+5. **Bug fixes** — totalDetections sync, session persistence, timezone handling, awake timer accuracy, LED turn-off
 
 ## Recent Changes
 
-- **RadioLib 7.2.1 upgrade** with dual-storage persistence (RTC + NVS) for LoRaWAN
-- **GPIO ISR service** installed earlier in initialization to avoid conflicts with LoRa and other interrupt sources
-- **Inference configuration** added: threshold, observation window, required detections — allowing "N detections in M seconds" logic
-- **DMM-4026-B-I2S-R microphone** driver support with DC offset removal filter
-- **Conservative LoRa rejoin** strategy with 10-minute minimum interval
-- **Audio feedback** for LoRa join events (buzzer)
+- **Duty-cycle deep sleep** (Phase 1) implemented and tested — see `README-DutyCycle-and-LoRa-Cooldown.md`
+- **Bug fixes** documented in `README-DutyCycle-BugFixes.md`:
+  - totalDetections now synced to RTC before sleep
+  - Session ID persisted in RTC memory for folder continuity
+  - Timezone restored on timer wake (TZ env var lost during deep sleep)
+  - Awake timer reset after init (full 30s now available for inference)
+  - LEDs turned off before sleep (IO expander retains register state)
+- **LoRa delay skipped** on timer wake (saves 5s boot time)
+- **LED animation skipped** on timer wake
+- **Buzzer feedback skipped** on timer wake
 
 ## Active Decisions and Considerations
 
@@ -36,10 +42,16 @@ The project is in an active development phase with the core recording, AI infere
 
 ## Next Steps
 
+### High Priority
+- **LoRa Event Cooldown (Phase 2)** — Implement event start/ongoing/end state machine to reduce daily LoRa messages from hundreds to ~10-15. See `README-DutyCycle-and-LoRa-Cooldown.md` Section 3.
+
+### Medium Priority
 - Fix automatic gain adjustment distortion issue
 - Investigate and verify light sleep effectiveness during idle periods
-- Consider BLE migration path for power savings
 - Add mutex guards to shared task variables
+
+### Lower Priority
+- Consider BLE migration path for power savings
 - Improve error recovery for SD card hot-swap scenarios
 - Expand unit test coverage for LoRa persistence and AI detection logic
 

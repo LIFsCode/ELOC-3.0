@@ -39,6 +39,19 @@
 - **Deep sleep** with GPIO button wake-up
 - **Battery monitoring** with configurable intervals and averaging
 
+### Duty-Cycle Deep Sleep — ✅ Operational (Phase 1)
+- **Timer-based wake/sleep cycling** for extended battery life (~10-15× improvement)
+- **Configurable parameters:** `awakeDurationS` (20-120s), `sleepDurationS` (60-900s)
+- **Fast boot path:** skips Bluetooth, Battery, PerfMonitor on timer wake (~5s faster)
+- **RTC persistence:** boot count, total detections, session ID survive deep sleep
+- **Session continuity:** same SD card folder and CSV file across wake cycles
+- **LoRaWAN session preservation** via existing RTC persistence mechanism
+- **Auto-start AI inference** on timer wake
+- **LED turn-off** before sleep (IO expander retains state)
+- **Button wake escape:** press button during sleep to return to normal boot
+- **Triggered via:** Bluetooth `recordOff_detectOn` command activates duty cycle
+- **See:** `README-DutyCycle-and-LoRa-Cooldown.md`, `README-DutyCycle-BugFixes.md`
+
 ### Hardware Support — ✅ Operational
 - **LIS3DH accelerometer** for intruder detection and double-tap BT wake
 - **PCA9557 IO expander** for expanded GPIO
@@ -63,17 +76,17 @@
 - [ ] **NVS LoRaWAN keys unencrypted** — security risk with physical access
 
 ### Desired Improvements
+- [ ] **LoRa Event Cooldown** — Phase 2 of duty cycle (reduce LoRa msgs to ~10-15/day)
 - [ ] Migrate from Bluetooth Classic to BLE for power savings
 - [ ] Add mutex/semaphore guards to all shared task variables
 - [ ] Improve SD card hot-swap handling without reboot
 - [ ] Verify and optimize light sleep power savings
 - [ ] Expand unit test coverage (LoRa persistence, AI detection logic, config)
-- [ ] Add deep sleep timer mode (auto-wake for periodic recording)
 - [ ] Consider NVS encryption for LoRaWAN keys
 
 ## Current Status
 
-**Overall:** The firmware is functional and field-deployable. All major subsystems (recording, AI, LoRa, Bluetooth, power management) are operational. Recent work has hardened LoRaWAN reliability with session persistence and improved AI detection flexibility with configurable observation windows. The main areas needing attention are power optimization (light sleep verification, BLE migration) and robustness improvements (thread safety, SD card handling).
+**Overall:** The firmware is functional and field-deployable. All major subsystems (recording, AI, LoRa, Bluetooth, power management, duty-cycle deep sleep) are operational. The newest feature is **duty-cycle deep sleep** (Phase 1 complete) which enables 5-min sleep / 30s awake cycling for ~10-15× battery life extension. Next up is Phase 2: LoRa Event Cooldown to reduce event messages from hundreds per day to ~10-15 by implementing event start/ongoing/end state machine.
 
 ## Evolution of Project Decisions
 

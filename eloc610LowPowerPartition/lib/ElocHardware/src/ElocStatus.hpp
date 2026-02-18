@@ -80,6 +80,7 @@ typedef struct {
     uint32_t bootCount;              // Wake-up counter
     uint32_t totalDetections;        // Running detection count across cycles
     int64_t  lastEventLoraTimeS;     // Cooldown: when last event LoRa sent (epoch seconds)
+    int64_t  lastStatusLoraTimeS;    // Heartbeat: when last status uplink sent (epoch seconds)
     int64_t  lastDetectionTimeS;     // Cooldown: when last detection occurred (epoch seconds)
     uint8_t  eventState;             // EVENT_IDLE(0) or EVENT_ACTIVE(1)
     uint32_t detectionsSinceLastMsg; // Aggregation counter for ongoing msgs

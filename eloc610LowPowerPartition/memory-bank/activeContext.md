@@ -4,6 +4,8 @@
 
 **Duty-Cycle Deep Sleep (Phase 1) — COMPLETE.** The device can now cycle between 5-minute deep sleep and 30-second active AI inference, providing ~10-15× battery life extension. Next focus is Phase 2: LoRa Event Cooldown to reduce daily LoRa messages from hundreds to ~10-15.
 
+**24h Heartbeat for Patrol Mode — COMPLETE.** Periodic LoRa status uplinks now use wall-clock epoch time persisted in RTC memory (`lastStatusLoraTimeS` in `rtc_duty_cycle_t`), ensuring the heartbeat interval is honoured across duty-cycle deep sleep cycles. Default uplink interval changed from 1 hour to 24 hours.
+
 Recent completed work:
 1. **Duty-cycle deep sleep** — Timer-based wake/sleep cycling with configurable durations
 2. **Fast boot path** — Skips Bluetooth, Battery, PerfMonitor on timer wake (~5s faster)

@@ -72,7 +72,7 @@ private:
     SX1262 radio;
     
     // how often to send an uplink - consider legal & FUP constraints - see notes
-    uint32_t uplinkIntervalSeconds = 1UL * 60UL;    // minutes x seconds
+    uint32_t uplinkIntervalSeconds = 24UL * 60UL * 60UL;    // 24 hours (default heartbeat interval)
 
     uint64_t joinEUI;
     uint64_t devEUI;

@@ -136,7 +136,7 @@ static const elocConfig_T C_ElocConfig_Default {
     },
     .loraConfig = {
         .loraEnable = true,
-        .upLinkIntervalS = 3600,
+        .upLinkIntervalS = 86400,
         .loraRegion = "AS923_2",
         .eventCooldownS = 900,      // 15 minutes between event LoRa msgs
         .eventEndTimeoutS = 300,    // 5 minutes without detection = event ended

@@ -39,6 +39,13 @@
 - **Deep sleep** with GPIO button wake-up
 - **Battery monitoring** with configurable intervals and averaging
 
+### 24h Heartbeat for Patrol Mode — ✅ Operational
+- **RTC-persisted heartbeat timing** using wall-clock epoch time (`lastStatusLoraTimeS` in `rtc_duty_cycle_t`)
+- **Default 24h interval:** `upLinkIntervalS` changed from 3600 to 86400 (configurable via JSON)
+- **Survives deep sleep:** heartbeat interval honoured across duty-cycle sleep/wake cycles
+- **Immediate on first boot:** `lastStatusLoraTimeS = 0` triggers first heartbeat immediately after fresh start
+- **Only updates on success:** timestamp only saved to RTC if `sendStatusUpdateMessage()` returns ESP_OK
+
 ### Duty-Cycle Deep Sleep — ✅ Operational (Phase 1)
 - **Timer-based wake/sleep cycling** for extended battery life (~10-15× improvement)
 - **Configurable parameters:** `awakeDurationS` (20-120s), `sleepDurationS` (60-900s)

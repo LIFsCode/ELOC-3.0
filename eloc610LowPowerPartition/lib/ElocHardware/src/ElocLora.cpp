@@ -429,7 +429,6 @@ void ElocLora::ElocLoraLoop() {
       // if initialization failed Lora is not available so we skip everything
       return;
     }
-    static int64_t lastLoraUplinkTimeS = 0;
 #ifdef EDGE_IMPULSE_ENABLED
     static int64_t lastEiDetectedEvents = 0;
      //TODO: Check if we really want all classifier to trigger an event
@@ -441,19 +440,24 @@ void ElocLora::ElocLoraLoop() {
     //        so no information is lost.
     if (edgeImpulse.get_detectedEvents() != lastEiDetectedEvents) {
       ESP_LOGI(TAG, "Sending uplink with detected Event");  
-      lastLoraUplinkTimeS = esp_timer_get_time()/1000/1000;
-      lastEiDetectedEvents = edgeImpulse.get_detectedEvents(); // also update the send time to skip next status update
+      lastEiDetectedEvents = edgeImpulse.get_detectedEvents();
       sendEventMessage();
     }
 #endif
-    int64_t timeDiff = esp_timer_get_time()/1000/1000 - lastLoraUplinkTimeS;
-    if  (timeDiff >= uplinkIntervalSeconds) {
-      ESP_LOGI(TAG, "Sending uplink");  
-      lastLoraUplinkTimeS = esp_timer_get_time()/1000/1000;
+    // Heartbeat (periodic status uplink) uses wall-clock epoch time persisted in
+    // RTC memory so the interval is honoured across duty-cycle deep sleep cycles.
+    // On first boot (or after power loss) lastStatusLoraTimeS == 0, so the very
+    // first heartbeat is sent immediately — this is the desired behaviour.
+    int64_t nowEpochS = timeObject.getLocalEpoch();
+    int64_t timeSinceLastHeartbeat = nowEpochS - rtc_duty_cycle.lastStatusLoraTimeS;
+    if  (timeSinceLastHeartbeat >= uplinkIntervalSeconds) {
+      ESP_LOGI(TAG, "Sending heartbeat uplink (last was %lld s ago)", timeSinceLastHeartbeat);
       
-      sendStatusUpdateMessage();
+      if (sendStatusUpdateMessage() == ESP_OK) {
+        rtc_duty_cycle.lastStatusLoraTimeS = nowEpochS;
+      }
 
-      ESP_LOGI(TAG, "Next uplink in %d seconds\n", uplinkIntervalSeconds);
+      ESP_LOGI(TAG, "Next heartbeat in %d seconds\n", uplinkIntervalSeconds);
     }
 }
 

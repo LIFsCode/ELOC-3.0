@@ -37,6 +37,7 @@
 #include "ElocStatus.hpp"
 #include "Battery.hpp"
 #include "../../ElocHardware/src/config.h"
+#include "../../ElocHardware/src/ElocLora.hpp"
 #include "macros.hpp"
 #include "logging.hpp"
 #include "ffsutils.h"
@@ -109,7 +110,7 @@ void addEnum(JsonObject& object, T val) {
 
 void printStatus(String& buf) {
 
-    StaticJsonDocument<512> doc;
+    StaticJsonDocument<768> doc;
     JsonObject battery = doc.createNestedObject("battery");
     battery["type"]                = Battery::GetInstance().getBatType();
     battery["state"]               = Battery::GetInstance().getState();
@@ -150,6 +151,17 @@ void printStatus(String& buf) {
     device["SdCardSize[GB]"]             = round(sdCardSizeGB, 2);
     device["SdCardFreeSpace[GB]"]        = round(sdCardFreeSpaceGB, 2);
     device["SdCardFreeSpace[%]"]         = round(sdCardFreeSpaceGB/sdCardSizeGB*100.0, 2);
+
+    // LoRa signal quality section — allows Android app to display signal strength during deployment
+    JsonObject lora = doc.createNestedObject("lora");
+    ElocLora& loraInst = ElocLora::GetInstance();
+    lora["enabled"]                      = getConfig().loraConfig.loraEnable;
+    lora["joined"]                       = loraInst.isJoined();
+    lora["hasSignalInfo"]                = loraInst.hasSignalInfo();
+    if (loraInst.hasSignalInfo()) {
+        lora["RSSI[dBm]"]               = round(loraInst.getLastRSSI(), 1);
+        lora["SNR[dB]"]                  = round(loraInst.getLastSNR(), 1);
+    }
 
     if (serializeJsonPretty(doc, buf) == 0) {
         ESP_LOGE(TAG, "Failed serialize JSON config!");

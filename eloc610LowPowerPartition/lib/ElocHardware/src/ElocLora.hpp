@@ -126,6 +126,15 @@ private:
     // Audio feedback for join events
     void playJoinFeedback(bool success);
 
+    // Signal quality tracking
+    float mLastRSSI = 0.0f;      // Last known RSSI in dBm
+    float mLastSNR = 0.0f;       // Last known SNR in dB
+    bool  mHasRSSI = false;      // Whether we have a valid RSSI reading
+    int64_t mLastRSSITimeS = 0;  // Epoch time of last RSSI reading
+
+    /// @brief Store the current radio RSSI/SNR values
+    void captureSignalQuality();
+
     // Session persistence functions
     uint32_t calculateCRC32(const uint8_t* data, size_t length);
     bool isValidSession();
@@ -141,6 +150,15 @@ public:
         return elocLora;
     }
     void ElocLoraLoop();
+
+    /// @brief Get the last known RSSI value (from join or downlink)
+    float getLastRSSI() const { return mLastRSSI; }
+    /// @brief Get the last known SNR value (from join or downlink)
+    float getLastSNR() const { return mLastSNR; }
+    /// @brief Whether a valid RSSI reading has been captured
+    bool  hasSignalInfo() const { return mHasRSSI; }
+    /// @brief Whether LoRa is initialized and joined
+    bool  isJoined() const { return mInitDone; }
 };
 
 

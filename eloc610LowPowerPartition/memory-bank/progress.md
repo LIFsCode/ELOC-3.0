@@ -26,6 +26,7 @@
 - **DevNonce persistence** via NVS flash (survives power loss)
 - **Conservative auto-rejoin** with 10-minute minimum interval
 - **Payload formatters** for TTN (uplink & downlink)
+- **RSSI/SNR signal quality** captured after join and downlinks, exposed via `getStatus` BT command for Android app deployment checking
 
 ### Bluetooth Control — ✅ Operational
 - **BT Classic SPP** server for ELOC Control Panel Android app

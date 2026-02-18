@@ -15,6 +15,11 @@ Recent completed work:
 
 ## Recent Changes
 
+- **LoRa RSSI signal quality** exposed via `getStatus` Bluetooth command for deployment-time signal strength checking in Android app
+  - `captureSignalQuality()` captures RSSI/SNR after OTAA join (Join-Accept), after rejoin, and after any downlink
+  - New `lora` section in `getStatus` JSON: `enabled`, `joined`, `hasSignalInfo`, `RSSI[dBm]`, `SNR[dB]`
+  - Public getters on `ElocLora`: `getLastRSSI()`, `getLastSNR()`, `hasSignalInfo()`, `isJoined()`
+  - RSSI only available after fresh join (cold boot) or downlink — not after session restore from RTC
 - **Duty-cycle deep sleep** (Phase 1) implemented and tested — see `README-DutyCycle-and-LoRa-Cooldown.md`
 - **Bug fixes** documented in `README-DutyCycle-BugFixes.md`:
   - totalDetections now synced to RTC before sleep

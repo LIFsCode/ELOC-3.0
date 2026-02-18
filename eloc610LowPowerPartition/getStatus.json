@@ -1,0 +1,37 @@
+{
+  "battery": {
+    "type": "LiFePo",
+    "state": "normal",
+    "SoC[%]": 85.3,
+    "voltage[V]": 3.28
+  },
+  "session": {
+    "identifier": "20260218_141500",
+    "recordingState": {
+      "val": 4,
+      "state": "recordOff_detectOn"
+    },
+    "recordingTime[h]": 0.0,
+    "detection": {
+      "state": true,
+      "detectingTime[h]": 0.125,
+      "detectedEvents": 3,
+      "aiModel": "Chain_ELOC"
+    }
+  },
+  "device": {
+    "firmware": "ELOC_V1.41",
+    "Uptime[h]": 0.5,
+    "totalRecordingTime[h]": 2.345,
+    "SdCardSize[GB]": 29.72,
+    "SdCardFreeSpace[GB]": 25.18,
+    "SdCardFreeSpace[%]": 84.72
+  },
+  "lora": {
+    "enabled": true,
+    "joined": true,
+    "hasSignalInfo": true,
+    "RSSI[dBm]": -85.5,
+    "SNR[dB]": 7.2
+  }
+}

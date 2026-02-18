@@ -400,6 +400,8 @@ esp_err_t ElocLora::init() {
     // CRITICAL: Set mInitDone BEFORE saving session
     // (saveSessionToRTC checks mInitDone)
     mInitDone = true;
+    // Capture RSSI/SNR from the Join-Accept downlink
+    captureSignalQuality();
     // Save the new session and nonces after successful join
     saveSessionToRTC();
     // Play success audio feedback
@@ -544,6 +546,14 @@ esp_err_t ElocLora::sendEventMessage() {
 #endif
 }
 
+void ElocLora::captureSignalQuality() {
+    mLastRSSI = radio.getRSSI();
+    mLastSNR = radio.getSNR();
+    mHasRSSI = true;
+    mLastRSSITimeS = timeObject.getLocalEpoch();
+    ESP_LOGI(TAG, "[LoRaWAN] Signal quality: RSSI = %.1f dBm, SNR = %.1f dB", mLastRSSI, mLastSNR);
+}
+
 void ElocLora::playJoinFeedback(bool success) {
     // Skip buzzer on timer wake (duty cycle) - no one is around to hear it
     if (gIsTimerWake) {
@@ -590,11 +600,8 @@ esp_err_t ElocLora::parseResponse(int16_t state) {
             ESP_LOGI(TAG, "<MAC commands only>");
         }
 
-        // print RSSI (Received Signal Strength Indicator)
-        ESP_LOGI(TAG, "[LoRaWAN] RSSI:\t\t%f dBm", radio.getRSSI());
-
-        // print SNR (Signal-to-Noise Ratio)
-        ESP_LOGI(TAG, "[LoRaWAN] SNR:\t\t%f dB", radio.getSNR());
+        // Capture and store signal quality from the downlink
+        captureSignalQuality();
 
         // print extra information about the event
         ESP_LOGI(TAG, "[LoRaWAN] Event information:");
@@ -640,6 +647,10 @@ bool ElocLora::attemptRejoin(const char* reason) {
     if (joinState == RADIOLIB_LORAWAN_NEW_SESSION || joinState == RADIOLIB_LORAWAN_SESSION_RESTORED) {
         ESP_LOGI(TAG, "Rejoin successful: %s (%d)", stateDecode(joinState).c_str(), joinState);
         mInitDone = true;
+        // Capture signal quality from Join-Accept (only meaningful for NEW_SESSION)
+        if (joinState == RADIOLIB_LORAWAN_NEW_SESSION) {
+            captureSignalQuality();
+        }
         saveSessionToRTC();
         playJoinFeedback(true);
         return true;

@@ -2,16 +2,19 @@ ED
 
 To Do:
  -- Turn off LEDS after wakup from deep sleep during duty cycle(?)
- -- Check if LoRa can wake up from stored memory
  -- Show LoRa signal strength in app with red and green circle
  -- Add detecting/recording scheduler 
  -- Restart button
  -- After removing SD card. ELOC must be restarted otherwise SD card is not recognized
       ALSO: SD card shows green in the app
--- Format SD card from App
--- How is the LoRa hearbeat message handled during patrol mode?
--- Patrol mode: After 12 hours -> 30 sec time drift due to RTC clock
+ -- Format SD card from App
+ -- Patrol mode: After 12 hours -> 30 sec time drift due to RTC clock
    - Solution: Add external crystal / GPS module / from LoRa
+
+
+To Test:
+  -- Check if LoRa can wake up from stored memory
+  -- test the LoRa hearbeat in patrol mode 
 
 
 

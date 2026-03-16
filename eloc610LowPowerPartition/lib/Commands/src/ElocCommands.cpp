@@ -36,12 +36,12 @@
 #include "ElocConfig.hpp"
 #include "ElocStatus.hpp"
 #include "Battery.hpp"
-#include "config.h"
+#include "../../ElocHardware/src/config.h"
 #include "macros.hpp"
 #include "logging.hpp"
 #include "ffsutils.h"
 #include "ScopeGuard.hpp"
-
+#include "esp_timer.h"
 
 
 
@@ -49,6 +49,10 @@
 //BUGME: global status
 extern ESP32Time timeObject;
 extern SDCardSDIO sd_card;
+
+// Defined in main.cpp - needed for deferred AI start & session creation
+extern bool session_folder_created;
+extern bool createSessionFolder();
 
 #define ENUM_MACRO(name, v0, v1, v2, v3, v4, v5)\
     enum class name { v0, v1, v2, v3, v4, v5};\
@@ -377,7 +381,28 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
     }
 
     if (ai_mode_change) {
-        xQueueSend(rec_ai_evt_queue, &new_ai_mode, (TickType_t)0);
+        // Set ai_run_enable IMMEDIATELY so that calcRecordingState() and getStatus
+        // return the correct state right away, without waiting for the main loop
+        // to dequeue from rec_ai_evt_queue.
+        ai_run_enable = new_ai_mode;
+
+        if (new_ai_mode) {
+            // ENABLING AI: Create session folder now so getStatus returns correct session ID.
+            // The actual AI thread start is DEFERRED to allow BT to serve follow-up
+            // commands (getStatus/getConfig) before the AI thread consumes CPU/memory.
+            if (!session_folder_created) {
+                ESP_LOGI(TAG, "Creating session folder early for correct session ID in getStatus");
+                createSessionFolder();
+            }
+            g_ai_deferred_start_time = esp_timer_get_time() + AI_DEFERRED_START_DELAY_US;
+            g_ai_start_pending = true;
+            ESP_LOGI(TAG, "AI start deferred by %lld ms to allow BT commands to complete",
+                     AI_DEFERRED_START_DELAY_US / 1000LL);
+        } else {
+            // DISABLING AI: Cancel any pending deferred start and stop immediately
+            g_ai_start_pending = false;
+            xQueueSend(rec_ai_evt_queue, &new_ai_mode, (TickType_t)0);
+        }
     }
 
     StaticJsonDocument<512> doc;

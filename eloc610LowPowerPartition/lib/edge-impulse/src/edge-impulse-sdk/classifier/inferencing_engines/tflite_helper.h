@@ -1,27 +1,44 @@
-/*
- * Copyright (c) 2022 EdgeImpulse Inc.
+/* The Clear BSD License
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- * http://www.apache.org/licenses/LICENSE-2.0
+ * Copyright (c) 2025 EdgeImpulse Inc.
+ * All rights reserved.
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an "AS
- * IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language
- * governing permissions and limitations under the License.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted (subject to the limitations in the disclaimer
+ * below) provided that the following conditions are met:
  *
- * SPDX-License-Identifier: Apache-2.0
+ *   * Redistributions of source code must retain the above copyright notice,
+ *   this list of conditions and the following disclaimer.
+ *
+ *   * Redistributions in binary form must reproduce the above copyright
+ *   notice, this list of conditions and the following disclaimer in the
+ *   documentation and/or other materials provided with the distribution.
+ *
+ *   * Neither the name of the copyright holder nor the names of its
+ *   contributors may be used to endorse or promote products derived from this
+ *   software without specific prior written permission.
+ *
+ * NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY
+ * THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+ * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+ * IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef _EI_CLASSIFIER_INFERENCING_ENGINE_TFLITE_HELPER_H_
 #define _EI_CLASSIFIER_INFERENCING_ENGINE_TFLITE_HELPER_H_
 
 #include "edge-impulse-sdk/classifier/ei_quantize.h"
-#if (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE_FULL) || (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE)
+#if (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE_FULL) || (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE) || (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TENSORRT) || (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE_TIDL)
 
-#if EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE_FULL
+#if (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE_FULL) || (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE_TIDL)
 #include <thread>
 #include "tensorflow-lite/tensorflow/lite/c/common.h"
 #include "tensorflow-lite/tensorflow/lite/interpreter.h"
@@ -39,10 +56,12 @@
 
 EI_IMPULSE_ERROR fill_input_tensor_from_matrix(
     ei_feature_t *fmatrix,
+    ei_feature_t *omatrix,
     TfLiteTensor *input,
     uint32_t* input_block_ids,
     uint32_t input_block_ids_size,
-    size_t mtx_size
+    size_t fmtx_size,
+    size_t omtx_size
 ) {
     size_t matrix_els = 0;
     uint32_t input_idx = 0;
@@ -52,9 +71,11 @@ EI_IMPULSE_ERROR fill_input_tensor_from_matrix(
         size_t cur_mtx = input_block_ids[i];
         ei::matrix_t* matrix = NULL;
 
-        if (!find_mtx_by_idx(fmatrix, &matrix, cur_mtx, mtx_size)) {
-            ei_printf("ERR: Cannot find matrix with id %zu\n", cur_mtx);
-            return EI_IMPULSE_INVALID_SIZE;
+        if (!find_mtx_by_idx(fmatrix, &matrix, cur_mtx, fmtx_size)) {
+            if (!find_mtx_by_idx(omatrix, &matrix, cur_mtx, omtx_size)) {
+                ei_printf("ERR: Cannot find matrix with id %zu\n", cur_mtx);
+                return EI_IMPULSE_INVALID_SIZE;
+            }
         }
 #else
         ei::matrix_t* matrix = fmatrix[0].matrix;
@@ -275,300 +296,5 @@ EI_IMPULSE_ERROR fill_output_matrix_from_tensor(
     return EI_IMPULSE_OK;
 }
 
-EI_IMPULSE_ERROR fill_result_struct_from_output_tensor_tflite(
-    const ei_impulse_t *impulse,
-    ei_learning_block_config_tflite_graph_t *block_config,
-    TfLiteTensor* output,
-    TfLiteTensor* labels_tensor,
-    TfLiteTensor* scores_tensor,
-    ei_impulse_result_t *result,
-    bool debug
-) {
-    EI_IMPULSE_ERROR fill_res = EI_IMPULSE_OK;
-
-    if (block_config->classification_mode == EI_CLASSIFIER_CLASSIFICATION_MODE_OBJECT_DETECTION) {
-        switch (block_config->object_detection_last_layer) {
-            case EI_CLASSIFIER_LAST_LAYER_FOMO: {
-                bool int8_output = output->type == TfLiteType::kTfLiteInt8;
-                if (int8_output) {
-                    fill_res = fill_result_struct_i8_fomo(
-                        impulse,
-                        block_config,
-                        result,
-                        output->data.int8,
-                        output->params.zero_point,
-                        output->params.scale,
-                        impulse->fomo_output_size,
-                        impulse->fomo_output_size);
-                }
-                else {
-                    fill_res = fill_result_struct_f32_fomo(
-                        impulse,
-                        block_config,
-                        result,
-                        output->data.f,
-                        impulse->fomo_output_size,
-                        impulse->fomo_output_size);
-                }
-                break;
-            }
-#if EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE_FULL
-            case EI_CLASSIFIER_LAST_LAYER_SSD: {
-                if (!scores_tensor->data.f) {
-                    return EI_IMPULSE_SCORE_TENSOR_WAS_NULL;
-                }
-                if (!labels_tensor->data.f) {
-                    return EI_IMPULSE_LABEL_TENSOR_WAS_NULL;
-                }
-                if (output->type == kTfLiteFloat32) {
-                    fill_res = fill_result_struct_f32_object_detection(
-                        impulse,
-                        block_config,
-                        result,
-                        output->data.f,
-                        scores_tensor->data.f,
-                        labels_tensor->data.f,
-                        debug);
-                }
-                else {
-                    ei_printf("ERR: MobileNet SSD does not support quantized inference\n");
-                    return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-                }
-                break;
-            }
-#else
-            case EI_CLASSIFIER_LAST_LAYER_SSD: {
-                ei_printf("ERR: MobileNet SSD is not supported in EON or TensorFlow Lite Micro\n");
-                return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-            }
-#endif // EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE_FULL
-            case EI_CLASSIFIER_LAST_LAYER_YOLOV5:
-            case EI_CLASSIFIER_LAST_LAYER_YOLOV5_V5_DRPAI: {
-                int version = block_config->object_detection_last_layer == EI_CLASSIFIER_LAST_LAYER_YOLOV5_V5_DRPAI ?
-                    5 : 6;
-
-                if (output->type == kTfLiteInt8) {
-                    fill_res = fill_result_struct_quantized_yolov5(
-                        impulse,
-                        block_config,
-                        result,
-                        version,
-                        output->data.int8,
-                        output->params.zero_point,
-                        output->params.scale,
-                        impulse->tflite_output_features_count,
-                        debug);
-                }
-                else if (output->type == kTfLiteUInt8) {
-                    fill_res = fill_result_struct_quantized_yolov5(
-                        impulse,
-                        block_config,
-                        result,
-                        version,
-                        output->data.uint8,
-                        output->params.zero_point,
-                        output->params.scale,
-                        impulse->tflite_output_features_count,
-                        debug);
-                }
-                else if (output->type == kTfLiteFloat32) {
-                    fill_res = fill_result_struct_f32_yolov5(
-                        impulse,
-                        block_config,
-                        result,
-                        version,
-                        output->data.f,
-                        impulse->tflite_output_features_count,
-                        debug);
-                }
-                else {
-                    ei_printf("ERR: Invalid output type (%d) for YOLOv5 last layer\n", output->type);
-                    return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-                }
-                break;
-            }
-            case EI_CLASSIFIER_LAST_LAYER_YOLOX: {
-                if (block_config->quantized == 1) {
-                    ei_printf("ERR: YOLOX does not support quantized inference\n");
-                    return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-                }
-                else {
-                    fill_res = fill_result_struct_f32_yolox(
-                        impulse,
-                        block_config,
-                        result,
-                        output->data.f,
-                        impulse->tflite_output_features_count,
-                        debug);
-                }
-                break;
-            }
-            case EI_CLASSIFIER_LAST_LAYER_YOLOV7: {
-                if (block_config->quantized == 1) {
-                    ei_printf("ERR: YOLOV7 does not support quantized inference\n");
-                    return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-                }
-                else {
-                    size_t output_feature_count = 1;
-                    for (int ix = 0; ix < output->dims->size; ix++) {
-                        output_feature_count *= output->dims->data[ix];
-                    }
-                    fill_res = fill_result_struct_f32_yolov7(
-                        impulse,
-                        block_config,
-                        result,
-                        output->data.f,
-                        output_feature_count);
-                }
-                break;
-            }
-            case EI_CLASSIFIER_LAST_LAYER_TAO_SSD:
-            case EI_CLASSIFIER_LAST_LAYER_TAO_RETINANET: {
-
-                if (output->type == kTfLiteInt8) {
-                    fill_res = fill_result_struct_quantized_tao_decode_detections(
-                        impulse,
-                        block_config,
-                        result,
-                        output->data.int8,
-                        output->params.zero_point,
-                        output->params.scale,
-                        impulse->tflite_output_features_count,
-                        debug);
-                }
-                else if (output->type == kTfLiteUInt8) {
-                    fill_res = fill_result_struct_quantized_tao_decode_detections(
-                        impulse,
-                        block_config,
-                        result,
-                        output->data.uint8,
-                        output->params.zero_point,
-                        output->params.scale,
-                        impulse->tflite_output_features_count,
-                        debug);
-                }
-                else if (output->type == kTfLiteFloat32) {
-                    fill_res = fill_result_struct_f32_tao_decode_detections(
-                        impulse,
-                        block_config,
-                        result,
-                        output->data.f,
-                        impulse->tflite_output_features_count,
-                        debug);
-                }
-                else {
-                    ei_printf("ERR: Invalid output type (%d) for TAO last layer\n", output->type);
-                    return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-                }
-                break;
-            }
-            case EI_CLASSIFIER_LAST_LAYER_TAO_YOLOV3: {
-
-                if (output->type == kTfLiteInt8) {
-                    fill_res = fill_result_struct_quantized_tao_yolov3(
-                        impulse,
-                        block_config,
-                        result,
-                        output->data.int8,
-                        output->params.zero_point,
-                        output->params.scale,
-                        impulse->tflite_output_features_count,
-                        debug);
-                }
-                else if (output->type == kTfLiteUInt8) {
-                    fill_res = fill_result_struct_quantized_tao_yolov3(
-                        impulse,
-                        block_config,
-                        result,
-                        output->data.uint8,
-                        output->params.zero_point,
-                        output->params.scale,
-                        impulse->tflite_output_features_count,
-                        debug);
-                }
-                else if (output->type == kTfLiteFloat32) {
-                    fill_res = fill_result_struct_f32_tao_yolov3(
-                        impulse,
-                        block_config,
-                        result,
-                        output->data.f,
-                        impulse->tflite_output_features_count,
-                        debug);
-                }
-                else {
-                    ei_printf("ERR: Invalid output type (%d) for TAO YOLOv3 layer\n", output->type);
-                    return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-                }
-                break;
-            }
-            case EI_CLASSIFIER_LAST_LAYER_TAO_YOLOV4: {
-
-                if (output->type == kTfLiteInt8) {
-                    fill_res = fill_result_struct_quantized_tao_yolov4(
-                        impulse,
-                        block_config,
-                        result,
-                        output->data.int8,
-                        output->params.zero_point,
-                        output->params.scale,
-                        impulse->tflite_output_features_count,
-                        debug);
-                }
-                else if (output->type == kTfLiteUInt8) {
-                    fill_res = fill_result_struct_quantized_tao_yolov4(
-                        impulse,
-                        block_config,
-                        result,
-                        output->data.uint8,
-                        output->params.zero_point,
-                        output->params.scale,
-                        impulse->tflite_output_features_count,
-                        debug);
-                }
-                else if (output->type == kTfLiteFloat32) {
-                    fill_res = fill_result_struct_f32_tao_yolov4(
-                        impulse,
-                        block_config,
-                        result,
-                        output->data.f,
-                        impulse->tflite_output_features_count,
-                        debug);
-                }
-                else {
-                    ei_printf("ERR: Invalid output type (%d) for TAO YOLOv4 layer\n", output->type);
-                    return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-                }
-                break;
-            }
-            default: {
-                ei_printf("ERR: Unsupported object detection last layer (%d)\n",
-                    block_config->object_detection_last_layer);
-                return EI_IMPULSE_UNSUPPORTED_INFERENCING_ENGINE;
-            }
-        }
-    }
-    else if (block_config->classification_mode == EI_CLASSIFIER_CLASSIFICATION_MODE_VISUAL_ANOMALY)
-    {
-        if (!result->copy_output) {
-            fill_res = fill_result_visual_ad_struct_f32(impulse, result, output->data.f, block_config, debug);
-        }
-    }
-    // if we copy the output, we don't need to process it as classification
-    else
-    {
-        if (!result->copy_output) {
-            bool int8_output = output->type == TfLiteType::kTfLiteInt8;
-            if (int8_output) {
-                fill_res = fill_result_struct_i8(impulse, result, output->data.int8, output->params.zero_point, output->params.scale, debug);
-            }
-            else {
-                fill_res = fill_result_struct_f32(impulse, result, output->data.f, debug);
-            }
-        }
-    }
-
-    return fill_res;
-}
 #endif // #if (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE_FULL) || (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE)
-
 #endif // _EI_CLASSIFIER_INFERENCING_ENGINE_TFLITE_HELPER_H_

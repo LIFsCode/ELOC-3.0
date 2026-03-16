@@ -59,6 +59,16 @@ class I2SMEMSSampler {
    bool enable_read = true;
 
    /**
+    * DC offset removal filter for DMM-4026-B-I2S-R microphone
+    * Uses exponential moving average to track DC component
+    */
+   #if defined(I2S_PUI_DMM_4026_B_I2S_R) && defined(I2S_DMM_4026_ENABLE_DC_FILTER)
+   float dc_filter_state = 0.0f;
+   static constexpr float DC_FILTER_ALPHA = I2S_DMM_4026_DC_FILTER_ALPHA;  // Filter coefficient from config
+   uint32_t dc_filter_sample_count = 0;  // For debug logging
+   #endif
+
+   /**
     * @brief Read I2S samples from DMA buffer
     * @return The number of SAMPLES (i.e. not bytes) read
     */

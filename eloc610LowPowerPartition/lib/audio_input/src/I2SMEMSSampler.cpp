@@ -37,6 +37,19 @@ void I2SMEMSSampler::init(i2s_port_t _i2s_port, const i2s_pin_config_t &_i2s_pin
         ESP_LOGI(TAG, "i2s_port = %d", i2s_port);
         ESP_LOGI(TAG, "i2s_sampling_rate = %d", i2s_sampling_rate);
         ESP_LOGI(TAG, "volume2_pwr = %d", volume2_pwr);
+        
+        #ifdef I2S_PUI_DMM_4026_B_I2S_R
+            ESP_LOGI(TAG, "Microphone: PUI DMM-4026-B-I2S-R (18-bit precision in 24-bit word)");
+            #ifdef I2S_DMM_4026_ENABLE_DC_FILTER
+                ESP_LOGI(TAG, "DC offset filter enabled, alpha = %.6f", DC_FILTER_ALPHA);
+            #else
+                ESP_LOGI(TAG, "DC offset filter disabled");
+            #endif
+        #elif defined(I2S_TDK_INVENSENSE_ICS_43434)
+            ESP_LOGI(TAG, "Microphone: TDK InvenSense ICS-43434 (24-bit full precision)");
+        #else
+            ESP_LOGI(TAG, "Microphone: Unknown/Generic configuration");
+        #endif
     }
 }
 
@@ -242,6 +255,24 @@ int I2SMEMSSampler::read()
             #else
                 int32_t processed_sample_32bit = raw_samples[i] >> overall_bit_shift;
                 int16_t processed_sample_16bit = processed_sample_32bit;
+            #endif
+
+            #if defined(I2S_PUI_DMM_4026_B_I2S_R) && defined(I2S_DMM_4026_ENABLE_DC_FILTER)
+                // Apply DC offset removal filter for DMM-4026-B-I2S-R
+                // Update the DC filter state: f = (newSample * k) + (f * (1-k))
+                dc_filter_state = (processed_sample_16bit * DC_FILTER_ALPHA) + (dc_filter_state * (1.0f - DC_FILTER_ALPHA));
+                
+                // Remove DC offset: AC_output = sample - DC_average
+                int16_t original_sample = processed_sample_16bit;
+                processed_sample_16bit = processed_sample_16bit - (int16_t)dc_filter_state;
+                processed_sample_32bit = processed_sample_16bit;  // Update 32-bit version too
+                
+                // Debug logging every 16000 samples (1 second at 16kHz)
+                dc_filter_sample_count++;
+                if (dc_filter_sample_count % 16000 == 0) {
+                    ESP_LOGI(TAG, "DC filter: original=%d, dc_offset=%.1f, filtered=%d", 
+                             original_sample, dc_filter_state, processed_sample_16bit);
+                }
             #endif
 
             // Have we exceeded the 16 bit range?

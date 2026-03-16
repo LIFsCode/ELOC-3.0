@@ -42,9 +42,11 @@ Build using 'esp32dev-ei' in the 'Project Tasks':
     cc1plus: some warnings being treated as errors
     [.pio/build/esp32dev-ei/lib7f0/edge-impulse/edge-impulse-sdk/tensorflow/lite/micro/kernels/select.cpp.o] Error 1   
     ```
-    Modify line 120 of lib/edge-impulse/src/edge-impulse-sdk/tensorflow/lite/micro/kernels/select.cpp to read:  
+    Modify line 120 of lib/edge-impulse/src/edge-impulse-sdk/tensorflow/lite/micro/kernels/select.cpp to read:
+    ```
     TfLiteIntArray* output_size = nullptr;
-4. Compile error:
+    ```
+5. Compile error:
     ```
     collect2.exe: error: ld returned 1 exit status
     *** [.pio\build\esp32dev-ei-windows\firmware.elf] Error 1

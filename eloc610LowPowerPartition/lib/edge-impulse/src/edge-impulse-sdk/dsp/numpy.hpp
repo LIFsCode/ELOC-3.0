@@ -1,20 +1,36 @@
-/*
- * Copyright (c) 2022 EdgeImpulse Inc.
+/* The Clear BSD License
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- * http://www.apache.org/licenses/LICENSE-2.0
+ * Copyright (c) 2025 EdgeImpulse Inc.
+ * All rights reserved.
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an "AS
- * IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language
- * governing permissions and limitations under the License.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted (subject to the limitations in the disclaimer
+ * below) provided that the following conditions are met:
  *
- * SPDX-License-Identifier: Apache-2.0
+ *   * Redistributions of source code must retain the above copyright notice,
+ *   this list of conditions and the following disclaimer.
+ *
+ *   * Redistributions in binary form must reproduce the above copyright
+ *   notice, this list of conditions and the following disclaimer in the
+ *   documentation and/or other materials provided with the distribution.
+ *
+ *   * Neither the name of the copyright holder nor the names of its
+ *   contributors may be used to endorse or promote products derived from this
+ *   software without specific prior written permission.
+ *
+ * NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY
+ * THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+ * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+ * IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
-
 #ifndef _EIDSP_NUMPY_H_
 #define _EIDSP_NUMPY_H_
 
@@ -25,6 +41,12 @@
 #ifndef __has_include
 #define __has_include 1
 #endif // __has_include
+
+// Arduino build defines abs as a macro. That is invalid C++, and breaks
+// libc++'s <complex> header, undefine it.
+#ifdef abs
+#undef abs
+#endif
 
 #include <stdint.h>
 #include <string.h>
@@ -46,7 +68,11 @@
 #endif
 
 #if EIDSP_USE_CEVA_DSP
-// TODO
+#if EIDSP_USE_CEVA_DSP_FIXED
+#include "edge-impulse-sdk/dsp/dsp_engines/ei_ceva_dsp_fixed.h"
+#else
+#include "edge-impulse-sdk/dsp/dsp_engines/ei_ceva_dsp.h"
+#endif
 #elif EIDSP_USE_CMSIS_DSP
 #include "edge-impulse-sdk/dsp/dsp_engines/ei_arm_cmsis_dsp.h"
 #else
@@ -1290,31 +1316,19 @@ public:
             EIDSP_ERR(EIDSP_BUFFER_SIZE_MISMATCH);
         }
 
-        // truncate if needed
-        if (src_size > n_fft) {
-            src_size = n_fft;
+        fft_complex_t *fft_output = NULL;
+        auto ptr = EI_MAKE_TRACKED_POINTER(fft_output, n_fft_out_features);
+        EI_ERR_AND_RETURN_ON_NULL(fft_output, EIDSP_OUT_OF_MEM);
+
+        int ret = rfft(src, src_size, fft_output, n_fft_out_features, n_fft);
+        if (ret != EIDSP_OK) {
+            return ret;
         }
 
-        // declare input and output arrays
-        EI_DSP_MATRIX(fft_input, 1, n_fft);
-        if (!fft_input.buffer) {
-            EIDSP_ERR(EIDSP_OUT_OF_MEM);
+        // Calculate magnitude from complex values
+        for (size_t ix = 0; ix < n_fft_out_features; ix++) {
+            output[ix] = sqrt(fft_output[ix].r * fft_output[ix].r + fft_output[ix].i * fft_output[ix].i);
         }
-
-        // copy from src to fft_input
-        memcpy(fft_input.buffer, src, src_size * sizeof(float));
-        // pad to the rigth with zeros
-        memset(fft_input.buffer + src_size, 0, (n_fft - src_size) * sizeof(kiss_fft_scalar));
-
-        auto res = hw_r2r_fft( fft_input.buffer, output, n_fft );
-        if(res != EIDSP_OK ) {
-            if(res != EIDSP_NO_HW_ACCEL) {
-               EI_LOGI("HW RFFT failed, falling back to SW");
-            }
-            // fallback to software
-            return software_rfft(fft_input.buffer, output, n_fft, n_fft_out_features);
-        }
-
         return EIDSP_OK;
     }
 
@@ -1340,30 +1354,21 @@ public:
             src_size = n_fft;
         }
 
-        // declare input and output arrays
-        float *fft_input_buffer = NULL;
-        if (src_size >= n_fft) {
-            fft_input_buffer = (float*)src;
-        } // else we need to copy over and pad
-
-        EI_DSP_MATRIX_B(fft_input, 1, n_fft, fft_input_buffer);
+        // Unfortunately, arm fft (at least) modifies the input buffer AND does not work in place
+        // So we have to copy the input to a new buffer
+        EI_DSP_MATRIX(fft_input, 1, n_fft);
         if (!fft_input.buffer) {
             EIDSP_ERR(EIDSP_OUT_OF_MEM);
         }
 
         // If the buffer wasn't assigned to source above, let's copy and pad
-        if (!fft_input_buffer) {
-            // copy from src to fft_input
-            memcpy(fft_input.buffer, src, src_size * sizeof(float));
-            // pad to the rigth with zeros
-            memset(fft_input.buffer + src_size, 0, (n_fft - src_size) * sizeof(float));
-        }
+        // copy from src to fft_input
+        memcpy(fft_input.buffer, src, src_size * sizeof(float));
+        // pad to the rigth with zeros
+        memset(fft_input.buffer + src_size, 0, (n_fft - src_size) * sizeof(float));
 
-        auto res = hw_r2c_fft( fft_input.buffer, output, n_fft );
-        if(res != EIDSP_OK ) {
-            if(res != EIDSP_NO_HW_ACCEL) {
-               EI_LOGI("HW RFFT failed, falling back to SW");
-            }
+        auto res = ei::fft::hw_r2c_fft(fft_input.buffer, output, n_fft);
+        if (handle_fft_hw_failure(res, n_fft)) {
             // fallback to software
             return software_rfft(fft_input.buffer, output, n_fft, n_fft_out_features);
         }
@@ -1734,41 +1739,6 @@ public:
         return EIDSP_OK;
     }
 
-    static int software_rfft(float *fft_input, float *output, size_t n_fft, size_t n_fft_out_features) {
-    #if EIDSP_INCLUDE_KISSFFT || !defined(EIDSP_INCLUDE_KISSFFT)
-        kiss_fft_cpx *fft_output = (kiss_fft_cpx*)ei_dsp_malloc(n_fft_out_features * sizeof(kiss_fft_cpx));
-        if (!fft_output) {
-            EIDSP_ERR(EIDSP_OUT_OF_MEM);
-        }
-
-        size_t kiss_fftr_mem_length;
-
-        // create fftr context
-        kiss_fftr_cfg cfg = kiss_fftr_alloc(n_fft, 0, NULL, NULL, &kiss_fftr_mem_length);
-        if (!cfg) {
-            ei_dsp_free(fft_output, n_fft_out_features * sizeof(kiss_fft_cpx));
-            EIDSP_ERR(EIDSP_OUT_OF_MEM);
-        }
-
-        ei_dsp_register_alloc(kiss_fftr_mem_length, cfg);
-
-        // execute the rfft operation
-        kiss_fftr(cfg, fft_input, fft_output);
-
-        // and write back to the output
-        for (size_t ix = 0; ix < n_fft_out_features; ix++) {
-            output[ix] = sqrt(pow(fft_output[ix].r, 2) + pow(fft_output[ix].i, 2));
-        }
-
-        ei_dsp_free(cfg, kiss_fftr_mem_length);
-        ei_dsp_free(fft_output, n_fft_out_features * sizeof(kiss_fft_cpx));
-
-        return EIDSP_OK;
-    #else
-        return EIDSP_NOT_SUPPORTED;
-    #endif
-    }
-
     static int software_rfft(float *fft_input, fft_complex_t *output, size_t n_fft, size_t n_fft_out_features)
     {
     #if EIDSP_INCLUDE_KISSFFT || !defined(EIDSP_INCLUDE_KISSFFT)
@@ -1796,12 +1766,6 @@ public:
     static int signal_get_data(const float *in_buffer, size_t offset, size_t length, float *out_ptr)
     {
         memcpy(out_ptr, in_buffer + offset, length * sizeof(float));
-        return 0;
-    }
-
-    static int signal_get_data_i16(int16_t *in_buffer, size_t offset, size_t length, int16_t *out_ptr)
-    {
-        memcpy(out_ptr, in_buffer + offset, length * sizeof(int16_t));
         return 0;
     }
 
@@ -2500,6 +2464,33 @@ public:
         return ret;
     }
 
+private:
+    /**
+     * Helper function to handle FFT hardware acceleration failures and logging
+     * @param res Result code from hardware FFT attempt
+     * @param n_fft FFT size that was attempted
+     * @returns true if should fallback to software FFT
+     */
+    static bool handle_fft_hw_failure(int res, size_t n_fft) {
+        static bool first_time = true;
+        if (res == EIDSP_OK) {
+            return false;
+        }
+
+        // don't warn if we didn't include a DSP library
+        if (res != EIDSP_NO_HW_ACCEL && first_time) {
+            first_time = false; // only warn once
+            if (res == EIDSP_FFT_SIZE_NOT_SUPPORTED) {
+                EI_LOGI("HW RFFT failed, FFT size not supported. Must be a power of 2 between %d and %d, (size was %d)",
+                    ei::fft::MIN_FFT_SIZE, ei::fft::MAX_FFT_SIZE, (int)n_fft);
+            }
+            else {
+                EI_LOGI("HW RFFT failed, falling back to SW");
+            }
+        }
+        return true;
+    }
+
 };
 
 struct fmat {
@@ -2555,5 +2546,71 @@ struct fmat {
     }
 };
 } // namespace ei
+
+__attribute__((unused)) static bool find_mtx_by_idx(ei_feature_t* mtx, ei::matrix_t** matrix, uint32_t mtx_id, size_t mtx_size) {
+    for (uint32_t i = 0; i < mtx_size; i++) {
+        EI_LOGD("mtx[%d].blockId = %d\n", i, mtx[i].blockId);
+        if (mtx[i].matrix == NULL) {
+            EI_LOGD("Matrix is NULL\n");
+            continue;
+        }
+        if (mtx[i].blockId == mtx_id || mtx[i].blockId == 0) {
+            EI_LOGD("Found matrix with blockId %d\n", mtx[i].blockId);
+            *matrix = mtx[i].matrix;
+            return true;
+        }
+    }
+    EI_LOGD("Matrix not found\n");
+    return false;
+}
+
+__attribute__((unused)) static bool find_mtx_by_idx(ei_feature_t* mtx, ei::matrix_i8_t** matrix, uint32_t mtx_id, size_t mtx_size) {
+    for (uint32_t i = 0; i < mtx_size; i++) {
+        EI_LOGD("mtx[%d].blockId = %d\n", i, mtx[i].blockId);
+        if (mtx[i].matrix_i8 == NULL) {
+            EI_LOGD("Matrix is NULL\n");
+            continue;
+        }
+        if (mtx[i].blockId == mtx_id || mtx[i].blockId == 0) {
+            EI_LOGD("Found matrix with blockId %d\n", mtx[i].blockId);
+            *matrix = mtx[i].matrix_i8;
+            return true;
+        }
+    }
+    EI_LOGD("Matrix not found\n");
+    return false;
+}
+
+__attribute__((unused)) static bool find_mtx_by_idx(ei_feature_t* mtx, ei::matrix_u8_t** matrix, uint32_t mtx_id, size_t mtx_size) {
+    for (uint32_t i = 0; i < mtx_size; i++) {
+        EI_LOGD("mtx[%d].blockId = %d\n", i, mtx[i].blockId);
+        if (mtx[i].matrix_u8 == NULL) {
+            EI_LOGD("Matrix is NULL\n");
+            continue;
+        }
+        if (mtx[i].blockId == mtx_id || mtx[i].blockId == 0) {
+            EI_LOGD("Found matrix with blockId %d\n", mtx[i].blockId);
+            *matrix = mtx[i].matrix_u8;
+            return true;
+        }
+    }
+    EI_LOGD("Matrix not found\n");
+    return false;
+}
+
+__attribute__((unused)) static size_t get_feature_size(ei_feature_t* mtx, uint32_t ids_size, uint32_t* ids, size_t mtx_size) {
+    size_t feat_size = 0;
+    ei::matrix_t* matrix = NULL;
+    for (size_t i = 0; i < ids_size; i++) {
+        size_t cur_mtx = ids[i];
+
+        if (!find_mtx_by_idx(mtx, &matrix, cur_mtx, mtx_size)) {
+            ei_printf("ERR: Cannot find matrix with id %zu\n", cur_mtx);
+            return -1;
+        }
+        feat_size += matrix->rows * matrix->cols;
+    }
+    return feat_size;
+}
 
 #endif // _EIDSP_NUMPY_H_

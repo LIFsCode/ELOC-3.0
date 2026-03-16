@@ -31,6 +31,7 @@
 #include <driver/rtc_io.h>
 #include <esp_pm.h>
 #include <esp_mac.h>
+#include <esp_system.h>
 
 #include "ElocLoraConfig.h"
 #include "ElocLora.hpp"
@@ -41,6 +42,7 @@
 #include "WAVFileWriter.h"
 #include "config.h"
 #include "strutils.h"
+#include "EasyBuzzer.h"
 
 #ifdef EDGE_IMPULSE_ENABLED
 #include "EdgeImpulse.hpp"
@@ -49,6 +51,9 @@
 const char* TAG = "LoraWAN";
 
 static const uint32_t C_MIN_UPLINK_INTERVAL_S = 10;
+
+// RTC memory storage for session persistence across deep sleep
+RTC_DATA_ATTR rtc_lorawan_session_t rtc_session = {0};
 
 #include "RadioLib.h"
 #include "../../../include/project_config.h"
@@ -334,6 +339,9 @@ esp_err_t ElocLora::init() {
   //BUGME: handle serial somewhere else? or use ESP IDF based HAL instead of Arduino
   Serial.begin(115200);
   while(!Serial);
+
+  // Helpful when debugging long-run failures (brownout / watchdog / etc.)
+  ESP_LOGI(TAG, "Reset reason: %d", static_cast<int>(esp_reset_reason()));
   if (!getConfig().loraConfig.loraEnable) {
     ESP_LOGW(TAG, "Lora is not enabled... skipping Initialization");
     return ESP_OK;
@@ -367,15 +375,49 @@ esp_err_t ElocLora::init() {
     return ESP_ERR_NOT_FINISHED;
   }
 
+  // CRITICAL: Load nonces from NVS IMMEDIATELY after beginOTAA()
+  // This ensures DevNonce continues from last used value
+  ESP_LOGI(TAG, "Loading nonces from NVS");
+  loadNoncesFromNVS();
+
+  // Attempt to restore session from RTC memory (for faster wake-up)
+  ESP_LOGI(TAG, "Attempting session restoration from RTC");
+  bool sessionRestored = loadSessionFromRTC();
+
   ESP_LOGI(TAG, "Join ('login') the LoRaWAN Network");
   state = node.activateOTAA();
-  if (state != RADIOLIB_LORAWAN_NEW_SESSION) {
-    this->errMsg(F("Join failed"), state);
+  
+  // Handle different activation states
+  if (state == RADIOLIB_LORAWAN_SESSION_RESTORED) {
+    ESP_LOGI(TAG, "Session successfully restored from RTC memory");
+    mInitDone = true;
+    // Play success audio feedback
+    playJoinFeedback(true);
+  } else if (state == RADIOLIB_LORAWAN_NEW_SESSION) {
+    ESP_LOGI(TAG, "New OTAA session established");
+    // CRITICAL: Set mInitDone BEFORE saving session
+    // (saveSessionToRTC checks mInitDone)
+    mInitDone = true;
+    // Save the new session and nonces after successful join
+    saveSessionToRTC();
+    // Play success audio feedback
+    playJoinFeedback(true);
+  } else {
+    this->errMsg(F("Join/Restore failed"), state);
+    // Play failure audio feedback
+    playJoinFeedback(false);
     return ESP_ERR_NOT_FINISHED;
   }
 
+  // Disable dwell time limits for AS923 regions to allow higher spreading factors (SF10-SF12)
+  // This enables longer range communication but may not be compliant in all jurisdictions
+  const String& cfgRegion = getConfig().loraConfig.loraRegion;
+  if (cfgRegion.startsWith("AS923")) {
+    ESP_LOGI(TAG, "Disabling dwell time limits for %s region (allows SF10-SF12)", cfgRegion.c_str());
+    node.setDwellTime(false);
+  }
+
   ESP_LOGI(TAG, "Ready!\n");
-  mInitDone = true;
   return ESP_OK;
 }
 
@@ -434,9 +476,8 @@ esp_err_t ElocLora::sendStatusUpdateMessage() {
     
     ESP_LOGI(TAG, "Sending data (%d bytes): type = %d, time = %lld, SoC=%hu", idx, msgType, time, batSoC);
     //arrayDump(uplinkPayload, idx);
-    // Perform an uplink
-    int16_t state = node.sendReceive(uplinkPayload, idx, mFPort, mDownlinkPayload, &mDownlinkSize, false, &uplinkDetails,
-                                     &mDownlinkDetails);
+    // Perform an uplink (with conservative recovery)
+    int16_t state = sendReceiveWithRecovery(uplinkPayload, idx, &uplinkDetails);
     debug(state < RADIOLIB_ERR_NONE, F("Error in sendReceive"), state, false);
 
     if (state < RADIOLIB_ERR_NONE) {
@@ -484,9 +525,8 @@ esp_err_t ElocLora::sendEventMessage() {
 
     ESP_LOGI(TAG, "Sending data (%d bytes): type = %d, time = %lld, Events=%hu", idx, msgType, time, info.numClassifierMatch);
     //arrayDump(uplinkPayload, idx);
-    // Perform an uplink
-    int16_t state = node.sendReceive(uplinkPayload, idx, mFPort, mDownlinkPayload, &mDownlinkSize, false, &uplinkDetails,
-                                     &mDownlinkDetails);
+    // Perform an uplink (with conservative recovery)
+    int16_t state = sendReceiveWithRecovery(uplinkPayload, idx, &uplinkDetails);
     debug(state < RADIOLIB_ERR_NONE, F("Error in sendReceive"), state, false);
 
     if (state < RADIOLIB_ERR_NONE) {
@@ -496,6 +536,31 @@ esp_err_t ElocLora::sendEventMessage() {
 #else
     return ESP_OK;
 #endif
+}
+
+void ElocLora::playJoinFeedback(bool success) {
+    if (success) {
+        // Success: 3 quick ascending beeps (sounds positive)
+        // Frequencies: 523 Hz (C5), 659 Hz (E5), 784 Hz (G5)
+        ESP_LOGI(TAG, "Playing LoRa join SUCCESS audio feedback");
+        EasyBuzzer.singleBeep(523, 100);  // C5 - 100ms
+        vTaskDelay(pdMS_TO_TICKS(150));
+        EasyBuzzer.singleBeep(659, 100);  // E5 - 100ms
+        vTaskDelay(pdMS_TO_TICKS(150));
+        EasyBuzzer.singleBeep(784, 100);  // G5 - 100ms
+        vTaskDelay(pdMS_TO_TICKS(150));   // Wait for last beep to complete
+    } else {
+        // Failure: 2 descending low beeps (sounds negative)
+        // Frequencies: 400 Hz, 300 Hz
+        ESP_LOGI(TAG, "Playing LoRa join FAILURE audio feedback");
+        EasyBuzzer.singleBeep(400, 200);  // 200ms
+        vTaskDelay(pdMS_TO_TICKS(250));
+        EasyBuzzer.singleBeep(300, 200);  // 200ms
+        vTaskDelay(pdMS_TO_TICKS(250));   // Wait for last beep to complete
+    }
+    // Explicitly stop the buzzer - EasyBuzzer is non-blocking and requires
+    // update() to be called to auto-stop, which may not happen immediately
+    EasyBuzzer.stopBeep();
 }
 
 esp_err_t ElocLora::parseResponse(int16_t state) {
@@ -533,5 +598,65 @@ esp_err_t ElocLora::parseResponse(int16_t state) {
     } else {
         ESP_LOGI(TAG, "No downlink received");
     }
+    
+    // Save session and nonces after successful uplink
+    // This ensures session state is preserved for next wake-up
+    saveSessionToRTC();
+
     return ESP_OK;
+}
+
+bool ElocLora::shouldAttemptRejoin() const {
+    const int64_t nowS = esp_timer_get_time() / 1000 / 1000;
+    return (nowS - mLastRejoinAttemptS) >= C_REJOIN_MIN_INTERVAL_S;
+}
+
+bool ElocLora::attemptRejoin(const char* reason) {
+    if (!shouldAttemptRejoin()) {
+        ESP_LOGW(TAG, "Rejoin suppressed (rate limit). Reason=%s", reason ? reason : "(null)");
+        return false;
+    }
+
+    mLastRejoinAttemptS = esp_timer_get_time() / 1000 / 1000;
+
+    ESP_LOGW(TAG, "Attempting OTAA rejoin. Reason=%s", reason ? reason : "(null)");
+
+    // Ensure OTAA context is configured (keys already set in init())
+    // Re-load nonces from NVS to continue DevNonce sequence.
+    loadNoncesFromNVS();
+
+    const int16_t joinState = node.activateOTAA();
+    if (joinState == RADIOLIB_LORAWAN_NEW_SESSION || joinState == RADIOLIB_LORAWAN_SESSION_RESTORED) {
+        ESP_LOGI(TAG, "Rejoin successful: %s (%d)", stateDecode(joinState).c_str(), joinState);
+        mInitDone = true;
+        saveSessionToRTC();
+        playJoinFeedback(true);
+        return true;
+    }
+
+    ESP_LOGE(TAG, "Rejoin failed: %s (%d)", stateDecode(joinState).c_str(), joinState);
+    playJoinFeedback(false);
+    return false;
+}
+
+int16_t ElocLora::sendReceiveWithRecovery(const uint8_t* uplinkPayload,
+                                         size_t uplinkSize,
+                                         LoRaWANEvent_t* uplinkDetails) {
+    int16_t state = node.sendReceive(const_cast<uint8_t*>(uplinkPayload), uplinkSize, mFPort,
+                                     mDownlinkPayload, &mDownlinkSize,
+                                     false, uplinkDetails, &mDownlinkDetails);
+
+    if (state == RADIOLIB_ERR_NETWORK_NOT_JOINED) {
+        ESP_LOGW(TAG, "sendReceive failed: NOT_JOINED (%d)", state);
+
+        if (attemptRejoin("sendReceive: NOT_JOINED")) {
+            // Retry once after a successful rejoin
+            state = node.sendReceive(const_cast<uint8_t*>(uplinkPayload), uplinkSize, mFPort,
+                                     mDownlinkPayload, &mDownlinkSize,
+                                     false, uplinkDetails, &mDownlinkDetails);
+            ESP_LOGI(TAG, "Retry after rejoin returned: %s (%d)", stateDecode(state).c_str(), state);
+        }
+    }
+
+    return state;
 }

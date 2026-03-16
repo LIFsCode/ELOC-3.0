@@ -90,6 +90,15 @@ class EdgeImpulse {
 
     DetectedEventInfo lastEventInfo;
 
+    /**
+     * @brief Detection tracking for observation window
+     */
+    struct {
+        uint32_t detectionTimes[128]; // Circular buffer for detection timestamps (max 128 detections)
+        uint8_t writeIndex = 0;       // Current write position in circular buffer
+        uint8_t count = 0;            // Current number of detections in buffer
+    } detectionWindow;
+
  public:
     /**
      * @brief Construct a new Edge Impulse object
@@ -284,6 +293,24 @@ class EdgeImpulse {
      * @return const char*
      */
     const char* get_ei_classifier_inferencing_categories(int i) const;
+
+    /**
+     * @brief Add a detection to the observation window
+     * @param timestamp Current timestamp in seconds
+     */
+    void addDetectionToWindow(uint32_t timestamp);
+
+    /**
+     * @brief Check if detection criteria are met based on current configuration
+     * @param currentTime Current timestamp in seconds
+     * @return true if criteria are met (should trigger action)
+     */
+    bool checkDetectionCriteria(uint32_t currentTime);
+
+    /**
+     * @brief Clear the detection window (reset all tracking)
+     */
+    void clearDetectionWindow();
 };
 
 #endif  //  ELOC610LOWPOWERPARTITION_SRC_EDGEIMPULSE_HPP_

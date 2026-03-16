@@ -24,7 +24,7 @@
 
         #define BLUETOOTH_CLASSIC
 
-        #define VERSION "ELOC_V1.3"
+        #define VERSION "ELOC_V1.42"
 
         #define STATUS_LED          GPIO_NUM_4
         #define BATTERY_LED         GPIO_NUM_4
@@ -37,8 +37,9 @@
         #define I2S_MIC_SERIAL_CLOCK        GPIO_NUM_18
         #define I2S_MIC_SERIAL_DATA         GPIO_NUM_19
 
-        // I2S Mic type
+        // I2S Mic type - Select one of the following:
         #define I2S_TDK_INVENSENSE_ICS_43434
+        //#define I2S_PUI_DMM_4026_B_I2S_R
 
         // sdcard (unused, as SDIO is fixed to its Pins)
         #define PIN_NUM_MISO    GPIO_NUM_2
@@ -127,6 +128,50 @@
         #define I2S_DEFAULT_VOLUME -3
 #endif  // I2S_SPH0645
 
+#ifdef I2S_PUI_DMM_4026_B_I2S_R
+        // Uses PUI Audio DMM-4026-B-I2S-R mic
+        // https://www.puiaudio.com/media/SpecSheet/DMM-4026-B-I2S-R.pdf
+        // "I2S 24-bit data size with 18-bit precision, 32-bit word size"
+        // "Each microphone outputs 24-bit data with 18-bit precision. Six bits are null (0) value."
+        #define I2S_BITS_PER_SAMPLE 24
+        #define I2S_SAMPLE_RATE_MIN 8000                // Based on BCLK 2.048-4.096 MHz range
+        #define I2S_SAMPLE_RATE_MAX 48000               // Based on BCLK 3.072-12.288 MHz range
+        
+        /**
+         * @deprecated?
+         * I2S_DEFAULT_BIT_SHIFT replaced by combination of I2S_BITS_PER_SAMPLE & I2S_DEFAULT_VOLUME
+         */
+        #define I2S_DEFAULT_BIT_SHIFT 14                // Default bit shift for this mic
+        #define I2S_DEFAULT_PORT I2S_NUM_0              // Default port for this mic
+        
+        /**
+         * @note Default volume shift for this mic. DMM-4026-B-I2S-R has 18-bit precision in 24-bit word
+         *       The 6 null bits need to be accounted for in processing
+         *       Sensitivity: -26±1 dB (same as ICS-43434) but different internal format
+         *       Set default volume to account for 18-bit vs 24-bit precision difference
+         *       Adjusted to -3 to match ICS-43434 behavior initially
+         */
+        #define I2S_DEFAULT_VOLUME -3
+        
+        /**
+         * @note DMM-4026-B-I2S-R specific parameters
+         *       - Requires 32-bit word size for mono operation
+         *       - 24-bit data with only 18-bit precision (6 bits are null)
+         *       - BCLK range: 3.072-12.288 MHz
+         *       - Input clock: 2.048-4.096 MHz
+         */
+        #define I2S_DMM_4026_PRECISION_BITS 18          // Actual precision bits
+        #define I2S_DMM_4026_NULL_BITS 6                // Number of null bits in 24-bit word
+        
+        /**
+         * @note DC offset removal filter configuration
+         *       The DMM-4026-B-I2S-R may not have internal AC coupling, causing DC offset
+         *       This filter removes the DC component using exponential moving average
+         */
+        #define I2S_DMM_4026_ENABLE_DC_FILTER           // Enable DC offset removal
+        #define I2S_DMM_4026_DC_FILTER_ALPHA 0.02f      // Filter coefficient (more aggressive for better centering)
+#endif  // I2S_PUI_DMM_4026_B_I2S_R
+
 /**
  * @brief Enable/ disable automatic gain feature in @file I2SMEMSSampler.cpp
  *        This feature adjust volume for optimum performance
@@ -210,4 +255,3 @@
 // #define ENABLE_UART_WAKE_FROM_SLEEP
 
 /////////////////////////////////// Configurations checks ///////////////////////////////////
-

@@ -477,8 +477,13 @@ int save_inference_result_SD(String results_string) {
 void ei_callback_func() {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
+    // Get inference configuration at function start
+    auto inferenceConfig = getInferenceConfig();
+    float threshold = inferenceConfig.threshold / 100.0f; // Convert from 0-100 to 0.0-1.0
+
     if (ai_run_enable == true &&
         edgeImpulse.get_status() == EdgeImpulse::Status::running) {
+        
         ESP_LOGV(TAG, "Running inference");
         bool m = edgeImpulse.microphone_inference_record();
         // Blocking function - unblocks when buffer is full
@@ -540,37 +545,56 @@ void ei_callback_func() {
                     file_str += result.classification[ix].value;
 
                     /**
-                     * If target sound detected, save result to SD card
+                     * If target sound detected, check against new inference configuration
                      * Note: 'Target' sound is any sound that is not classified as 'background', 'other' or 'others'
                      */
+                    
                     if ((strcmp(result.classification[ix].label, "background") != 0) &&
                         (strcmp(result.classification[ix].label, "other") != 0) &&
                         (strcmp(result.classification[ix].label, "others") != 0) &&
-                        result.classification[ix].value > AI_RESULT_THRESHOLD) {
-                        ESP_LOGI(TAG, "Target sound detected: %s", result.classification[ix].label);
+                        result.classification[ix].value > threshold) {
+                        
+                        ESP_LOGI(TAG, "Detection above threshold: %s (%.3f > %.3f)", 
+                                result.classification[ix].label, result.classification[ix].value, threshold);
+                        
+                        // Always save detections above threshold to CSV and start recording (immediate actions)
                         detectedEvents[numEventsDetected] = result.classification[ix];
                         numEventsDetected++;
-                        edgeImpulse.increment_detectedEvents();
-                        target_sound_detected = true;
-                        // Start recording??
+                        
+                        // Start recording immediately for every detection
                         if (wav_writer.wav_recording_in_progress == false &&
                             wav_writer.get_mode() == WAVFileWriter::Mode::single &&
                             sd_card.checkSDCard() == ESP_OK) {
                             start_sound_recording();
                         }
+                        
+                        // Add detection to window and check if criteria are met for additional actions
+                        uint32_t currentTime = timeObject.getEpoch();
+                        edgeImpulse.addDetectionToWindow(currentTime);
+                        
+                        if (edgeImpulse.checkDetectionCriteria(currentTime)) {
+                            ESP_LOGI(TAG, "Detection criteria met - triggering additional actions");
+                            edgeImpulse.increment_detectedEvents();
+                            target_sound_detected = true;
+                            
+                            // Clear detection window after successful detection
+                            edgeImpulse.clearDetectionWindow();
+                        }
                     }
                 }
-                if (target_sound_detected) {
+                
+                // Always update event info for LoRa messaging if any detections occurred
+                if (numEventsDetected > 0) {
                     edgeImpulse.updateEventInfo(detectedEvents, numEventsDetected);
                 }
 
                 // ESP_LOGI(TAG, "detectedEvents = %d", edgeImpulse.get_detectedEvents());
 
                 file_str += "\n";
-                // Only save results & wav file if classification value exceeds a threshold
+                // Save results to CSV if any detection above threshold occurred (not just LoRa criteria)
                 if (save_ai_results_to_sd == true &&
                     sd_card.checkSDCard() == ESP_OK &&
-                    target_sound_detected == true) {
+                    numEventsDetected > 0) {
                     save_inference_result_SD(file_str);
                 }
 
@@ -634,6 +658,18 @@ void app_main(void) {
     gpio_set_level(STATUS_LED, 0);
     gpio_set_level(BATTERY_LED, 0);
 
+    // Install GPIO ISR service early, before LoRa or other interrupt sources
+    // This needs to be done before any gpio_isr_handler_add calls
+    esp_err_t isr_err = gpio_install_isr_service(GPIO_INTR_PRIO);
+    if (isr_err != ESP_OK && isr_err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(isr_err));
+        // Continue anyway, but interrupts may not work
+    } else if (isr_err == ESP_ERR_INVALID_STATE) {
+        ESP_LOGI(TAG, "GPIO ISR service already installed");
+    } else {
+        ESP_LOGI(TAG, "GPIO ISR service installed successfully");
+    }
+
     ESP_LOGI(TAG, "Setting up HW System...");
     ElocSystem::GetInstance();
 
@@ -690,11 +726,7 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "Setup LoraWAN");
     ElocLora::GetInstance();
-    // do not install GPIO ISR. This is already done wiithin Eloc Lora Setup 
-    // TODO: this must be correctly handled for non LORA setups
-    if (!getConfig().loraConfig.loraEnable) {
-        ESP_ERROR_CHECK(gpio_install_isr_service(GPIO_INTR_PRIO));
-    }
+    // GPIO ISR service is now installed earlier in the initialization sequence
 
     ESP_LOGI(TAG, "Creating Bluetooth  task...");
     if (esp_err_t err = BluetoothServerSetup(false)) {
@@ -919,6 +951,17 @@ void app_main(void) {
         }
 
         #ifdef EDGE_IMPULSE_ENABLED
+
+        // Check for deferred AI start (non-blocking)
+        // When AI mode is enabled via BT, the actual thread start is deferred by a few seconds
+        // to allow BT to serve follow-up commands (getStatus/getConfig) before the AI thread
+        // consumes most CPU/memory resources.
+        if (g_ai_start_pending && esp_timer_get_time() >= g_ai_deferred_start_time) {
+            ESP_LOGI(TAG, "Deferred AI start timer expired, sending AI enable to queue");
+            g_ai_start_pending = false;
+            bool enable = true;
+            xQueueSend(rec_ai_evt_queue, &enable, (TickType_t)0);
+        }
 
         if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);

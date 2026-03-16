@@ -206,7 +206,7 @@ __STATIC_FORCEINLINE uint32_t __ROR(uint32_t op1, uint32_t op2)
     a = (q31_t) (((q63_t) x * y ) >> 32)
 
 // Patched by Edge Impulse, don't redefine these macros on Arm cores
-#if defined ( _MSC_VER ) || defined(__GNUC_PYTHON__)
+#if !defined (ARM_MATH_DSP) || defined ( _MSC_VER ) || defined(__GNUC_PYTHON__)
   /**
    * @brief definition to pack two 16 bit values.
    */

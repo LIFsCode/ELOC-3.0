@@ -1,18 +1,35 @@
-/*
- * Copyright (c) 2022 EdgeImpulse Inc.
+/* The Clear BSD License
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- * http://www.apache.org/licenses/LICENSE-2.0
+ * Copyright (c) 2025 EdgeImpulse Inc.
+ * All rights reserved.
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an "AS
- * IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language
- * governing permissions and limitations under the License.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted (subject to the limitations in the disclaimer
+ * below) provided that the following conditions are met:
  *
- * SPDX-License-Identifier: Apache-2.0
+ *   * Redistributions of source code must retain the above copyright notice,
+ *   this list of conditions and the following disclaimer.
+ *
+ *   * Redistributions in binary form must reproduce the above copyright
+ *   notice, this list of conditions and the following disclaimer in the
+ *   documentation and/or other materials provided with the distribution.
+ *
+ *   * Neither the name of the copyright holder nor the names of its
+ *   contributors may be used to endorse or promote products derived from this
+ *   software without specific prior written permission.
+ *
+ * NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY
+ * THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+ * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+ * IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef EI_PERFORMANCE_CALIBRATION_H
@@ -25,6 +42,8 @@
 #include "edge-impulse-sdk/dsp/returntypes.hpp"
 #include "edge-impulse-sdk/classifier/ei_model_types.h"
 #include "model-parameters/model_metadata.h"
+#include "edge-impulse-sdk/classifier/postprocessing/ei_postprocessing_common.h"
+#include "edge-impulse-sdk/porting/ei_logging.h"
 
 /* Private const types ----------------------------------------------------- */
 #define MEM_ERROR   "ERR: Failed to allocate memory for performance calibration\r\n"
@@ -39,10 +58,9 @@ typedef struct {
 } ei_perf_cal_params_t;
 
 class PerfCal {
-
 public:
     PerfCal(
-        const ei_model_performance_calibration_t *config,
+        const ei_performance_calibration_config_t *config,
         uint32_t n_labels,
         uint32_t sample_length,
         float sample_interval_ms)
@@ -70,7 +88,7 @@ public:
 
         /* Detection threshold should be high enough to only classify 1 possible output */
         if (this->_detection_threshold <= (1.f / this->_n_labels)) {
-            ei_printf("ERR: Classifier detection threshold too low\r\n");
+            EI_LOGE("Classifier detection threshold too low\r\n");
             return;
         }
 
@@ -215,39 +233,41 @@ private:
     uint32_t _n_scores_in_array;
 };
 
-EI_IMPULSE_ERROR init_perfcal(ei_impulse_handle_t *handle, void *config)
+EI_IMPULSE_ERROR init_perfcal(ei_impulse_handle_t *handle, void **state, void *config)
 {
     const ei_impulse_t *impulse = handle->impulse;
-    const ei_model_performance_calibration_t *calibration = (ei_model_performance_calibration_t*)config;
+    const ei_performance_calibration_config_t *calibration = (ei_performance_calibration_config_t*)config;
 
     if(calibration != NULL) {
         PerfCal *perf_cal = new PerfCal(calibration, impulse->label_count, impulse->slice_size,
                                             impulse->interval_ms);
-        handle->post_processing_state = (void *)perf_cal;
+        *state = (void *)perf_cal;
 
     }
     return EI_IMPULSE_OK;
 }
 
-EI_IMPULSE_ERROR deinit_perfcal(ei_impulse_handle_t *handle, void *config)
+EI_IMPULSE_ERROR deinit_perfcal(void *state, void *config)
 {
-    PerfCal *perf_cal = (PerfCal*)handle->post_processing_state;
+    PerfCal *perf_cal = (PerfCal*)state;
 
     if((void *)perf_cal != NULL) {
         delete perf_cal;
     }
 
-    handle->post_processing_state = NULL;
+    state = NULL;
     return EI_IMPULSE_OK;
 }
 
 EI_IMPULSE_ERROR process_perfcal(ei_impulse_handle_t *handle,
+                                 uint32_t block_index,
+                                 uint32_t input_block_id,
                                  ei_impulse_result_t *result,
-                                 void *config,
-                                 bool debug) {
-
+                                 void *config_ptr,
+                                 void *state)
+{
     const ei_impulse_t *impulse = handle->impulse;
-    PerfCal *perf_cal = (PerfCal*)handle->post_processing_state;
+    PerfCal *perf_cal = (PerfCal*)state;
 
     if (impulse->sensor == EI_CLASSIFIER_SENSOR_MICROPHONE) {
         if((void *)perf_cal != NULL) {
@@ -279,14 +299,33 @@ EI_IMPULSE_ERROR process_perfcal(ei_impulse_handle_t *handle,
     return EI_IMPULSE_OK;
 }
 
+EI_IMPULSE_ERROR display_perfcal(ei_impulse_result_t *result,
+                                         void *config)
+{
+    // print the detected label
+    ei_printf("Detected label: %s\r\n", result->postprocessed_output.perf_cal_output.detected_label);
+
+    return EI_IMPULSE_OK;
+}
+
 EI_IMPULSE_ERROR set_post_process_params(ei_impulse_handle_t* handle, ei_perf_cal_params_t* params) {
-    PerfCal *perf_cal = (PerfCal*)handle->post_processing_state;
+    int16_t block_number = get_block_number(handle, (void*)init_perfcal);
+    if (block_number == -1) {
+        return EI_IMPULSE_POSTPROCESSING_ERROR;
+    }
+    PerfCal *perf_cal = (PerfCal*)handle->post_processing_state[block_number];
+
     perf_cal->set_detection_threshold(params->detection_threshold);
     return EI_IMPULSE_OK;
 }
 
 EI_IMPULSE_ERROR get_post_process_params(ei_impulse_handle_t* handle, ei_perf_cal_params_t* params) {
-    PerfCal *perf_cal = (PerfCal*)handle->post_processing_state;
+    int16_t block_number = get_block_number(handle, (void*)init_perfcal);
+    if (block_number == -1) {
+        return EI_IMPULSE_POSTPROCESSING_ERROR;
+    }
+    PerfCal *perf_cal = (PerfCal*)handle->post_processing_state[block_number];
+
     params->detection_threshold = perf_cal->get_detection_threshold();
     return EI_IMPULSE_OK;
 }

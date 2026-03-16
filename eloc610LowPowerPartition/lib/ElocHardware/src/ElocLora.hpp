@@ -37,6 +37,20 @@
 // the version must be increasd. If only additinal bytes are added this is not mandatory
 #define LORA_MSG_VERS 0
 
+// LoRaWAN session persistence constants
+#define LORAWAN_SESSION_MAGIC 0x4C4F5241  // "LORA" in ASCII
+#define RADIOLIB_LORAWAN_SESSION_BUF_SIZE 512
+#define RADIOLIB_LORAWAN_NONCES_BUF_SIZE 56
+
+// Structure for RTC memory session persistence
+typedef struct {
+    uint32_t magic;
+    uint32_t crc32;
+    uint16_t sessionSize;
+    uint8_t sessionData[RADIOLIB_LORAWAN_SESSION_BUF_SIZE];
+    uint8_t noncesData[RADIOLIB_LORAWAN_NONCES_BUF_SIZE];
+} rtc_lorawan_session_t;
+
 class ElocLora
 {
 private:
@@ -67,8 +81,8 @@ private:
 
     //TODO: Retrieve Region from Config
     // regional choices: EU868, US915, AU915, AS923, AS923_2, AS923_3, AS923_4, IN865, KR920, CN500
-    LoRaWANBand_t Region = EU868;
-    uint8_t subBand = 0;  // For US915, change this to 2, otherwise leave on 0
+    LoRaWANBand_t Region = AS923_2;
+    uint8_t subBand = 0;  // For US915 and AU915, change this to 2, otherwise leave on 0
 
     //TODO: does it make sense to set fport via config?
     uint8_t mFPort = 1;
@@ -82,7 +96,11 @@ private:
 
     // This MUST fit the loraWAN application setting
     // if not this may cause buffer overruns & memory violations.
-    static const size_t C_DOWNLINK_PAYLOAD = 10; 
+    static const size_t C_DOWNLINK_PAYLOAD = 10;
+
+    // Conservative auto-rejoin on explicit NOT_JOINED errors
+    static constexpr int64_t C_REJOIN_MIN_INTERVAL_S = 10 * 60; // 10 minutes
+    int64_t mLastRejoinAttemptS = -C_REJOIN_MIN_INTERVAL_S;
 
     void printDecodedPayload(const uint8_t* payload, size_t  payloadSize);
 
@@ -97,6 +115,24 @@ private:
     esp_err_t sendStatusUpdateMessage();
     esp_err_t sendEventMessage();
     esp_err_t parseResponse(int16_t state);
+
+    // Conservative recovery helpers
+    bool attemptRejoin(const char* reason);
+    bool shouldAttemptRejoin() const;
+    int16_t sendReceiveWithRecovery(const uint8_t* uplinkPayload,
+                                    size_t uplinkSize,
+                                    LoRaWANEvent_t* uplinkDetails);
+
+    // Audio feedback for join events
+    void playJoinFeedback(bool success);
+
+    // Session persistence functions
+    uint32_t calculateCRC32(const uint8_t* data, size_t length);
+    bool isValidSession();
+    bool saveSessionToRTC();
+    bool loadSessionFromRTC();
+    bool saveNoncesToNVS();
+    bool loadNoncesFromNVS();
 
 public:
     virtual ~ElocLora();

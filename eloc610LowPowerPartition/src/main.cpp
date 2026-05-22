@@ -796,7 +796,20 @@ void app_main(void) {
         // RTC time is already correct from before sleep. Just set the build_time reference
         // so getUpTimeSecs() and other functions work correctly.
         timeObject.setBuildTimeOnly(__TIME_UNIX__);
-        timeObject.setTimeZone(TIMEZONE_OFFSET);  // TZ env var lost during deep sleep
+
+        // Prefer the user's BT-set TZ persisted in RTC over the compile-time default.
+        // Without this, CSV timestamps drift to TIMEZONE_OFFSET (e.g. +7) after the
+        // first duty-cycle wake even if the Android app already set the device to +1.
+        int32_t tz = TIMEZONE_OFFSET;
+        if (rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC &&
+            rtc_duty_cycle.timezoneOffsetValid) {
+            tz = rtc_duty_cycle.timezoneOffset;
+            ESP_LOGI(TAG, "Timer wake: restoring user-set TZ offset %+ld from RTC", tz);
+        } else {
+            ESP_LOGW(TAG, "Timer wake: no persisted TZ, falling back to compile-time %+d",
+                     TIMEZONE_OFFSET);
+        }
+        timeObject.setTimeZone(tz);
         ESP_LOGI(TAG, "Timer wake: preserving RTC time (epoch=%ld)", timeObject.getEpoch());
     } else {
         timeObject.initBuildTime(__TIME_UNIX__, TIMEZONE_OFFSET);

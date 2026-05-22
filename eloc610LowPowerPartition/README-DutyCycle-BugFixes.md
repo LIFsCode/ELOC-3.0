@@ -295,13 +295,34 @@ Both direct GPIO LEDs and IO expander LEDs are explicitly turned off before ente
 
 ---
 
+## Bug 6: Compile-Time TZ Overrides BT-Set TZ After Duty-Cycle Wake
+
+**Problem:** Bug 3 fixed the case where `TZ` was lost during deep sleep, but the fix always re-applied the **compile-time `TIMEZONE_OFFSET`** (currently `+7` in `include/project_config.h`), not whatever the Android Control Panel had configured via `setTime#time={…,"timezone":X}`. The BT-set offset was never persisted, so any user outside UTC+7 would see CSV detection rows drift back to UTC+7 on the first timer-wake.
+
+**Symptom:** Two devices configured identically and set to local time UTC+1 via BT, one in `recordON_detectON` and one in `recordOFF_detectON`, show a **6-hour gap** between their CSV timestamps after about a week — the duty-cycle device's CSV is in UTC+7 (compile default) while the always-on device's CSV stays in UTC+1.
+
+**Fix:** Persist the BT-set TZ to RTC memory and prefer it on timer-wake.
+
+1. New fields on `rtc_duty_cycle_t` (`lib/ElocHardware/src/ElocStatus.hpp`):
+   ```cpp
+   int8_t   timezoneOffset;       // -12..14
+   bool     timezoneOffsetValid;  // false until BT setTime supplies one
+   ```
+2. The BT `setTime` handler (`lib/Commands/src/ElocCommands.cpp`) writes `timezoneOffset` + sets `timezoneOffsetValid = true` (and `magic` if needed) right after `setTimeZone()`.
+3. The timer-wake path in `src/main.cpp` checks the magic + valid flag and uses the persisted TZ; otherwise falls back to `TIMEZONE_OFFSET` (cold-boot path is unchanged).
+
+A hard power cycle wipes RTC memory, so the device safely reverts to the compile-time default until the next BT sync — the same model used for `bootCount`, `sessionId`, and LoRa cooldown state.
+
+---
+
 ## Files Changed
 
 | File | Changes |
 |------|---------|
-| `lib/ElocHardware/src/ElocStatus.hpp` | Added `char sessionId[80]` to `rtc_duty_cycle_t` struct |
+| `lib/ElocHardware/src/ElocStatus.hpp` | Added `char sessionId[80]`, `int8_t timezoneOffset`, `bool timezoneOffsetValid` to `rtc_duty_cycle_t` struct |
 | `lib/ElocHardware/src/ElocLora.cpp` | Skip `delay(5000)` on timer wake |
-| `src/main.cpp` | All other fixes (totalDetections sync, session restore, timezone, awake timer reset, LED turn-off) |
+| `lib/Commands/src/ElocCommands.cpp` | Persist BT-set TZ to RTC on `setTime` (Bug 6) |
+| `src/main.cpp` | All other fixes (totalDetections sync, session restore, timezone, awake timer reset, LED turn-off, Bug 6 wake-path TZ restore) |
 
 ---
 

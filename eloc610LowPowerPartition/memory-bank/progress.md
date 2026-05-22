@@ -58,6 +58,7 @@
 - **LED turn-off** before sleep (IO expander retains state)
 - **Button wake escape:** press button during sleep to return to normal boot
 - **Triggered via:** Bluetooth `recordOff_detectOn` command activates duty cycle
+- **BT-set timezone persisted to RTC** (Bug 6 in `README-DutyCycle-BugFixes.md`) so CSV detection timestamps survive duty-cycle wakes in the user's local TZ, not the compile-time `TIMEZONE_OFFSET` default
 - **See:** `README-DutyCycle-and-LoRa-Cooldown.md`, `README-DutyCycle-BugFixes.md`
 
 ### Hardware Support — ✅ Operational

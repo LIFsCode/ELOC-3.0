@@ -15,6 +15,7 @@ Recent completed work:
 
 ## Recent Changes
 
+- **CSV timestamps now stay in the user's BT-set timezone across duty-cycle wakes** (Bug 6 in `README-DutyCycle-BugFixes.md`). Two `int8_t timezoneOffset` / `bool timezoneOffsetValid` fields added to `rtc_duty_cycle_t`; the BT `setTime` handler writes them, and the timer-wake path in `main.cpp` uses them in preference to the compile-time `TIMEZONE_OFFSET`. Fixes the 6-hour drift seen when a UTC+1 device runs `recordOFF_detectON` and falls back to the compile default of +7 after the first wake.
 - **LoRa RSSI signal quality** exposed via `getStatus` Bluetooth command for deployment-time signal strength checking in Android app
   - `captureSignalQuality()` captures RSSI/SNR after OTAA join (Join-Accept), after rejoin, and after any downlink
   - New `lora` section in `getStatus` JSON: `enabled`, `joined`, `hasSignalInfo`, `RSSI[dBm]`, `SNR[dB]`

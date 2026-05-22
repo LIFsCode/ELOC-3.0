@@ -310,6 +310,15 @@ void cmd_SetTime(CmdParser *cmdParser) {
     timeObject.setTime(seconds, static_cast<int>(milliseconds) * 1000);
     timeObject.setTimeZone(static_cast<int32_t>(timeZone_offset));
 
+    // Persist TZ so it survives duty-cycle deep sleep. Without this, the wake
+    // path in main.cpp falls back to the compile-time TIMEZONE_OFFSET and CSV
+    // timestamps drift to the wrong zone after the first timer-wake.
+    rtc_duty_cycle.timezoneOffset      = static_cast<int8_t>(timeZone_offset);
+    rtc_duty_cycle.timezoneOffsetValid = true;
+    if (rtc_duty_cycle.magic != DUTY_CYCLE_RTC_MAGIC) {
+        rtc_duty_cycle.magic = DUTY_CYCLE_RTC_MAGIC;
+    }
+
     // timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
     //  timestamps coming in from android are always GMT (minus 7 hrs)
     //  if I not add timezone then timeobject is off

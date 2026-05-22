@@ -86,6 +86,8 @@ typedef struct {
     uint32_t detectionsSinceLastMsg; // Aggregation counter for ongoing msgs
     int64_t  eventStartTimeS;        // When current event session started (epoch seconds)
     char     sessionId[80];          // Session folder name, persisted across sleep cycles
+    int8_t   timezoneOffset;         // User-set TZ offset (hours, -12..14), survives deep sleep
+    bool     timezoneOffsetValid;    // false until BT setTime supplies one
 } rtc_duty_cycle_t;
 
 /// @brief Global sleep cycle state (non-persistent, reset each boot)

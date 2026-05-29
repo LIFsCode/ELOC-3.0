@@ -93,8 +93,31 @@ static bool gBluetoothEnabled = false;
 // the last time a BT node was connected
 static int lastBtConnectionTimeS = 0;
 
+// Max time to wait for a connected peer to drop the link before we tear down
+// the Bluetooth stack.
+static const int BT_DISCONNECT_TIMEOUT_MS = 5000;
+
 static esp_err_t disableBluetooth() {
     gBluetoothEnabled = false;
+
+    // The ELOC is an SPP *server*, so SerialBT.end() -> _stop_bt() never
+    // disconnects the connected peer (that path only fires for _spp_client,
+    // i.e. master mode). It would call esp_spp_deinit() while the server-side
+    // RFCOMM connection is still open, freeing spp_slot_mutex out from under a
+    // still-pending btc_spp callback -> NULL-mutex assert -> reboot. Wait for
+    // the peer to drop the link first (the Android app disconnects once it sees
+    // recording has started) so the SPP stack is idle before we deinit it.
+    int waitedMs = 0;
+    while (SerialBT.connected() && waitedMs < BT_DISCONNECT_TIMEOUT_MS) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        waitedMs += 100;
+    }
+    if (SerialBT.connected()) {
+        ESP_LOGW(TAG, "Peer still connected after %d ms; tearing down Bluetooth anyway", waitedMs);
+    } else if (waitedMs > 0) {
+        ESP_LOGI(TAG, "Peer disconnected after %d ms, safe to tear down Bluetooth", waitedMs);
+    }
+
     SerialBT.end();
     return ESP_OK;
 }

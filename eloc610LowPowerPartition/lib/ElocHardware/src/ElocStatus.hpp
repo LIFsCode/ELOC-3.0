@@ -88,6 +88,8 @@ typedef struct {
     char     sessionId[80];          // Session folder name, persisted across sleep cycles
     int8_t   timezoneOffset;         // User-set TZ offset (hours, -12..14), survives deep sleep
     bool     timezoneOffsetValid;    // false until BT setTime supplies one
+    uint8_t  recordMode;             // WAVFileWriter::Mode to restore on wake (0=disabled,1=continuous,2=single)
+    bool     aiEnabled;              // whether AI inference should auto-start on wake
 } rtc_duty_cycle_t;
 
 /// @brief Global sleep cycle state (non-persistent, reset each boot)

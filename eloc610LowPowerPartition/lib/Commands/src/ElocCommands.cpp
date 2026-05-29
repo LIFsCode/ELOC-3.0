@@ -419,18 +419,28 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
             g_ai_start_pending = true;
             ESP_LOGI(TAG, "AI start deferred by %lld ms to allow BT commands to complete",
                      AI_DEFERRED_START_DELAY_US / 1000LL);
-
-            // Activate duty cycle if enabled in config AND mode is recordOff_detectOn
-            if (new_mode == RecState::recordOff_detectOn && getDutyCycleConfig().enable) {
-                ESP_LOGI(TAG, "Duty cycle enabled - activating sleep cycle state machine");
-                gDutyCycleActivationTimeUS = esp_timer_get_time();
-                gSleepCycleState = SLEEP_CYCLE_INFERENCE_ACTIVE;
-            }
         } else {
             // DISABLING AI: Cancel any pending deferred start and stop immediately
             g_ai_start_pending = false;
-            gSleepCycleState = SLEEP_CYCLE_DISABLED;
             xQueueSend(rec_ai_evt_queue, &new_ai_mode, (TickType_t)0);
+        }
+
+        // Activate duty cycle if enabled in config AND the mode supports it.
+        // Duty cycle applies to the AI-only patrol mode (recordOff_detectOn) and to both
+        // record-ON modes (recordOn_detectOn, recordOn_detectOff). recordOnEvent and the
+        // off/toggle modes stay non-duty-cycled. Persist the wav mode + AI state in RTC so
+        // they can be restored after each timer wake (see handleWakeUpCause / boot path).
+        bool dutyCycleMode = (new_mode == RecState::recordOff_detectOn ||
+                              new_mode == RecState::recordOn_detectOn  ||
+                              new_mode == RecState::recordOn_detectOff);
+        if (dutyCycleMode && getDutyCycleConfig().enable) {
+            rtc_duty_cycle.recordMode = static_cast<uint8_t>(wav_writer.get_mode());
+            rtc_duty_cycle.aiEnabled  = new_ai_mode;
+            gDutyCycleActivationTimeUS = esp_timer_get_time();
+            gSleepCycleState = SLEEP_CYCLE_INFERENCE_ACTIVE;
+            ESP_LOGI(TAG, "Duty cycle activated for mode %s", toString(new_mode));
+        } else {
+            gSleepCycleState = SLEEP_CYCLE_DISABLED;
         }
     }
 

@@ -177,8 +177,8 @@ On timer wake-up, skip non-essential initialization to save ~3-5 seconds:
 | Button ISR | ✅ | ❌ Skip | Button is EXT0 wake source instead |
 | Edge Impulse setup | ✅ | ✅ | Core function |
 | I2S mic init | ✅ | ✅ | Core function |
-| WAV writer | ✅ | ⚠️ Disabled mode | No recording in duty cycle |
-| AI auto-start | ❌ Manual | ✅ Auto | Starts immediately on timer wake |
+| WAV writer | ✅ | ✅ Mode restored from RTC | recording resumes in record-ON duty-cycle modes (one file per wake) |
+| AI auto-start | ❌ Manual | ✅ Auto (if `aiEnabled`) | Starts on timer wake only when AI was on before sleep |
 
 ### 4.7 Key Functions to Add to `main.cpp`
 
@@ -278,7 +278,7 @@ All derived parameters computed by firmware. Impossible to create conflicting se
 | `lib/ElocHardware/src/ElocStatus.hpp` | `rtc_duty_cycle_t` struct, `SleepCycleState_t` enum, global externs |
 | `lib/ElocHardware/src/ElocStatus.cpp` | RTC variable definitions |
 | `src/main.cpp` | Wake handler, state machine, boot branching, sleep functions, session persistence |
-| `lib/Commands/src/ElocCommands.cpp` | Duty cycle activation on `recordOff_detectOn` |
+| `lib/Commands/src/ElocCommands.cpp` | Duty cycle activation for `recordOff_detectOn`, `recordOn_detectOn`, `recordOn_detectOff`; persists `recordMode`/`aiEnabled` to RTC |
 | `lib/ElocHardware/src/ElocSystem.cpp` | Skip LED animation on timer wake |
 | `lib/ElocHardware/src/ElocLora.cpp` | Skip delay + buzzer on timer wake |
 | `lib/esp32Time/src/ESP32Time.cpp` | Added `setBuildTimeOnly()` and `setTimeZone()` |

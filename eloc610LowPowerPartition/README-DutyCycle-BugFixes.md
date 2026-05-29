@@ -315,14 +315,45 @@ A hard power cycle wipes RTC memory, so the device safely reverts to the compile
 
 ---
 
+## Feature: Duty Cycle Extended to the Record-ON Modes
+
+**Goal:** Originally the duty cycle activated only in `recordOFF_detectON` (AI-only patrol mode, no audio recording). It now also applies to `recordON_detectON` and `recordON_detectOFF`, so the device can save power while still recording audio (and, in `recordON_detectON`, running AI). Recording model: **one WAV file per wake** — record continuously during the awake window, cleanly close the file, deep-sleep, start a fresh file on next wake (all in the shared RTC-persisted session folder).
+
+**Changes:**
+1. `rtc_duty_cycle_t` (`lib/ElocHardware/src/ElocStatus.hpp`) gained two fields persisted across sleep:
+   ```cpp
+   uint8_t  recordMode;   // WAVFileWriter::Mode to restore on wake (0=disabled,1=continuous,2=single)
+   bool     aiEnabled;    // whether AI inference should auto-start on wake
+   ```
+2. `cmd_SetRecordMode` (`lib/Commands/src/ElocCommands.cpp`): the duty-cycle activation moved out of the AI-enabling branch into a unified decision that fires for `recordOff_detectOn`, `recordOn_detectOn`, and `recordOn_detectOff`, and captures `recordMode`/`aiEnabled` into RTC.
+3. `src/main.cpp` boot path: on timer wake, restore `wav_writer` mode from RTC (the main loop's existing `mode==continuous` auto-start then begins a fresh file) and gate the AI auto-start on `aiEnabled` (so record-only mode does not spin up AI).
+4. `prepareCyclicDeepSleep()` (`src/main.cpp`): close the open WAV file (set mode disabled → wait for the write task's `finish()`) **before** stopping I2S, so the last file per cycle has a finalized header instead of being truncated.
+
+---
+
+## Bug 7: False "SD Card is full" on Timer Wake (recording never opens a file)
+
+**Problem:** `WAVFileWriter` aborts a recording when `sd_card.freeSpaceGB() < 0.1`, but `freeSpaceGB()` returns a **cached** value (`m_free_bytes`) that is only refreshed by `sd_card.update()` — which is called exclusively from the **Bluetooth status task** (`BluetoothServer.cpp`). On a duty-cycle timer wake, Bluetooth is skipped (fast-boot path), so the cache is never populated and stays `0`.
+
+**Symptom:** After enabling duty cycle in a record-ON mode, every wake logs `WAVFileWriter: SD Card is full` / `Failed to open file for writing` and no audio is recorded — even though the card is nearly empty. This was a latent bug exposed only once recording actually resumed on wake (the feature above).
+
+**Fix:** Refresh the cached free space once during boot, right after the SD card mounts, so it is valid on every boot path. In `mountSDCard()` (`src/main.cpp`):
+```cpp
+if (sd_card.update() != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to read SD card free space after mount");
+}
+```
+
+---
+
 ## Files Changed
 
 | File | Changes |
 |------|---------|
-| `lib/ElocHardware/src/ElocStatus.hpp` | Added `char sessionId[80]`, `int8_t timezoneOffset`, `bool timezoneOffsetValid` to `rtc_duty_cycle_t` struct |
+| `lib/ElocHardware/src/ElocStatus.hpp` | Added `char sessionId[80]`, `int8_t timezoneOffset`, `bool timezoneOffsetValid`, `uint8_t recordMode`, `bool aiEnabled` to `rtc_duty_cycle_t` struct |
 | `lib/ElocHardware/src/ElocLora.cpp` | Skip `delay(5000)` on timer wake |
-| `lib/Commands/src/ElocCommands.cpp` | Persist BT-set TZ to RTC on `setTime` (Bug 6) |
-| `src/main.cpp` | All other fixes (totalDetections sync, session restore, timezone, awake timer reset, LED turn-off, Bug 6 wake-path TZ restore) |
+| `lib/Commands/src/ElocCommands.cpp` | Persist BT-set TZ to RTC on `setTime` (Bug 6); activate duty cycle for record-ON modes + persist `recordMode`/`aiEnabled` |
+| `src/main.cpp` | All other fixes (totalDetections sync, session restore, timezone, awake timer reset, LED turn-off, Bug 6 wake-path TZ restore); record-mode restore on wake; WAV flush before sleep; SD free-space refresh on mount (Bug 7) |
 
 ---
 
@@ -336,3 +367,6 @@ A hard power cycle wipes RTC memory, so the device safely reverts to the compile
 - [ ] Verify inference runs for the full `awakeDurationS` (30s), not 15s
 - [ ] Verify LEDs are OFF during deep sleep
 - [ ] Verify button press still wakes from deep sleep to normal mode
+- [x] Verify `recordON_detectON` duty cycle resumes recording on wake (mode restored, no false "SD Card is full") — confirmed on device 2026-05-29
+- [ ] Verify `recordON_detectOFF` duty cycle resumes recording on wake **without** starting AI
+- [ ] Verify each wake produces a separate, playable WAV file (finalized header) in the shared session folder

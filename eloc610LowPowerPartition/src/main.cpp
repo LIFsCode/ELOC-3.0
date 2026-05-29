@@ -358,6 +358,14 @@ bool mountSDCard() {
         mkdir(ELOC_FOLDER, 0777);
     }
 
+    // Populate the cached free-space value now. freeSpaceGB()/checkSDCard() read this cached
+    // value, which is otherwise only refreshed by the Bluetooth status task. On a duty-cycle
+    // timer wake Bluetooth is skipped, so without this the cache stays 0 and the WAVFileWriter
+    // would abort every recording with a false "SD Card is full".
+    if (sd_card.update() != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to read SD card free space after mount");
+    }
+
     float freeSpace = sd_card.freeSpaceGB();
     float totalSpace = sd_card.getCapacityMB()/1024;
     ESP_LOGV(TAG, "SD card %f / %f GB free", freeSpace, totalSpace);
@@ -694,6 +702,20 @@ void prepareCyclicDeepSleep() {
         delay(100); // Give inference thread time to stop
     }
     #endif
+
+    // Cleanly close any open WAV file BEFORE stopping I2S. Setting the mode to disabled
+    // makes the wav write task call finish() (rewrites the header, fclose) on its next
+    // buffer notification — which only arrives while I2S is still running. This is a RAM-only
+    // change; rtc_duty_cycle.recordMode keeps the real mode for restore on the next wake.
+    if (wav_writer.wav_recording_in_progress) {
+        ESP_LOGI(TAG, "Closing WAV file before sleep");
+        wav_writer.set_mode(WAVFileWriter::Mode::disabled);
+        int waited = 0;
+        while (wav_writer.wav_recording_in_progress && waited < 3000) {
+            delay(20);
+            waited += 20;
+        }
+    }
 
     // Stop I2S if running
     if (input.is_i2s_installed_and_started()) {
@@ -1081,6 +1103,14 @@ void app_main(void) {
             ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
             delay(5);
         }
+
+        // On a duty-cycle timer wake, restore the recording mode that was active before sleep.
+        // wav_writer.mode is plain RAM and defaults to disabled on every boot, so without this
+        // the main loop's auto-start (mode==continuous) would never resume recording after a wake.
+        if (gIsTimerWake && getDutyCycleConfig().enable) {
+            wav_writer.set_mode(static_cast<WAVFileWriter::Mode>(rtc_duty_cycle.recordMode));
+            ESP_LOGI(TAG, "Timer wake: restored wav mode = %s", wav_writer.get_mode_str());
+        }
     } else {
         ESP_LOGE(TAG, "SD card not mounted, cannot create WAVFileWriter");
             wav_writer.set_mode(WAVFileWriter::Mode::disabled);  // Default is disabled anyway
@@ -1102,8 +1132,9 @@ void app_main(void) {
         // edgeImpulse.set_status(EdgeImpulse::Status::running);
         // edgeImpulse.start_ei_thread(ei_callback_func);
 
-        // Auto-start AI on timer wake (duty cycle mode)
-        if (gIsTimerWake && getDutyCycleConfig().enable) {
+        // Auto-start AI on timer wake (duty cycle mode), but only if AI was enabled before
+        // sleep. recordOn_detectOff duty-cycles audio recording with no AI, so don't spin it up.
+        if (gIsTimerWake && getDutyCycleConfig().enable && rtc_duty_cycle.aiEnabled) {
             ESP_LOGI(TAG, "Duty cycle timer wake: auto-starting AI inference");
             ai_run_enable = true;
             bool enable = true;

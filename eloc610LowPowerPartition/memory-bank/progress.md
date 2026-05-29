@@ -54,10 +54,12 @@
 - **RTC persistence:** boot count, total detections, session ID survive deep sleep
 - **Session continuity:** same SD card folder and CSV file across wake cycles
 - **LoRaWAN session preservation** via existing RTC persistence mechanism
-- **Auto-start AI inference** on timer wake
+- **Auto-start AI inference** on timer wake (only when AI was enabled before sleep, tracked via `rtc_duty_cycle.aiEnabled`)
+- **Recording resumes after wake** in record-ON modes (tested on device 2026-05-29): `wav_writer` mode is persisted in RTC (`recordMode`) and restored on timer wake; one WAV file per wake; WAV file is cleanly closed (`finish()`) before deep sleep so headers aren't truncated
+- **SD free-space cache refreshed on mount** (Bug 7) so record-ON wakes don't hit a false "SD Card is full" (cache was previously only updated by the BT status task, which is skipped on timer wake)
 - **LED turn-off** before sleep (IO expander retains state)
 - **Button wake escape:** press button during sleep to return to normal boot
-- **Triggered via:** Bluetooth `recordOff_detectOn` command activates duty cycle
+- **Triggered via:** Bluetooth `recordOff_detectOn` (AI-only), `recordOn_detectOn`, or `recordOn_detectOff` command activates duty cycle (when `dutyCycle.enable` is set)
 - **BT-set timezone persisted to RTC** (Bug 6 in `README-DutyCycle-BugFixes.md`) so CSV detection timestamps survive duty-cycle wakes in the user's local TZ, not the compile-time `TIMEZONE_OFFSET` default
 - **See:** `README-DutyCycle-and-LoRa-Cooldown.md`, `README-DutyCycle-BugFixes.md`
 

@@ -1,9 +1,9 @@
 key,type,encoding,value
 factory,namespace,,
 hw_gen,data,u16,3
-hw_rev,data,u16,6
-serial,data,u32,250300243
+hw_rev,data,u16,7
+serial,data,u32,250700246
 loraKeys,namespace,,
-devEUI,data,hex2bin,3A3989218AAA354C
-appKey,data,hex2bin,BE9E0217B9FAA5827D3DFA2C30C30B0E
-nwkKey,data,hex2bin,DEB8C975964104DA9EB46DEB76DCF16A
+devEUI,data,hex2bin,E389345D5BC8801C
+appKey,data,hex2bin,9C85F616CE5D37FE51E3A0BFE61E4D32
+nwkKey,data,hex2bin,6DB4816A0CCEE38D8650C30B78C4201D

@@ -330,10 +330,6 @@ long ESP32Time::getLocalEpoch() {
 
     time_t localTimeSinceEpoch = timeSinceEpoch + tz_offset;
 
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    ESP_LOGI(TAG, "getLocalEpoch: %ld, gmTime: %ld, timeval: %ld", 
-        timeSinceEpoch, gmTime, localTimeSinceEpoch);
     return localTimeSinceEpoch;
 }
 

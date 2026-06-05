@@ -15,6 +15,59 @@ Recent completed work:
 
 ## Recent Changes
 
+- **GPS time sync on every duty-cycle wake + GPS-longitude auto-timezone** (2026-06-05). Closes the gap
+  where the ESP32 RTC drifted across deep sleep and was never corrected (GPS used to run only on
+  non-timer-wake boots). Changes:
+  - **GPS now runs on every boot path.** GPS init was moved *out* of the `!gIsTimerWake` block in
+    `main.cpp` so it powers up on a timer wake too. The other fast-boot skips (Battery eager init, BT,
+    PerfMonitor, UART) are unchanged. (Note: Battery is a lazy Meyers singleton, so it still works on a
+    timer wake via the main-loop `updateVoltage()` / LoRa heartbeat `getSoC()` — only its *eager* setup +
+    bundled firmware-update-file check are skipped.)
+  - **Bounded blocking wait for the first fix on timer wake.** New `ElocGPS::waitForTimeSync(timeoutMs)`
+    polls `mLastUtcEpoch` until the clock is corrected or the timeout elapses. Called right after
+    `ElocGPS::init()` on a timer wake, **before** the awake-duration timer is reset, so the wait does not
+    shorten the inference window (it does extend awake time / power per cycle). Timeout is
+    `GPS_TIME_SYNC_TIMEOUT_S` in `project_config.h` (default **30 s**; set 0 to start GPS without blocking
+    and correct opportunistically). The module's **VBAT is tied to +3V3**, so it keeps RTC + ephemeris
+    across the VCC gating → every wake *after the first cold acquisition* is a **warm/hot start**, fix in a
+    few seconds (the 30 s is a cold-start/poor-sky ceiling, not the expected warm-wake wait). Earlier
+    "cold start *each* wake" comments were wrong — only the very first boot after a full power-down is cold.
+  - **First time-sync is now immediate.** `ElocGPS::gpsTask()` previously only synced every
+    `GPS_LOG_INTERVAL_S` (30 s); it now attempts a sync on every read pass *until the first success*, then
+    falls back to the periodic cadence for drift correction. `syncTimeFromGps()` returns silently on
+    invalid UTC, so pre-lock attempts cost nothing and don't spam the log. Log cadence is unchanged.
+  - **Auto-timezone from GPS longitude.** New `applyGpsDerivedTimezone()` in `main.cpp` sets the
+    local-display offset to `round(longitude / 15)` so a device self-localises in any country.
+    **Precedence: app-set TZ (RTC `timezoneOffsetValid`) > GPS-longitude > compile-time `TIMEZONE_OFFSET`.**
+    Applied immediately after the timer-wake fix; on normal boot a one-shot in the main loop applies it
+    when a background fix lands. **UTC stays the source of truth** — the RTC and all transmitted/stored
+    epochs (LoRa, `rtc_duty_cycle` times) remain UTC; only human-readable strings / WAV+CSV filenames
+    shift. Caveat by design: meridian offset ignores political borders and **DST** (fine for equatorial
+    sites; app override covers the rest). This supersedes the older "CSV timestamps stay in BT-set TZ"
+    entry below — that mechanism is now just the highest-priority tier of the chain.
+  - **Resync gating — GPS is skipped on wakes where the clock is already fresh.** Re-acquiring GPS every
+    2-minute cycle is wasted energy: the ESP32 RTC keeps time through deep sleep and **VBAT is hard-wired
+    to the main LiFePO4 pack** (always ~3.3 V), so the GPS module's RTC/ephemeris never lose power. Added
+    `GPS_RESYNC_INTERVAL_S` (project_config.h, default **3600 s**; 0 = every wake). On a timer wake, if the
+    last sync was younger than that interval, GPS is **not powered on at all** this cycle. Three new
+    `rtc_duty_cycle_t` fields (appended at the end so existing offsets are undisturbed): `lastGpsSyncS`
+    (epoch of last sync), `gpsTimezoneOffset` + `gpsTimezoneValid` (the GPS-derived TZ, persisted so a
+    skip-wake can still restore the right zone — the boot TZ restore precedence is now app-set >
+    GPS-persisted > compile default). `lastGpsSyncS` is stamped from `main.cpp` via the existing
+    `ElocGPS::lastUtcEpoch()` getter (blocking-success path + a main-loop poll that also catches a fix
+    landing after a timeout); **deliberately not** stamped inside `ElocGPS.cpp` to avoid pulling
+    `ElocStatus.hpp` (→ `WAVFileWriter.h`/`WString.h`) into the isolated `gps` lib. Guards (`lastGpsSyncS>0`,
+    `ageS>=0`) make stale/garbage RTC data fall back to a safe re-sync. Net: cold-start timeout is a
+    ~once-per-hour worst case instead of every cycle.
+  - **Bring-up nuance (2026-06-05):** observed a 44 s fix on duty-cycle **boot #1** (cold start, expected —
+    the standalone `Firmware/GPS-Test/` bench sketch also treats boot #1 as cold and gives it 2 min; its
+    ~2 s fixes are *warm* wakes). With VBAT continuous, production **warm wakes** should also fix in ~2 s,
+    so `waitForTimeSync()` returns in ~2 s on those (the 30 s only bites a true cold boot). If warm wakes
+    are *also* slow, suspect on-board RF/digital interference (SX1262 + I2S + SDIO + 240 MHz CPU run
+    concurrently with GPS in production; the bench sketch runs GPS alone) — the lever would be acquiring
+    the fix before spinning up LoRa/AI, or a better antenna.
+  - GPS deinit before sleep was already unconditional, so the per-wake GPS is still cleanly powered down
+    (and `deinit()` is a no-op on skip-wakes where it was never inited). Builds clean on `esp32dev`.
 - **GPS power gate is ACTIVE-LOW, and a clean power-down path was added** — corrects an inverted-polarity
   bug discovered during hardware bring-up. The `GPS_VCC_EN` net (IO expander **IO5**) drives the gate of
   a **P-channel high-side MOSFET (AO3401A)**, with R12 (10 kΩ) pulling the gate to +3V3. So the logic is
@@ -30,8 +83,10 @@ Recent completed work:
     `#ifdef USE_GPS`) before `esp_deep_sleep_start()`. **Caveat:** GPS init lives in the `!gIsTimerWake`
     block, so on a timer wake the GPS is never inited and `deinit()` is a no-op — therefore the sleep path
     *also* calls `getIoExpander().setGpsPower(false)` unconditionally to force IO5 high on every boot path
-    (the PCA9557 retains its output state across deep sleep, but this no longer relies on that). Note GPS
-    therefore only runs on cold/non-timer-wake boots today — making it run per-wake is a separate feature.
+    (the PCA9557 retains its output state across deep sleep, but this no longer relies on that).
+    **UPDATE (2026-06-05):** GPS now *does* run per-wake (init moved out of the `!gIsTimerWake` block —
+    see the GPS-time-sync entry at the top); the unconditional `setGpsPower(false)` in the sleep path is
+    kept anyway as a belt-and-suspenders guarantee.
   - **ROOT CAUSE of the 2.6 V / ~25 µA-in-sleep was a HARDWARE fault, now fixed by board rework:** the
     AO3401A's **drain and source were swapped** on the PCB vs. the schematic. With source/drain reversed
     the MOSFET's body diode is forward-biased from +3V3 → GPS VCC, so it conducts regardless of the gate,
@@ -61,8 +116,8 @@ Recent completed work:
   (30 s) and syncs the system clock (`timeObject`) from GPS UTC. Module **VCC is gated by IO expander
   IO5** via a P-channel high-side MOSFET — **active-LOW** (IO5 LOW = ON; see the polarity-fix entry under
   "Recent Changes"). `ELOC_IOEXP::GPS_VCC_EN` (= IO5) is configured as output in `init()` (default OFF =
-  IO5 high) with `setGpsPower(bool)`; `ElocGPS::init()` powers it on. GPS init is gated to `!gIsTimerWake`
-  to preserve the duty-cycle fast-boot path.
+  IO5 high) with `setGpsPower(bool)`; `ElocGPS::init()` powers it on. **(GPS init was originally gated to
+  `!gIsTimerWake`; as of 2026-06-05 it runs on every boot path — see the GPS-time-sync entry at the top.)**
   - **GPIO4 freed for GPS TX:** `STATUS_LED`/`BATTERY_LED` were *both* `#define`d to GPIO4 but the
     physical LEDs are on the PCA9557 IO expander, so the direct `gpio_set_level/direction(STATUS_LED…)`
     calls in `main.cpp` (boot + `prepareCyclicDeepSleep`) and the firmware-update success blink in
@@ -73,7 +128,8 @@ Recent completed work:
   - Builds clean on `esp32dev-ei` (RAM 30.4% / Flash 20.7% static). **Hardware bring-up in progress** —
     polarity + phantom-power issues found and fixed (see above). Power-aware GPS in duty cycle (turn IO5
     off + drive TX low before sleep) is now **done** via `ElocGPS::deinit()`. Surfacing lat/lon in
-    `getStatus`/LoRa remains a follow-up. `USE_GPS` is still **disabled by default** in `project_config.h`.
+    `getStatus`/LoRa remains a follow-up. `USE_GPS` is now **enabled** in `project_config.h` (validated on
+    hardware 2026-06-05: GPS time sync + auto-timezone working).
 - **Duty-cycle deep sleep now works in the record-ON modes** (tested on device 2026-05-29), not just AI-only patrol mode. Previously the sleep state machine was gated to `recordOFF_detectON` only (the activation lived inside the AI-enabling branch of `cmd_SetRecordMode`). It now activates for `recordON_detectON` and `recordON_detectOFF` as well. To make recording actually resume after a timer wake, two new fields were added to `rtc_duty_cycle_t`: `uint8_t recordMode` (the `WAVFileWriter::Mode` to restore) and `bool aiEnabled` (whether to auto-start AI). On wake, `main.cpp` restores `wav_writer` mode from RTC (the main loop's existing `mode==continuous` auto-start then begins a fresh WAV file — one file per wake) and only auto-starts AI when `aiEnabled`. `prepareCyclicDeepSleep()` now closes the open WAV file (sets mode disabled, waits for the write task's `finish()`) **before** stopping I2S, so the last file per cycle has a finalized header instead of being truncated. Files share the existing RTC-persisted session folder.
 - **Bug 7 (SD free-space cache) fixed** — `WAVFileWriter`'s "SD Card is full" guard reads a cached `m_free_bytes` that was only ever refreshed by the Bluetooth status task (`sd_card.update()` in `BluetoothServer.cpp`). On a timer wake Bluetooth is skipped, so the cache stayed 0 and every record-ON wake aborted with a false "SD Card is full". Fixed by calling `sd_card.update()` once in `mountSDCard()` right after mount, so the value is valid on every boot path. This was a latent bug exposed only once recording resumed on wake. See `README-DutyCycle-BugFixes.md` Bug 7.
 - **CSV timestamps now stay in the user's BT-set timezone across duty-cycle wakes** (Bug 6 in `README-DutyCycle-BugFixes.md`). Two `int8_t timezoneOffset` / `bool timezoneOffsetValid` fields added to `rtc_duty_cycle_t`; the BT `setTime` handler writes them, and the timer-wake path in `main.cpp` uses them in preference to the compile-time `TIMEZONE_OFFSET`. Fixes the 6-hour drift seen when a UTC+1 device runs `recordOFF_detectON` and falls back to the compile default of +7 after the first wake.

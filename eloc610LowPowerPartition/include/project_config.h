@@ -83,6 +83,22 @@
         #define PIN_GPS_RX          GPIO_NUM_36         // ESP32 RX  <- GPS TX (NMEA), input-only pin
         #define PIN_GPS_TX          GPIO_NUM_4          // ESP32 TX  -> GPS RX
         #define GPS_LOG_INTERVAL_S  30                  // status print cadence to serial
+        // On a duty-cycle timer wake the boot path blocks up to this long for the clock to be
+        // corrected from GPS UTC. VCC is gated off in deep sleep, but the module's VBAT is tied to
+        // +3V3, so it keeps its RTC + ephemeris/almanac alive across the wake — every wake is a
+        // warm/hot start and a fix normally lands within a few seconds. This wait happens before the
+        // awake timer is reset, so it does not shorten the inference window, but it does keep the
+        // device awake (and burning power) longer each cycle. The value below is a generous ceiling
+        // for a poor-sky-view fix, not the expected wait. Set to 0 to start GPS on wake without
+        // blocking (time is then corrected opportunistically if a fix lands within the awake window).
+        #define GPS_TIME_SYNC_TIMEOUT_S  30
+        // The ESP32 RTC keeps accurate time through deep sleep (and VBAT keeps the GPS module's clock
+        // alive continuously), so there is no need to re-acquire GPS on every duty-cycle wake. A wake
+        // skips powering the GPS entirely if the last successful GPS sync was less than this long ago;
+        // the RTC drift over that window is negligible for timestamping. This turns the cold-start
+        // wait into a roughly once-per-interval cost instead of paying it every cycle. Set to 0 to
+        // force a re-sync on every wake (the old behaviour).
+        #define GPS_RESYNC_INTERVAL_S    3600    // re-acquire GPS time at most ~once per hour
 
 #endif  // BOARD
 

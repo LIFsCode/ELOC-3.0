@@ -173,7 +173,8 @@ void ElocGPS::gpsTask() {
     ESP_LOGI(TAG, "GPS task started, searching for satellites...");
 
     uint8_t buf[GPS_READ_BUF];
-    int64_t nextLogUs = esp_timer_get_time();  // log immediately on first pass, then every interval
+    int64_t nextLogUs = esp_timer_get_time();   // log immediately on first pass, then every interval
+    int64_t nextSyncUs = esp_timer_get_time();
 
     while (true) {
         int len = uart_read_bytes(GPS_UART_PORT, buf, sizeof(buf), pdMS_TO_TICKS(200));
@@ -182,12 +183,42 @@ void ElocGPS::gpsTask() {
         }
 
         int64_t now = esp_timer_get_time();
+
+        // Correct the clock from GPS UTC. Before the first successful sync, attempt on every pass so
+        // a duty-cycle timer wake can grab the time the instant a fix lands (waitForTimeSync polls
+        // mLastUtcEpoch) instead of waiting a full log interval. After that, re-sync periodically to
+        // trim drift. syncTimeFromGps() returns early (and silently) until valid UTC is available, so
+        // the per-pass attempts before lock cost almost nothing and never spam the log.
+        if (mLastUtcEpoch == 0 || now >= nextSyncUs) {
+            syncTimeFromGps();
+            if (mLastUtcEpoch != 0) {
+                nextSyncUs = now + static_cast<int64_t>(GPS_LOG_INTERVAL_S) * 1000000LL;
+            }
+        }
+
         if (now >= nextLogUs) {
             nextLogUs = now + static_cast<int64_t>(GPS_LOG_INTERVAL_S) * 1000000LL;
             logStatus();
-            syncTimeFromGps();
         }
     }
+}
+
+esp_err_t ElocGPS::waitForTimeSync(uint32_t timeoutMs) {
+    ESP_LOGI(TAG, "Func: %s", __func__);
+
+    if (!mInitialized) {
+        ESP_LOGW(TAG, "waitForTimeSync called but GPS is not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    const int64_t deadlineUs = esp_timer_get_time() + static_cast<int64_t>(timeoutMs) * 1000LL;
+    while (mLastUtcEpoch == 0) {
+        if (esp_timer_get_time() >= deadlineUs) {
+            return ESP_ERR_TIMEOUT;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    return ESP_OK;
 }
 
 void ElocGPS::syncTimeFromGps() {

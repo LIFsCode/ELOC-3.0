@@ -56,6 +56,15 @@ public:
     /// @brief Whether the GPS is currently powered and running.
     inline bool isInitialized() const { return mInitialized; }
 
+    /// @brief Block until the system clock has been set from GPS UTC, or until the timeout elapses.
+    ///        Intended for the duty-cycle timer-wake path, to correct RTC drift before this cycle's
+    ///        detection / LoRa / CSV timestamps are produced. init() must have been called first
+    ///        (returns ESP_ERR_INVALID_STATE otherwise). On timeout the module is left running — the
+    ///        caller owns the lifecycle (it is powered down in the deep-sleep path).
+    /// @param timeoutMs maximum time to wait, in milliseconds (0 returns immediately)
+    /// @return ESP_OK once time is synced, ESP_ERR_TIMEOUT on timeout, ESP_ERR_INVALID_STATE if not initialized
+    esp_err_t waitForTimeSync(uint32_t timeoutMs);
+
     // --- Status getters (for later getStatus / LoRa integration) ---
     // Note: TinyGPS++ accessors are non-const, so these cannot be const-qualified.
     inline bool hasFix() { return mGps.location.isValid(); }

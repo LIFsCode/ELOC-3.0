@@ -60,7 +60,7 @@
 - **LED turn-off** before sleep (IO expander retains state)
 - **Button wake escape:** press button during sleep to return to normal boot
 - **Triggered via:** Bluetooth `recordOff_detectOn` (AI-only), `recordOn_detectOn`, or `recordOn_detectOff` command activates duty cycle (when `dutyCycle.enable` is set)
-- **BT-set timezone persisted to RTC** (Bug 6 in `README-DutyCycle-BugFixes.md`) so CSV detection timestamps survive duty-cycle wakes in the user's local TZ, not the compile-time `TIMEZONE_OFFSET` default
+- **BT-set timezone persisted to RTC** (Bug 6 in `README-DutyCycle-BugFixes.md`) so CSV detection timestamps survive duty-cycle wakes in the user's local TZ, not the compile-time `TIMEZONE_OFFSET` default. As of 2026-06-05 this is the **highest-priority tier** of the TZ chain (app-set > GPS-longitude-derived > compile default); see the GPS section.
 - **See:** `README-DutyCycle-and-LoRa-Cooldown.md`, `README-DutyCycle-BugFixes.md`
 
 ### Hardware Support — ✅ Operational
@@ -75,17 +75,32 @@
 - **NVS factory provisioning** (HW gen/rev, serial, LoRa keys)
 - **Per-session config snapshot** saved with recordings
 
-### GPS (ATGM336H) — 🟡 Implemented, hardware bring-up in progress
+### GPS (ATGM336H) — ✅ Operational (time sync + auto-timezone validated on HW 2026-06-05)
 - **`lib/gps` / `ElocGPS` singleton** parses NMEA via TinyGPS++ on UART_NUM_1 (RX=GPIO36, TX=GPIO4, 9600)
 - **Power via IO expander IO5 MOSFET** (`ELOC_IOEXP::setGpsPower`, `GPS_VCC_EN`) — **ACTIVE-LOW**:
   P-channel high-side switch (AO3401A), gate pulled up by R12, so IO5 LOW = ON / HIGH = OFF.
 - **`ElocGPS::deinit()`** powers down cleanly: stop task → delete UART → drive TX (GPIO4) low → IO5 high.
   Called from `enterCyclicDeepSleep()` so the GPS is off during deep sleep.
-- **System clock sync** from GPS UTC (`utc_tm_to_epoch` → `timeObject.setTime`), TZ offset preserved
-- **Logs position + time to serial every 30 s** (test/bring-up behaviour); started only on non-timer-wake boot
+- **System clock sync** from GPS UTC (`utc_tm_to_epoch` → `timeObject.setTime`); UTC is the source of truth.
+- **GPS runs on every boot path** (init moved out of the `!gIsTimerWake` block 2026-06-05).
+- **Time sync on every duty-cycle wake** corrects RTC drift across deep sleep: `ElocGPS::waitForTimeSync()`
+  blocks up to `GPS_TIME_SYNC_TIMEOUT_S` (default 30 s) after a timer wake, before the awake timer resets so
+  the inference window isn't shortened. VBAT hard-wired to the LiFePO4 pack (always ~3.3 V) → warm start,
+  fix in seconds (only the very first boot after a full power-down is a cold ~30-90 s fix). `gpsTask()` now
+  takes the first sync immediately (not on the 30 s log interval), then re-syncs periodically for drift.
+- **Resync gating to save power**: GPS is skipped entirely on a timer wake whose clock is still fresh.
+  `GPS_RESYNC_INTERVAL_S` (default 3600 s; 0 = every wake) — if `getEpoch() - rtc_duty_cycle.lastGpsSyncS`
+  is within the interval, the wake doesn't power GPS at all (RTC + VBAT-backed module clock hold time).
+  Three new `rtc_duty_cycle_t` fields (appended): `lastGpsSyncS`, `gpsTimezoneOffset`, `gpsTimezoneValid`.
+  `lastGpsSyncS` is stamped from `main.cpp` via `ElocGPS::lastUtcEpoch()` (not from the gps lib, to avoid
+  cross-lib include coupling). Cold-start timeout is now a ~once-per-hour worst case, not every cycle.
+- **Auto-timezone from GPS longitude** (`applyGpsDerivedTimezone()`): local-display offset =
+  `round(longitude / 15)`. Precedence: **app-set TZ (RTC) > GPS-longitude > compile-time `TIMEZONE_OFFSET`**.
+  Affects only human-readable strings / WAV+CSV filenames; epochs stay UTC. Ignores DST/borders by design.
+- **Logs position + time to serial every 30 s**
 - **GPIO4 reclaimed** from the vestigial direct-GPIO status LED (LEDs are on the IO expander)
-- Builds clean on `esp32dev-ei`. `USE_GPS` disabled by default. **TODO:** finish on-device validation;
-  surface lat/lon in `getStatus`/LoRa; record measured heap delta.
+- Builds clean on `esp32dev`. `USE_GPS` **enabled** in `project_config.h`. **TODO:** surface lat/lon in
+  `getStatus`/LoRa; record measured heap/power delta of the per-wake GPS window.
 
 #### Bring-up findings (2026-05-31)
 - **Fixed inverted power polarity (firmware)** — code assumed IO5 high = ON; the schematic is active-low
@@ -125,7 +140,7 @@
 
 ## Current Status
 
-**Overall:** The firmware is functional and field-deployable. All major subsystems (recording, AI, LoRa, Bluetooth, power management, duty-cycle deep sleep) are operational. The newest feature is **duty-cycle deep sleep** (Phase 1 complete) which enables 5-min sleep / 30s awake cycling for ~10-15× battery life extension. Next up is Phase 2: LoRa Event Cooldown to reduce event messages from hundreds per day to ~10-15 by implementing event start/ongoing/end state machine.
+**Overall:** The firmware is functional and field-deployable. All major subsystems (recording, AI, LoRa, Bluetooth, power management, duty-cycle deep sleep, GPS) are operational. The newest feature (2026-06-05) is **GPS time sync on every duty-cycle wake plus GPS-longitude auto-timezone** — the device now corrects RTC drift each wake and self-localises its display timezone anywhere, while keeping UTC as the source of truth (validated on hardware). Earlier, **duty-cycle deep sleep** (Phase 1) enabled 5-min sleep / 30s awake cycling for ~10-15× battery life extension. Next up is Phase 2: LoRa Event Cooldown to reduce event messages from hundreds per day to ~10-15 by implementing event start/ongoing/end state machine.
 
 ## Evolution of Project Decisions
 

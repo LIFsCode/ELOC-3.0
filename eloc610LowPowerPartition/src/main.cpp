@@ -807,6 +807,52 @@ void handleSleepCycleStateMachine() {
  * End Duty-Cycle Functions
  ******************************************************************************/
 
+#ifdef USE_GPS
+/**
+ * @brief Derive the local-display timezone from the current GPS longitude and apply it, unless the
+ *        user has already set one from the app.
+ *
+ * UTC is always the source of truth: the RTC and every transmitted/stored epoch stay UTC. This only
+ * shifts the local wall-clock used for human-readable timestamps and WAV/CSV filenames so a device
+ * dropped in a new country self-localises without any field configuration.
+ *
+ * Precedence (highest first): app-set TZ persisted in RTC > this GPS-longitude offset > the
+ * compile-time TIMEZONE_OFFSET already applied at boot. The derived value is the solar/meridian
+ * offset round(longitude / 15); it deliberately ignores political borders and DST, which is fine for
+ * the equatorial deployment sites (and the app override exists for the cases where it isn't).
+ *
+ * @return true once a GPS-derived offset has been applied (or an app override makes it moot — i.e.
+ *         the caller can stop retrying); false while there is no fix yet.
+ */
+static bool applyGpsDerivedTimezone() {
+    // App-set TZ wins — never override an explicit field-tech choice. Treat this as "done" so the
+    // caller stops polling.
+    if (rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC && rtc_duty_cycle.timezoneOffsetValid) {
+        return true;
+    }
+    if (!ElocGPS::GetInstance().hasFix()) {
+        return false;  // no position yet — try again later
+    }
+
+    double lng = ElocGPS::GetInstance().getLng();
+    // Round longitude/15 to the nearest hour, away from zero. Longitude is bounded to +/-180, so the
+    // result is always within setTimeZone()'s valid -12..+14 range.
+    int offset = static_cast<int>((lng >= 0.0) ? (lng / 15.0 + 0.5) : (lng / 15.0 - 0.5));
+    timeObject.setTimeZone(offset);
+
+    // Persist the derived offset so a duty-cycle wake that skips GPS (clock still fresh) can restore
+    // the right local TZ without a fix. App-set TZ still wins — it is checked first everywhere.
+    if (rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC) {
+        rtc_duty_cycle.gpsTimezoneOffset = static_cast<int8_t>(offset);
+        rtc_duty_cycle.gpsTimezoneValid  = true;
+    }
+
+    ESP_LOGI(TAG, "Timezone derived from GPS longitude %.4f -> UTC%+d (local %s)",
+             lng, offset, timeObject.getDateTime().c_str());
+    return true;
+}
+#endif  // USE_GPS
+
 void app_main(void) {
     ESP_LOGI(TAG, "\nSETUP--start\n");
     initArduino();
@@ -840,11 +886,18 @@ void app_main(void) {
         // Prefer the user's BT-set TZ persisted in RTC over the compile-time default.
         // Without this, CSV timestamps drift to TIMEZONE_OFFSET (e.g. +7) after the
         // first duty-cycle wake even if the Android app already set the device to +1.
+        // TZ precedence: app-set (BT) > GPS-longitude-derived > compile-time default. Both persisted
+        // variants survive deep sleep in RTC; the libc TZ env var itself does not, so it is re-applied
+        // here every wake.
         int32_t tz = TIMEZONE_OFFSET;
         if (rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC &&
             rtc_duty_cycle.timezoneOffsetValid) {
             tz = rtc_duty_cycle.timezoneOffset;
             ESP_LOGI(TAG, "Timer wake: restoring user-set TZ offset %+ld from RTC", tz);
+        } else if (rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC &&
+                   rtc_duty_cycle.gpsTimezoneValid) {
+            tz = rtc_duty_cycle.gpsTimezoneOffset;
+            ESP_LOGI(TAG, "Timer wake: restoring GPS-derived TZ offset %+ld from RTC", tz);
         } else {
             ESP_LOGW(TAG, "Timer wake: no persisted TZ, falling back to compile-time %+d",
                      TIMEZONE_OFFSET);
@@ -1008,14 +1061,56 @@ void app_main(void) {
         uart_test.init(UART_NUM_0);
         uart_test.start_thread();
     #endif
+    } else {
+        ESP_LOGI(TAG, "Timer wake: skipping Bluetooth, PerfMonitor, UART");
+    }
 
-    #ifdef USE_GPS
+#ifdef USE_GPS
+    // GPS runs on every boot path so the background task can correct the clock from GPS UTC and derive
+    // the local timezone — EXCEPT a duty-cycle timer wake whose clock is still fresh from a recent GPS
+    // sync. The ESP32 RTC keeps time through deep sleep and the GPS module's VBAT-backed clock stays
+    // alive, so re-acquiring every short cycle is wasted energy; we skip powering the GPS until the
+    // last sync is older than GPS_RESYNC_INTERVAL_S. When we do run it on a timer wake, we additionally
+    // block briefly for the first fix so this cycle's detection / LoRa / CSV timestamps are accurate.
+    // The wait sits before the awake-duration timer is reset (below), so it does not shorten the
+    // inference window — but it does keep the device awake longer; see GPS_TIME_SYNC_TIMEOUT_S.
+    bool gpsTzApplied = false;
+
+    // Is the RTC clock still fresh enough that this wake can skip GPS entirely?
+    bool gpsClockFresh = false;
+    if (gIsTimerWake && GPS_RESYNC_INTERVAL_S > 0 &&
+        rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC && rtc_duty_cycle.lastGpsSyncS > 0) {
+        int64_t ageS = static_cast<int64_t>(timeObject.getEpoch()) - rtc_duty_cycle.lastGpsSyncS;
+        if (ageS >= 0 && ageS < GPS_RESYNC_INTERVAL_S) {
+            gpsClockFresh = true;
+            gpsTzApplied = true;  // TZ already restored from RTC at boot; no fix needed this wake
+            ESP_LOGI(TAG, "Timer wake: GPS time still fresh (synced %lld s ago, < %d s) — skipping GPS",
+                     ageS, GPS_RESYNC_INTERVAL_S);
+        }
+    }
+
+    if (!gpsClockFresh) {
         ESP_LOGI(TAG, "Setting up GPS...");
         ElocGPS::GetInstance().init();
-    #endif
-    } else {
-        ESP_LOGI(TAG, "Timer wake: skipping Bluetooth, PerfMonitor, UART, GPS");
+
+        if (gIsTimerWake && GPS_TIME_SYNC_TIMEOUT_S > 0) {
+            ESP_LOGI(TAG, "Timer wake: waiting up to %d s for GPS time sync (RTC epoch=%ld)...",
+                     GPS_TIME_SYNC_TIMEOUT_S, timeObject.getEpoch());
+            esp_err_t tsync = ElocGPS::GetInstance().waitForTimeSync(GPS_TIME_SYNC_TIMEOUT_S * 1000);
+            if (tsync == ESP_OK) {
+                ESP_LOGI(TAG, "Timer wake: GPS time acquired, RTC corrected (epoch=%ld)",
+                         timeObject.getEpoch());
+                gpsTzApplied = applyGpsDerivedTimezone();
+                if (rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC) {
+                    rtc_duty_cycle.lastGpsSyncS = ElocGPS::GetInstance().lastUtcEpoch();
+                }
+            } else {
+                ESP_LOGW(TAG, "Timer wake: GPS time sync did not complete (%s), keeping RTC time (epoch=%ld)",
+                         esp_err_to_name(tsync), timeObject.getEpoch());
+            }
+        }
     }
+#endif
 
 #ifdef EDGE_IMPULSE_ENABLED
 
@@ -1281,6 +1376,24 @@ void app_main(void) {
         delay(300);
 
 #endif  // EDGE_IMPULSE_ENABLED
+
+#ifdef USE_GPS
+        // Self-configure the local timezone from GPS longitude once a fix is available. On normal
+        // boot we don't block for a fix at startup, so this catches up when one arrives. One-shot;
+        // applyGpsDerivedTimezone() also returns true (stop polling) when the app has set a TZ.
+        if (!gpsTzApplied) {
+            gpsTzApplied = applyGpsDerivedTimezone();
+        }
+        // Keep the last-GPS-sync timestamp current from the driver's view (covers a fix that lands in
+        // the background after the blocking wait timed out, and the periodic drift re-syncs). When GPS
+        // is skipped this wake, lastUtcEpoch() is 0, so the previously persisted value is preserved.
+        {
+            int64_t gpsEpoch = ElocGPS::GetInstance().lastUtcEpoch();
+            if (gpsEpoch > 0 && rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC) {
+                rtc_duty_cycle.lastGpsSyncS = gpsEpoch;
+            }
+        }
+#endif
 
         // Duty cycle sleep state machine - check if awake time expired
         handleSleepCycleStateMachine();

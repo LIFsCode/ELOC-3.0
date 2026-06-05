@@ -359,7 +359,7 @@ esp_err_t ElocLora::init() {
   loraSPI.begin(PIN_LORA_CLK, PIN_LORA_MISO, PIN_LORA_MOSI, PIN_LORA_CS);
 
   ESP_LOGI(TAG, "Initialise the radio");
-  radio.XTAL = true; // do not use TCXO for RA01 modules
+  radio.XTAL = true; // RA01 modules are crystal-based, not TCXO. NOTE: pinned to RadioLib 7.4.0; 7.7.0 removed .XTAL (use tcxoVoltage=0 there instead)
   int16_t state = radio.begin();
   if (state != RADIOLIB_ERR_NONE) {
     this->errMsg(F("Initialise radio failed"), state);
@@ -664,6 +664,16 @@ bool ElocLora::attemptRejoin(const char* reason) {
 int16_t ElocLora::sendReceiveWithRecovery(const uint8_t* uplinkPayload,
                                          size_t uplinkSize,
                                          LoRaWANEvent_t* uplinkDetails) {
+    // node.sendReceive() is fully blocking: it transmits the uplink and then sits
+    // through the RX1/RX2 receive windows (several seconds at AS923 SF10-SF12).
+    // EasyBuzzer is non-blocking — its tone is only switched off by EasyBuzzer.update(),
+    // which is pumped once per main-loop cycle in ElocSystem::handleSystemStatus(). Since
+    // the LoRa loop runs at the tail of that same cycle, a beep that is mid-ON (e.g. the
+    // "Bluetooth ready" notification beep that coincides with the first heartbeat) would
+    // keep sounding in PWM hardware for the entire transmit because update() never runs.
+    // Silence the buzzer first so no uplink can ever leave a tone droning.
+    EasyBuzzer.stopBeep();
+
     int16_t state = node.sendReceive(const_cast<uint8_t*>(uplinkPayload), uplinkSize, mFPort,
                                      mDownlinkPayload, &mDownlinkSize,
                                      false, uplinkDetails, &mDownlinkDetails);

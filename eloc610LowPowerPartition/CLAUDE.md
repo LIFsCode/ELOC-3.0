@@ -25,7 +25,7 @@ It targets ELOC 3.0 hardware (ESP32-WROVER, 16 MB flash, PSRAM, ICS-43434 I2S mi
 
 ## Build / flash / test commands
 
-The default environment is `esp32dev` (defined in `platformio.ini`). Use `pio run -e <env>` to target a specific one.
+The default environment is `esp32dev-ei` (defined in `platformio.ini`). Use `pio run -e <env>` to target a specific one.
 
 ```bash
 # Build (no AI)

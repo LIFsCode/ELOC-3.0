@@ -86,10 +86,13 @@ typedef struct {
     uint32_t detectionsSinceLastMsg; // Aggregation counter for ongoing msgs
     int64_t  eventStartTimeS;        // When current event session started (epoch seconds)
     char     sessionId[80];          // Session folder name, persisted across sleep cycles
-    int8_t   timezoneOffset;         // User-set TZ offset (hours, -12..14), survives deep sleep
+    int8_t   timezoneOffset;         // User-set (app/BT) TZ offset (hours, -12..14), survives deep sleep
     bool     timezoneOffsetValid;    // false until BT setTime supplies one
     uint8_t  recordMode;             // WAVFileWriter::Mode to restore on wake (0=disabled,1=continuous,2=single)
     bool     aiEnabled;              // whether AI inference should auto-start on wake
+    int64_t  lastGpsSyncS;           // when the clock was last set from GPS UTC (epoch seconds, 0=never)
+    int8_t   gpsTimezoneOffset;      // TZ offset derived from GPS longitude (used when no app TZ is set)
+    bool     gpsTimezoneValid;       // false until a GPS-longitude offset has been derived at least once
 } rtc_duty_cycle_t;
 
 /// @brief Global sleep cycle state (non-persistent, reset each boot)

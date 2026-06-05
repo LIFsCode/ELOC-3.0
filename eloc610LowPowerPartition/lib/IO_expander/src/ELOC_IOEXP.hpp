@@ -42,6 +42,10 @@ public:
 	static const uint32_t NC_IO5		= 0x20;
 	static const uint32_t NC_IO6		= 0x40;
 	static const uint32_t NC_IO7		= 0x80;
+	// IO5 drives a P-channel high-side MOSFET (AO3401A) gating the ATGM336H GPS module VCC.
+	// The gate is pulled to +3V3 by R12, so it is ACTIVE-LOW: gate LOW = GPS ON, gate HIGH = GPS OFF.
+	// Use setGpsPower(bool) rather than setOutputBit() directly so the inversion is handled for you.
+	static const uint32_t GPS_VCC_EN	= NC_IO5;
 
 private:
 	esp_err_t init();
@@ -62,6 +66,10 @@ public:
 	esp_err_t toggleOutputBit(uint32_t bit);
 	esp_err_t chargeBattery(bool enable);
 	bool hasLiIonBattery();
+
+	/// @brief Enable/disable the ATGM336H GPS module VCC via the IO5 MOSFET gate
+	/// @param enable true = power GPS on, false = power off
+	esp_err_t setGpsPower(bool enable);
 
 };
 

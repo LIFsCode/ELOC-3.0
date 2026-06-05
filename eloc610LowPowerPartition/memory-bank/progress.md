@@ -75,7 +75,35 @@
 - **NVS factory provisioning** (HW gen/rev, serial, LoRa keys)
 - **Per-session config snapshot** saved with recordings
 
+### GPS (ATGM336H) — 🟡 Implemented, hardware bring-up in progress
+- **`lib/gps` / `ElocGPS` singleton** parses NMEA via TinyGPS++ on UART_NUM_1 (RX=GPIO36, TX=GPIO4, 9600)
+- **Power via IO expander IO5 MOSFET** (`ELOC_IOEXP::setGpsPower`, `GPS_VCC_EN`) — **ACTIVE-LOW**:
+  P-channel high-side switch (AO3401A), gate pulled up by R12, so IO5 LOW = ON / HIGH = OFF.
+- **`ElocGPS::deinit()`** powers down cleanly: stop task → delete UART → drive TX (GPIO4) low → IO5 high.
+  Called from `enterCyclicDeepSleep()` so the GPS is off during deep sleep.
+- **System clock sync** from GPS UTC (`utc_tm_to_epoch` → `timeObject.setTime`), TZ offset preserved
+- **Logs position + time to serial every 30 s** (test/bring-up behaviour); started only on non-timer-wake boot
+- **GPIO4 reclaimed** from the vestigial direct-GPIO status LED (LEDs are on the IO expander)
+- Builds clean on `esp32dev-ei`. `USE_GPS` disabled by default. **TODO:** finish on-device validation;
+  surface lat/lon in `getStatus`/LoRa; record measured heap delta.
+
+#### Bring-up findings (2026-05-31)
+- **Fixed inverted power polarity (firmware)** — code assumed IO5 high = ON; the schematic is active-low
+  (P-channel high-side). `setGpsPower()` now inverts, and `init()` defaults IO5 high (off). Keep this — it
+  matches the schematic/reworked board. Do **not** revert.
+- **ROOT CAUSE of 2.6 V on VCC / ~25 µA in sleep = HARDWARE: AO3401A drain↔source swapped on the PCB.**
+  With source/drain reversed the body diode is forward-biased +3V3 → GPS VCC and conducts regardless of the
+  gate, clamping VCC at ~2.6 V and leaking ~25 µA. The switch could never turn off, which is why a correct
+  IO5=3.3 V made no difference. **Fixed by board rework.** Earlier phantom-power theories (VBAT diode, RXD
+  ESD clamp) were red herrings — VBAT measured 0.2 V, ruling out the VBAT path.
+- **Other hardware defects to verify (did not cause the leak):** VBAT (pin 6) ≈ 0.2 V → not receiving +3V3
+  (suspected net miswire in the +3V3/VBAT/C26 corner); **C26 ground pad floating**; **VCC_RF (pin 14)** is
+  on the switched rail (active-antenna/LNA bias via L2). Check these against the PCB.
+
 ## What's Left to Build / Fix
+
+### Recently Fixed
+- [x] **Buzzer drones for seconds during LoRa uplink** — `EasyBuzzer` is non-blocking and its tone is only switched off by `EasyBuzzer.update()`, pumped once per cycle in `ElocSystem::handleSystemStatus()`. The LoRa loop runs at the tail of that same cycle, and `node.sendReceive()` blocks for the full airtime + RX1/RX2 windows (seconds at AS923 SF10-SF12). A beep started earlier in the cycle (classically the "Bluetooth ready" notification colliding with the immediate first heartbeat) kept sounding in PWM hardware for the whole transmit. Fixed by calling `EasyBuzzer.stopBeep()` at the top of `ElocLora::sendReceiveWithRecovery()` (the single blocking choke point for both heartbeat and event uplinks) so no uplink can leave a tone droning.
 
 ### Known Issues
 - [ ] **Automatic gain adjustment** causes audio distortion — disabled

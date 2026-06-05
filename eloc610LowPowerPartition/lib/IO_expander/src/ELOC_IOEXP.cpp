@@ -34,11 +34,12 @@ esp_err_t ELOC_IOEXP::init() {
         return mErrorCode;
     }
     if ((mErrorCode = portConfig_I(LiION_DETECT))) return mErrorCode;
-    if ((mErrorCode = portConfig_O (LED_STATUS | LED_BATTERY | CHARGE_EN_N))) return mErrorCode;
-    // set outputs to default values
-    if ((mErrorCode = setOutputPort(LED_STATUS))) return mErrorCode;
+    if ((mErrorCode = portConfig_O (LED_STATUS | LED_BATTERY | CHARGE_EN_N | GPS_VCC_EN))) return mErrorCode;
+    // set outputs to default values (GPS powered off; ElocGPS::init() enables it explicitly).
+    // GPS_VCC_EN drives a P-channel high-side switch (AO3401A) gate -> HIGH = OFF, so it is set high here.
+    if ((mErrorCode = setOutputPort(LED_STATUS | GPS_VCC_EN))) return mErrorCode;
     if ((mErrorCode = clearOutputPort(LED_BATTERY | CHARGE_EN_N))) return mErrorCode;
-    outputReg = LED_STATUS;
+    outputReg = LED_STATUS | GPS_VCC_EN;
 
     ESP_LOGI(TAG, "PCA9557 initialized");
     return ESP_OK;
@@ -75,4 +76,11 @@ esp_err_t ELOC_IOEXP::chargeBattery(bool enable) {
 }
 bool ELOC_IOEXP::hasLiIonBattery() {
     return this->readInput() & LiION_DETECT;
+}
+
+esp_err_t ELOC_IOEXP::setGpsPower(bool enable) {
+    // GPS_VCC_EN gates a P-channel high-side MOSFET (AO3401A): gate LOW = ON, gate HIGH = OFF.
+    // Invert the logical "enable" to the active-low gate level.
+    mErrorCode = setOutputBit(GPS_VCC_EN, !enable);
+    return mErrorCode;
 }

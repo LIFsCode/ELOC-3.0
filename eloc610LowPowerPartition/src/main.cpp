@@ -50,6 +50,10 @@
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
 
+#ifdef USE_GPS
+    #include "ElocGPS.hpp"
+#endif
+
 #ifdef ENABLE_TEST_UART
     #include "uart_eloc.h"
 #endif
@@ -727,9 +731,8 @@ void prepareCyclicDeepSleep() {
     // The LoRaWAN session is saved after each uplink in ElocLora::parseResponse()
 
     // Turn off LEDs before sleep — IO expander retains register state during deep sleep,
-    // so LEDs would stay ON if not explicitly turned off
-    gpio_set_level(STATUS_LED, 0);
-    gpio_set_level(BATTERY_LED, 0);
+    // so LEDs would stay ON if not explicitly turned off.
+    // (The physical LEDs are on the IO expander; GPIO4 is now the GPS UART TX, so it is not driven here.)
     if (ElocSystem::GetInstance().hasIoExpander()) {
         ElocSystem::GetInstance().getIoExpander().setOutputBit(ELOC_IOEXP::LED_STATUS, false);
         ElocSystem::GetInstance().getIoExpander().setOutputBit(ELOC_IOEXP::LED_BATTERY, false);
@@ -753,6 +756,21 @@ void prepareCyclicDeepSleep() {
  */
 void enterCyclicDeepSleep() {
     gSleepCycleState = SLEEP_CYCLE_ENTERING_SLEEP;
+
+#ifdef USE_GPS
+    // Power the GPS down before sleeping: stops its task, removes the UART driver, drives the TX line
+    // low (kills the RXD ESD-clamp back-feed) and switches the VCC MOSFET off (IO5 high). Without this
+    // the module would stay powered through deep sleep, wasting active current.
+    ElocGPS::GetInstance().deinit();
+
+    // deinit() is a no-op when the GPS was never initialized this cycle — and on a TIMER WAKE it never
+    // is (GPS init lives in the !gIsTimerWake block). So force the VCC rail off unconditionally here,
+    // independent of ElocGPS state, to guarantee the MOSFET is off in sleep on every boot path.
+    if (ElocSystem::GetInstance().hasIoExpander()) {
+        ElocSystem::GetInstance().getIoExpander().setGpsPower(false);  // IO5 high -> MOSFET off
+    }
+#endif
+
     ESP_LOGI(TAG, "Entering deep sleep NOW");
     delay(50); // Allow log to flush
     esp_deep_sleep_start();
@@ -841,8 +859,8 @@ void app_main(void) {
 
     resetPeripherals();
 
-    gpio_set_direction(STATUS_LED, GPIO_MODE_OUTPUT);
-    gpio_set_direction(BATTERY_LED, GPIO_MODE_OUTPUT);
+    // NOTE: STATUS_LED/BATTERY_LED are driven via the PCA9557 IO expander on ELOC 3.0.
+    // GPIO4 (the legacy LED pin define) is reused as the GPS UART TX, so it is not configured here.
 
     gpio_sleep_sel_dis(I2S_MIC_SERIAL_CLOCK);
     gpio_sleep_sel_dis(I2S_MIC_LEFT_RIGHT_CLOCK);
@@ -857,9 +875,6 @@ void app_main(void) {
     gpio_set_pull_mode(GPIO_BUTTON, GPIO_PULLUP_ONLY);
     gpio_set_intr_type(GPIO_BUTTON, GPIO_INTR_POSEDGE);
     gpio_sleep_sel_dis(GPIO_BUTTON);
-
-    gpio_set_level(STATUS_LED, 0);
-    gpio_set_level(BATTERY_LED, 0);
 
     // Install GPIO ISR service early, before LoRa or other interrupt sources
     // This needs to be done before any gpio_isr_handler_add calls
@@ -993,8 +1008,13 @@ void app_main(void) {
         uart_test.init(UART_NUM_0);
         uart_test.start_thread();
     #endif
+
+    #ifdef USE_GPS
+        ESP_LOGI(TAG, "Setting up GPS...");
+        ElocGPS::GetInstance().init();
+    #endif
     } else {
-        ESP_LOGI(TAG, "Timer wake: skipping Bluetooth, PerfMonitor, UART");
+        ESP_LOGI(TAG, "Timer wake: skipping Bluetooth, PerfMonitor, UART, GPS");
     }
 
 #ifdef EDGE_IMPULSE_ENABLED

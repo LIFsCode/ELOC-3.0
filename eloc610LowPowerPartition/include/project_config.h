@@ -72,6 +72,18 @@
         /* Buzzer Config */
         #define BUZZER_PIN GPIO_NUM_13
 
+        /* GPS Config (ATGM336H GNSS module)
+         * VCC is gated by a P-channel high-side MOSFET (AO3401A) driven from IO expander IO5.
+         * The gate is pulled to +3V3 by R12, so it is ACTIVE-LOW: IO5 LOW = GPS ON, IO5 HIGH = GPS OFF
+         * (use ELOC_IOEXP::setGpsPower()). NMEA is read over UART; GPIO4 was the vestigial STATUS/BATTERY
+         * LED pin (the real LEDs are on the PCA9557 IO expander), so it is reused as TX. */
+        #define USE_GPS
+        #define GPS_UART_PORT       UART_NUM_1
+        #define GPS_UART_BAUD       9600                // ATGM336H default
+        #define PIN_GPS_RX          GPIO_NUM_36         // ESP32 RX  <- GPS TX (NMEA), input-only pin
+        #define PIN_GPS_TX          GPIO_NUM_4          // ESP32 TX  -> GPS RX
+        #define GPS_LOG_INTERVAL_S  30                  // status print cadence to serial
+
 #endif  // BOARD
 
 /////////////////////////////////// Time Configuration ///////////////////////////////////

@@ -15,6 +15,65 @@ Recent completed work:
 
 ## Recent Changes
 
+- **GPS power gate is ACTIVE-LOW, and a clean power-down path was added** — corrects an inverted-polarity
+  bug discovered during hardware bring-up. The `GPS_VCC_EN` net (IO expander **IO5**) drives the gate of
+  a **P-channel high-side MOSFET (AO3401A)**, with R12 (10 kΩ) pulling the gate to +3V3. So the logic is
+  inverted vs. the old code's assumption: **IO5 LOW = GPS ON, IO5 HIGH = GPS OFF**. Fixes:
+  - `ELOC_IOEXP::setGpsPower(bool)` now drives `!enable` to the gate; `init()` sets IO5 **high** for the
+    default-off state (was clearing it low, which silently powered the GPS on the whole time). Header +
+    `project_config.h` comments corrected (were "high = ON").
+  - New **`ElocGPS::deinit()`** powers down cleanly: stop reader task → `uart_driver_delete` → **drive
+    PIN_GPS_TX (GPIO4) LOW** → `setGpsPower(false)`. (Driving TX low before cutting VCC is good practice —
+    avoids holding a powered-down chip's input high — though it was *not* the cause of the 2.6 V; see the
+    root-cause note below.) Destructor now routes through `deinit()`.
+  - **Wired into the duty cycle:** `enterCyclicDeepSleep()` in `main.cpp` calls `ElocGPS::deinit()` (under
+    `#ifdef USE_GPS`) before `esp_deep_sleep_start()`. **Caveat:** GPS init lives in the `!gIsTimerWake`
+    block, so on a timer wake the GPS is never inited and `deinit()` is a no-op — therefore the sleep path
+    *also* calls `getIoExpander().setGpsPower(false)` unconditionally to force IO5 high on every boot path
+    (the PCA9557 retains its output state across deep sleep, but this no longer relies on that). Note GPS
+    therefore only runs on cold/non-timer-wake boots today — making it run per-wake is a separate feature.
+  - **ROOT CAUSE of the 2.6 V / ~25 µA-in-sleep was a HARDWARE fault, now fixed by board rework:** the
+    AO3401A's **drain and source were swapped** on the PCB vs. the schematic. With source/drain reversed
+    the MOSFET's body diode is forward-biased from +3V3 → GPS VCC, so it conducts regardless of the gate,
+    clamping VCC at ~V_rail − 0.6 ≈ 2.6 V and leaking ~25 µA — the switch could never turn off. Earlier
+    "phantom power via VBAT / RXD clamp" theories were red herrings (VBAT measured 0.2 V, disproving the
+    VBAT path). **The firmware polarity fix is still correct** and is validated by this: the *schematic*
+    (and therefore the reworked board) is a P-channel high-side active-low switch, which is exactly what
+    the code now drives. Do **not** revert it.
+  - **Separate hardware defects noted during bring-up (lower priority):** VBAT (pin 6) reads ~0.2 V — it
+    is not getting its +3V3 (suspected net miswire in the +3V3/VBAT/C26 corner); and **C26 is not grounded**
+    (decoupling cap with a floating ground pad — does nothing, but can't itself cause DC leakage). Also note
+    **VCC_RF (pin 14)** shares the switched rail (RF/LNA bias via L2 to the active antenna). Verify these
+    against the PCB; they did not cause the sleep current but should be corrected.
+- **Buzzer no longer drones during LoRa uplinks** — `EasyBuzzer` is non-blocking; its tone is only
+  switched off by `EasyBuzzer.update()`, which is pumped once per cycle in
+  `ElocSystem::handleSystemStatus()`. That same cycle ends by running `ElocLora::ElocLoraLoop()`, and
+  `node.sendReceive()` blocks for the full airtime + RX1/RX2 windows (seconds at AS923 SF10-SF12), so a
+  beep started earlier in the cycle kept sounding in PWM hardware for the whole transmit. The classic
+  symptom was the "Bluetooth ready" notification beep colliding with the immediate first heartbeat
+  (`lastStatusLoraTimeS == 0`) at boot. Fixed by calling `EasyBuzzer.stopBeep()` at the top of
+  `ElocLora::sendReceiveWithRecovery()` — the single blocking choke point for both heartbeat and event
+  uplinks — so no uplink can ever leave a tone droning. (Direct-`EasyBuzzer` use mirrors `playJoinFeedback()`.)
+- **GPS support added (ATGM336H GNSS, bring-up / test phase)** — new `lib/gps` library exposing the
+  `ElocGPS` singleton. Reads NMEA over **UART_NUM_1 (RX=GPIO36, TX=GPIO4, 9600 baud)**, parses with
+  **TinyGPS++** (`mikalhart/TinyGPSPlus`, added to `platformio.ini` `[env].lib_deps`), and a dedicated
+  FreeRTOS task (Core 0, prio 2, ~3 KB stack) logs position + time to serial every `GPS_LOG_INTERVAL_S`
+  (30 s) and syncs the system clock (`timeObject`) from GPS UTC. Module **VCC is gated by IO expander
+  IO5** via a P-channel high-side MOSFET — **active-LOW** (IO5 LOW = ON; see the polarity-fix entry under
+  "Recent Changes"). `ELOC_IOEXP::GPS_VCC_EN` (= IO5) is configured as output in `init()` (default OFF =
+  IO5 high) with `setGpsPower(bool)`; `ElocGPS::init()` powers it on. GPS init is gated to `!gIsTimerWake`
+  to preserve the duty-cycle fast-boot path.
+  - **GPIO4 freed for GPS TX:** `STATUS_LED`/`BATTERY_LED` were *both* `#define`d to GPIO4 but the
+    physical LEDs are on the PCA9557 IO expander, so the direct `gpio_set_level/direction(STATUS_LED…)`
+    calls in `main.cpp` (boot + `prepareCyclicDeepSleep`) and the firmware-update success blink in
+    `FirmwareUpdate.cpp` were vestigial. Removed/redirected to the IO expander so the UART can own GPIO4.
+  - UTC→epoch uses a local `utc_tm_to_epoch()` helper (Hinnant days-from-civil) — `timegm()` is **not**
+    available in ESP-IDF newlib. GPS time is set as absolute UTC epoch; the configured TZ offset is left
+    untouched. Note: `ESP32Time::setTime(epoch, ms)` clamps the sub-second arg to 0..999, so pass 0.
+  - Builds clean on `esp32dev-ei` (RAM 30.4% / Flash 20.7% static). **Hardware bring-up in progress** —
+    polarity + phantom-power issues found and fixed (see above). Power-aware GPS in duty cycle (turn IO5
+    off + drive TX low before sleep) is now **done** via `ElocGPS::deinit()`. Surfacing lat/lon in
+    `getStatus`/LoRa remains a follow-up. `USE_GPS` is still **disabled by default** in `project_config.h`.
 - **Duty-cycle deep sleep now works in the record-ON modes** (tested on device 2026-05-29), not just AI-only patrol mode. Previously the sleep state machine was gated to `recordOFF_detectON` only (the activation lived inside the AI-enabling branch of `cmd_SetRecordMode`). It now activates for `recordON_detectON` and `recordON_detectOFF` as well. To make recording actually resume after a timer wake, two new fields were added to `rtc_duty_cycle_t`: `uint8_t recordMode` (the `WAVFileWriter::Mode` to restore) and `bool aiEnabled` (whether to auto-start AI). On wake, `main.cpp` restores `wav_writer` mode from RTC (the main loop's existing `mode==continuous` auto-start then begins a fresh WAV file — one file per wake) and only auto-starts AI when `aiEnabled`. `prepareCyclicDeepSleep()` now closes the open WAV file (sets mode disabled, waits for the write task's `finish()`) **before** stopping I2S, so the last file per cycle has a finalized header instead of being truncated. Files share the existing RTC-persisted session folder.
 - **Bug 7 (SD free-space cache) fixed** — `WAVFileWriter`'s "SD Card is full" guard reads a cached `m_free_bytes` that was only ever refreshed by the Bluetooth status task (`sd_card.update()` in `BluetoothServer.cpp`). On a timer wake Bluetooth is skipped, so the cache stayed 0 and every record-ON wake aborted with a false "SD Card is full". Fixed by calling `sd_card.update()` once in `mountSDCard()` right after mount, so the value is valid on every boot path. This was a latent bug exposed only once recording resumed on wake. See `README-DutyCycle-BugFixes.md` Bug 7.
 - **CSV timestamps now stay in the user's BT-set timezone across duty-cycle wakes** (Bug 6 in `README-DutyCycle-BugFixes.md`). Two `int8_t timezoneOffset` / `bool timezoneOffsetValid` fields added to `rtc_duty_cycle_t`; the BT `setTime` handler writes them, and the timer-wake path in `main.cpp` uses them in preference to the compile-time `TIMEZONE_OFFSET`. Fixes the 6-hour drift seen when a UTC+1 device runs `recordOFF_detectON` and falls back to the compile default of +7 after the first wake.

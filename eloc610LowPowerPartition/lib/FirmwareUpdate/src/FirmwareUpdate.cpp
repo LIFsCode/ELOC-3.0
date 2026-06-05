@@ -204,9 +204,12 @@ bool updateFirmware() {
         try_update(updatePartition, "/sdcard/eloc/update/elocupdate.bin");
     }
     if (success) {
-        gpio_set_level(STATUS_LED, 1);
-        vTaskDelay(pdMS_TO_TICKS(3000));
-        gpio_set_level(STATUS_LED, 0);
+        // Status LED is on the PCA9557 IO expander (GPIO4 is now the GPS UART TX).
+        if (ElocSystem::GetInstance().hasIoExpander()) {
+            ElocSystem::GetInstance().getIoExpander().setOutputBit(ELOC_IOEXP::LED_STATUS, true);
+            vTaskDelay(pdMS_TO_TICKS(3000));
+            ElocSystem::GetInstance().getIoExpander().setOutputBit(ELOC_IOEXP::LED_STATUS, false);
+        }
 
         ESP_LOGI(TAG, "Prepare to restart system!");
         esp_restart();

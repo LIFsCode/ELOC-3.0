@@ -44,6 +44,11 @@
 #include "ScopeGuard.hpp"
 #include "esp_timer.h"
 
+#include "../../../include/project_config.h"
+#ifdef USE_GPS
+    #include "../../gps/src/ElocGPS.hpp"
+#endif
+
 
 
 /********** BUGME: encapsulate ELOC status and make it threadsafe!!!*/
@@ -110,7 +115,7 @@ void addEnum(JsonObject& object, T val) {
 
 void printStatus(String& buf) {
 
-    StaticJsonDocument<768> doc;
+    StaticJsonDocument<1024> doc;
     JsonObject battery = doc.createNestedObject("battery");
     battery["type"]                = Battery::GetInstance().getBatType();
     battery["state"]               = Battery::GetInstance().getState();
@@ -140,6 +145,10 @@ void printStatus(String& buf) {
     device["firmware"]                   = gFirmwareVersion;
     device["Uptime[h]"]                  = round((timeObject.getUpTimeSecs() / 60.f / 60.f), 3);
     device["totalRecordingTime[h]"]      = round((wav_writer.get_recording_time_total_sec() / 60.f / 60.f), 3);
+    // Current device clock: a human-readable local-time string for display plus the raw UTC epoch
+    // (seconds) so the app can detect drift against its own clock if it wants to.
+    device["time"]                       = timeObject.getDateTime(false);
+    device["epoch"]                      = static_cast<long>(timeObject.getEpoch());
 
     float sdCardSizeGB = 0;
     float sdCardFreeSpaceGB = 0;
@@ -162,6 +171,26 @@ void printStatus(String& buf) {
         lora["RSSI[dBm]"]               = round(loraInst.getLastRSSI(), 1);
         lora["SNR[dB]"]                  = round(loraInst.getLastSNR(), 1);
     }
+
+    // GPS section — lets the Android app show whether the on-board GNSS is active and has a fix, and
+    // whether the device clock has been corrected from GPS this power session. "present" reflects
+    // whether GPS is compiled into this build at all; "powered" whether the module is running this
+    // boot (a fresh-clock duty-cycle wake skips powering it — see main.cpp).
+    JsonObject gps = doc.createNestedObject("gps");
+#ifdef USE_GPS
+    ElocGPS& gpsInst = ElocGPS::GetInstance();
+    gps["present"]                       = true;
+    gps["powered"]                       = gpsInst.isInitialized();
+    gps["hasFix"]                        = gpsInst.hasFix();
+    gps["satellites"]                    = gpsInst.getSatellites();
+    gps["timeSynced"]                    = gpsInst.lastUtcEpoch() != 0;
+    if (gpsInst.hasFix()) {
+        gps["lat"]                       = round(gpsInst.getLat(), 6);
+        gps["lon"]                       = round(gpsInst.getLng(), 6);
+    }
+#else
+    gps["present"]                       = false;
+#endif
 
     if (serializeJsonPretty(doc, buf) == 0) {
         ESP_LOGE(TAG, "Failed serialize JSON config!");

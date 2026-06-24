@@ -851,6 +851,119 @@ static bool applyGpsDerivedTimezone() {
              lng, offset, timeObject.getDateTime().c_str());
     return true;
 }
+
+/**
+ * @brief Called every main-loop iteration while the device is awake. Keeps the GPS-derived timezone
+ *        and last-sync timestamp current, and — when GPS_RESYNC_INTERVAL_S > 0 — runs the GPS module
+ *        in low-power BURSTS instead of leaving it powered.
+ *
+ * The ATGM336H draws nearly as much as the ESP32 itself at a 16 kHz sample rate, so for continuous
+ * (non-duty-cycled) recording it is wasteful to keep it on. Instead we power it up only long enough to
+ * grab one fresh UTC fix, then gate it off until GPS_RESYNC_INTERVAL_S has elapsed. VBAT keeps the
+ * module's clock + almanac alive between bursts, so each re-acquisition is a fast warm start, and the
+ * ESP32 RTC carries accurate time across the off period (its drift over an hour is negligible for
+ * timestamping). Set GPS_RESYNC_INTERVAL_S to 0 to keep the GPS powered continuously (old behaviour).
+ *
+ * GPS here only TRIMS clock drift — it is not the device's only time source. The authoritative time is
+ * set by the Android app (setTime over Bluetooth) at commissioning and held by the RTC, so a burst that
+ * fails to get a fix (e.g. poor sky view) is harmless: we keep the current clock and simply retry next
+ * interval. That is why there is no "block until the first fix" path here.
+ *
+ * The cadence uses the monotonic esp_timer (which restarts each boot), so it is independent of the
+ * duty-cycle RTC state and behaves identically with or without an app setTime / duty-cycle config. It
+ * cooperates with the boot-path GPS handling: a freshly-booted burst started there is "adopted" here,
+ * and on a duty-cycle timer wake that deliberately skipped GPS the off-state gate stays closed for the
+ * (short) awake window, so GPS is not re-powered.
+ *
+ * @param gpsTzApplied loop-scoped one-shot flag (see applyGpsDerivedTimezone); updated in place.
+ */
+static void manageGpsWhileAwake(bool& gpsTzApplied) {
+    ElocGPS& gps = ElocGPS::GetInstance();
+
+    // (1) Catch a fix that lands in the background: refresh the local TZ once and keep the persisted
+    //     last-sync timestamp current (covers both the burst syncs below and continuous-mode drift
+    //     re-syncs). lastUtcEpoch() survives a power-down, so this keeps persisting harmlessly.
+    if (!gpsTzApplied) {
+        gpsTzApplied = applyGpsDerivedTimezone();
+    }
+    const int64_t gpsEpoch = gps.lastUtcEpoch();
+    if (gpsEpoch > 0 && rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC) {
+        rtc_duty_cycle.lastGpsSyncS = gpsEpoch;
+    }
+
+    // (2) Burst power management — skipped entirely (GPS left powered) when the interval is disabled.
+    if (GPS_RESYNC_INTERVAL_S <= 0) {
+        return;
+    }
+
+    static int64_t powerOnUs    = 0;  // esp_timer time the current burst powered on (0 = GPS off/idle)
+    static int64_t nextAttemptUs = 0; // esp_timer time the next burst may begin (0 = ASAP)
+    static bool    seeded       = false;
+    const int64_t nowUs      = esp_timer_get_time();
+    const int64_t intervalUs = static_cast<int64_t>(GPS_RESYNC_INTERVAL_S) * 1000000LL;
+
+    // One-time seed: if GPS is already off at the first entry, the boot path chose to skip it because
+    // the RTC clock is still fresh from a recent GPS sync (a duty-cycle timer wake). Honour that across
+    // into the awake cadence by deferring the first burst until the remaining freshness expires, rather
+    // than re-powering GPS immediately. (Only the duty-cycle path sets these RTC fields; in the 24/7
+    // case GPS is already powered here, so this branch is skipped and the cadence is purely monotonic.)
+    if (!seeded) {
+        seeded = true;
+        if (!gps.isInitialized() && rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC &&
+            rtc_duty_cycle.lastGpsSyncS > 0) {
+            const int64_t ageS = timeObject.getEpoch() - rtc_duty_cycle.lastGpsSyncS;
+            const int64_t remainingS = static_cast<int64_t>(GPS_RESYNC_INTERVAL_S) - ageS;
+            if (remainingS > 0) {
+                nextAttemptUs = nowUs + remainingS * 1000000LL;
+            }
+        }
+    }
+
+    if (gps.isInitialized()) {
+        // Adopt a burst powered on elsewhere (the boot path) so its acquisition clock starts here.
+        if (powerOnUs == 0) {
+            powerOnUs = nowUs;
+        }
+        // Be patient on the FIRST fix only while the device still has no real clock (the RTC is at
+        // firmware build-time). Once the app's setTime or any GPS fix has advanced the clock past
+        // build-time, revert to the short trim ceiling. The +1 h margin covers the uptime that accrues
+        // during a patient burst (the clock ticks up from build-time until it is actually set).
+        const bool clockUnset = timeObject.getEpoch() < (timeObject.getBuildTimeSecs() + 3600);
+        const int effectiveTimeoutS = clockUnset ? GPS_FIRST_FIX_TIMEOUT_S : GPS_TIME_SYNC_TIMEOUT_S;
+        // End the burst on a live POSITION fix, not merely a time sync. UTC time is decoded a few
+        // seconds before a full position solution, and the local timezone is derived from the fix
+        // LONGITUDE — powering off on time alone leaves the TZ at its compile-time default. A fix
+        // lingers as "valid" in the parser after a previous burst's power-down, so require a recent
+        // update (< 3 s) to confirm it belongs to THIS burst. The clock itself is synced in the
+        // background as soon as time is valid, so we never lose the time even if no fix follows.
+        const bool liveFix = gps.hasFix() && gps.getFixAgeMs() < 3000;
+        const bool acquireTimedOut =
+            (nowUs - powerOnUs) > static_cast<int64_t>(effectiveTimeoutS) * 1000000LL;
+        if (liveFix || acquireTimedOut) {
+            if (liveFix) {
+                gpsTzApplied = applyGpsDerivedTimezone();  // longitude available -> derive local TZ
+                ESP_LOGI(TAG, "GPS burst: fix acquired (epoch=%ld), powering GPS off for ~%d s",
+                         static_cast<long>(gps.lastUtcEpoch()), GPS_RESYNC_INTERVAL_S);
+            } else {
+                ESP_LOGW(TAG, "GPS burst: no position fix within %d s, keeping clock; retry in ~%d s",
+                         effectiveTimeoutS, GPS_RESYNC_INTERVAL_S);
+            }
+            gps.deinit();
+            powerOnUs = 0;
+            nextAttemptUs = nowUs + intervalUs;  // same cadence whether the burst succeeded or not
+        }
+    } else if (nowUs >= nextAttemptUs) {
+        // GPS off and the interval has elapsed: power up for the next burst. On a fresh-clock duty-cycle
+        // wake the boot path leaves GPS off and nowUs is small (esp_timer restarts each boot), so this
+        // gate stays closed for the short awake window — GPS is correctly not re-powered that cycle.
+        ESP_LOGI(TAG, "GPS burst: powering GPS on for time resync");
+        if (gps.init() == ESP_OK) {
+            powerOnUs = nowUs;
+        } else {
+            nextAttemptUs = nowUs + intervalUs;  // back off before retrying a failed power-up
+        }
+    }
+}
 #endif  // USE_GPS
 
 void app_main(void) {
@@ -1378,21 +1491,10 @@ void app_main(void) {
 #endif  // EDGE_IMPULSE_ENABLED
 
 #ifdef USE_GPS
-        // Self-configure the local timezone from GPS longitude once a fix is available. On normal
-        // boot we don't block for a fix at startup, so this catches up when one arrives. One-shot;
-        // applyGpsDerivedTimezone() also returns true (stop polling) when the app has set a TZ.
-        if (!gpsTzApplied) {
-            gpsTzApplied = applyGpsDerivedTimezone();
-        }
-        // Keep the last-GPS-sync timestamp current from the driver's view (covers a fix that lands in
-        // the background after the blocking wait timed out, and the periodic drift re-syncs). When GPS
-        // is skipped this wake, lastUtcEpoch() is 0, so the previously persisted value is preserved.
-        {
-            int64_t gpsEpoch = ElocGPS::GetInstance().lastUtcEpoch();
-            if (gpsEpoch > 0 && rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC) {
-                rtc_duty_cycle.lastGpsSyncS = gpsEpoch;
-            }
-        }
+        // Self-configure the local timezone from a GPS fix (one-shot, app-set TZ wins), keep the
+        // last-sync timestamp current, and power-cycle the GPS in low-power bursts while awake so it
+        // is not left drawing current continuously during 24/7 recording. See manageGpsWhileAwake().
+        manageGpsWhileAwake(gpsTzApplied);
 #endif
 
         // Duty cycle sleep state machine - check if awake time expired

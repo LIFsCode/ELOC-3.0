@@ -72,6 +72,9 @@ public:
     inline double getLng() { return mGps.location.lng(); }
     inline uint32_t getSatellites() { return mGps.satellites.value(); }
     inline int64_t lastUtcEpoch() const { return mLastUtcEpoch; }
+    /// @brief Milliseconds since the position fix was last updated. A fix lingers as "valid" in the
+    ///        parser after a power-down, so use this to tell a live fix from a stale one.
+    inline uint32_t getFixAgeMs() { return mGps.location.age(); }
 
 private:
     ElocGPS();

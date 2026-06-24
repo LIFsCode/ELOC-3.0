@@ -92,13 +92,24 @@
         // for a poor-sky-view fix, not the expected wait. Set to 0 to start GPS on wake without
         // blocking (time is then corrected opportunistically if a fix lands within the awake window).
         #define GPS_TIME_SYNC_TIMEOUT_S  30
-        // The ESP32 RTC keeps accurate time through deep sleep (and VBAT keeps the GPS module's clock
-        // alive continuously), so there is no need to re-acquire GPS on every duty-cycle wake. A wake
-        // skips powering the GPS entirely if the last successful GPS sync was less than this long ago;
-        // the RTC drift over that window is negligible for timestamping. This turns the cold-start
-        // wait into a roughly once-per-interval cost instead of paying it every cycle. Set to 0 to
-        // force a re-sync on every wake (the old behaviour).
+        // How often the GPS time is re-acquired. The ESP32 RTC keeps accurate time through deep sleep
+        // and while awake (and VBAT keeps the GPS module's clock + almanac alive continuously), so the
+        // GPS only needs to correct drift roughly once per this interval. It governs BOTH power paths:
+        //   - Duty-cycle timer wake: a wake skips powering the GPS entirely if the last successful sync
+        //     was less than this long ago (turns the cold-start wait into a ~once-per-interval cost).
+        //   - Continuous / 24/7 recording (no deep sleep): the GPS is run in bursts (see
+        //     manageGpsWhileAwake in main.cpp) — powered up only long enough to grab a fresh fix, then
+        //     gated off until this interval elapses. The ATGM336H draws nearly as much as the ESP32 at
+        //     16 kHz, so leaving it on would roughly double idle current.
+        // Set to 0 to disable both optimisations (re-sync every wake / keep GPS powered continuously).
         #define GPS_RESYNC_INTERVAL_S    3600    // re-acquire GPS time at most ~once per hour
+        // Acquisition ceiling for the FIRST burst of a session that still has no valid clock (the RTC
+        // is at firmware build-time — e.g. a cold boot after total power loss with no app present, so
+        // the GPS does a slow COLD start with no almanac). A normal warm-start trim gives up after
+        // GPS_TIME_SYNC_TIMEOUT_S, but here we are patient so the device can self-recover real time
+        // from GPS alone. Once the clock has been set (by the app's setTime or any GPS fix) bursts
+        // revert to the short GPS_TIME_SYNC_TIMEOUT_S ceiling. See manageGpsWhileAwake in main.cpp.
+        #define GPS_FIRST_FIX_TIMEOUT_S  180     // up to 3 min for a cold first fix
 
 #endif  // BOARD
 

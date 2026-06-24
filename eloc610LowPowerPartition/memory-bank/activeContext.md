@@ -2,7 +2,7 @@
 
 ## Current Work Focus
 
-**Duty-Cycle Deep Sleep (Phase 1) — COMPLETE.** The device can now cycle between 5-minute deep sleep and 30-second active AI inference, providing ~10-15× battery life extension. Next focus is Phase 2: LoRa Event Cooldown to reduce daily LoRa messages from hundreds to ~10-15.
+**Duty-Cycle Deep Sleep (Phase 1) — COMPLETE.** The device can now cycle between 5-minute deep sleep and 30-second active AI inference (times are setable via app), providing ~10-15× battery life extension. Next focus is Phase 2: LoRa Event Cooldown to reduce daily LoRa messages from hundreds to ~10-15.
 
 **24h Heartbeat for Patrol Mode — COMPLETE.** Periodic LoRa status uplinks now use wall-clock epoch time persisted in RTC memory (`lastStatusLoraTimeS` in `rtc_duty_cycle_t`), ensuring the heartbeat interval is honoured across duty-cycle deep sleep cycles. Default uplink interval changed from 1 hour to 24 hours.
 
@@ -15,6 +15,44 @@ Recent completed work:
 
 ## Recent Changes
 
+- **GPS burst power-saving while awake + time-before-fix timezone bug fixed + device time/GPS in
+  `getStatus`** (2026-06-24, validated on hardware). Three related changes; the first targets continuous
+  (non-duty-cycled) operation, where the GPS was previously left powered the whole time.
+  - **Hourly burst power-saving** — new `manageGpsWhileAwake()` in `main.cpp`, called every main-loop
+    iteration. The ATGM336H draws nearly as much as the ESP32 at a 16 kHz sample rate, so for 24/7
+    recording (no deep sleep) it now runs in **bursts**: power up only long enough to get a fix, then
+    `ElocGPS::deinit()` (gate VCC off) until `GPS_RESYNC_INTERVAL_S` (3600 s) elapses. Reuses the existing
+    tested `init()`/`deinit()`. Cadence is tracked with the **monotonic `esp_timer`** (session-local
+    statics), so it is **independent of the duty-cycle RTC `magic`/`lastGpsSyncS`** — works the same with
+    or without an app `setTime`/duty-cycle config. A one-time *seed* honours the boot path's fresh-clock
+    skip (a duty-cycle timer wake that left GPS off is not re-powered for the short awake window). New
+    `GPS_FIRST_FIX_TIMEOUT_S` (180 s) gives a **cold** first fix more time than the warm-trim ceiling
+    `GPS_TIME_SYNC_TIMEOUT_S` (30 s); "still cold" is detected by the RTC clock sitting at build-time
+    (`getEpoch() < getBuildTimeSecs() + 1 h`). `GPS_RESYNC_INTERVAL_S = 0` disables bursting (GPS stays
+    powered — old behaviour). The `GPS_RESYNC_INTERVAL_S` comment in `project_config.h` now documents both
+    the timer-wake skip and the awake-burst roles.
+  - **Time model clarification (drove the simplification):** the device is operated **only via the
+    Android app**, so time is **not solely from GPS** — the app's `setTime` (phone epoch + TZ) is
+    authoritative and the RTC holds it. GPS here is only a drift-trimmer, so a burst that fails to fix is
+    harmless (keep current clock, retry next interval). That is why there is no "block until first fix"
+    path in the awake manager.
+  - **Timezone bug fixed — burst now ends on a LIVE POSITION fix, not a time sync.** GPS decodes UTC
+    seconds a few seconds *before* it has a position solution, and the local TZ is derived from the fix
+    **longitude**. The first version powered GPS off on the time sync, before any fix, so
+    `applyGpsDerivedTimezone()` had no longitude and the TZ stayed at the compile-time `TIMEZONE_OFFSET`
+    (= 7, Sumatra) — observed on hardware in Germany (showed UTC+7). Fix: complete the burst only when
+    `hasFix() && getFixAgeMs() < 3 s` (new `ElocGPS::getFixAgeMs()`; the age check rejects a *stale* fix
+    that lingers as "valid" in TinyGPS++ after a previous burst's power-down). UTC time still syncs in the
+    background the moment it is valid, so the clock is never lost even if no fix follows. (Reminder: the
+    derived offset is solar `round(longitude/15)` and ignores DST — Germany reads +1, not +2; app-set TZ
+    overrides. UTC epoch / recorded timestamps are always correct regardless of the display offset.)
+  - **`getStatus` now reports device time + GPS** (completes the older "surface lat/lon in getStatus"
+    follow-up): `device.time` (local string) + `device.epoch`, and a new `gps` section
+    (`present`/`powered`/`hasFix`/`satellites`/`timeSynced`, plus `lat`/`lon` when fixed). The Android app
+    surfaces these as a **Device Time** row and a **GPS** row (Idle/Searching/Fix) on the status page
+    (separate ELOC-Control-Panel repo, `main`). Status JSON pool bumped 768→1024. Builds clean on
+    `esp32dev`. Note: with bursting, the GPS row reads "Idle" most of the time **by design** (module
+    powered down between bursts).
 - **GPS time sync on every duty-cycle wake + GPS-longitude auto-timezone** (2026-06-05). Closes the gap
   where the ESP32 RTC drifted across deep sleep and was never corrected (GPS used to run only on
   non-timer-wake boots). Changes:

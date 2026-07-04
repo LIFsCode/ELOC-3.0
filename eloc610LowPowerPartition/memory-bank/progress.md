@@ -130,6 +130,7 @@
 - [ ] **NVS LoRaWAN keys unencrypted** — security risk with physical access
 
 ### Desired Improvements
+- [ ] **Recording Scheduler** — extend duty cycle into a full scheduler: daily time windows, sunrise/sunset anchors (on-device NOAA calc from GPS), weekday masks, within-window duty cycle, app presets. Full plan: [README-Scheduler-Plan.md](../README-Scheduler-Plan.md) (firmware + app, backward compatible with `config.dutyCycle`)
 - [ ] **LoRa Event Cooldown** — Phase 2 of duty cycle (reduce LoRa msgs to ~10-15/day)
 - [ ] Migrate from Bluetooth Classic to BLE for power savings
 - [ ] Add mutex/semaphore guards to all shared task variables

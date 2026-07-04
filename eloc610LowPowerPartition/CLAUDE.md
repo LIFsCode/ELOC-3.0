@@ -15,7 +15,7 @@ Before starting any non-trivial task, read the files in `memory-bank/` — they 
 
 `.clinerules` documents the workflow expectation: read all six on every task. When you finish a significant change, update `activeContext.md` and `progress.md` so the next session has the latest state. The user can trigger a full review with the phrase **"update memory bank"**.
 
-Auxiliary deep-dives also live at the repo root: `README-DutyCycle-and-LoRa-Cooldown.md`, `README-DutyCycle-BugFixes.md`, `README-LoRa Session Persistence.md`, `README-DMM-4026-B-I2S-R.md`, `README-ai.md`, `README-nvs.md`.
+Auxiliary deep-dives also live at the repo root: `README-DutyCycle-and-LoRa-Cooldown.md`, `README-DutyCycle-BugFixes.md`, `README-LoRa Session Persistence.md`, `README-DMM-4026-B-I2S-R.md`, `README-ai.md`, `README-nvs.md`, `README-Config-Restart-Semantics.md` (which `setConfig` fields apply live vs. require a reboot).
 
 ## What this firmware is (load-bearing context)
 

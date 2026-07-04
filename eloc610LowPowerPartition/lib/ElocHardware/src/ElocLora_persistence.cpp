@@ -103,6 +103,20 @@ bool ElocLora::loadSessionFromRTC() {
     return true;
 }
 
+// Pull the node's current nonces (incl. the DevNonce just consumed by a join attempt)
+// into RTC memory and persist them to NVS. Called after FAILED join attempts too:
+// LoRaWAN 1.0.4 requires the DevNonce to strictly increase, so losing the counter on
+// a reboot would make the network server silently drop all future join-requests.
+bool ElocLora::persistCurrentNonces() {
+    uint8_t* noncesBuffer = node.getBufferNonces();
+    if (noncesBuffer == nullptr) {
+        ESP_LOGE(TAG, "Failed to get nonces buffer");
+        return false;
+    }
+    memcpy(rtc_session.noncesData, noncesBuffer, RADIOLIB_LORAWAN_NONCES_BUF_SIZE);
+    return saveNoncesToNVS();
+}
+
 // Save nonces to NVS for permanent storage
 bool ElocLora::saveNoncesToNVS() {
     nvs_handle_t nvs_handle;
@@ -171,6 +185,17 @@ bool ElocLora::loadNoncesFromNVS() {
     
     // CRITICAL: Apply nonces to RadioLib node!
     int16_t state = node.setBufferNonces(noncesBuffer);
+    if (state == RADIOLIB_ERR_NONCES_DISCARDED) {
+        // The stored nonces don't match the node's current keys/mode/band checksum —
+        // typically after a firmware update that changed the RadioLib buffer layout or
+        // the LoRa keys/region. RadioLib restarts DevNonce from 0, but the network
+        // server (TTN) requires a strictly increasing DevNonce and will silently drop
+        // join-requests until the device's DevNonce state is reset server-side.
+        ESP_LOGE(TAG, "Stored nonces don't match current keys/region (RadioLib %d) - starting fresh."
+            " If joins now fail with NO_JOIN_ACCEPT, reset the device's DevNonce/join state"
+            " in the TTN console (device -> General settings -> Join settings).", state);
+        return false;
+    }
     if (state != RADIOLIB_ERR_NONE) {
         ESP_LOGE(TAG, "Failed to apply nonces to RadioLib: %d", state);
         return false;

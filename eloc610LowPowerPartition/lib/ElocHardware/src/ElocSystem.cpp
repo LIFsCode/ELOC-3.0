@@ -26,6 +26,7 @@
 #include <nvs_flash.h>
 #include <nvs.h>
 #include <esp_pm.h>
+#include <esp32/clk.h>
 #include <driver/rtc_io.h>
 #include <byteswap.h>
 
@@ -345,6 +346,19 @@ esp_err_t ElocSystem::pm_configure() {
         ESP_LOGE(TAG, "Failed to set PM config with %s", esp_err_to_name(err));
         return err;
     }
+
+    /* esp_pm_configure() only stores the new config; the actual frequency switch is
+     * deferred until the next PM *mode* transition — which may never come once the BT
+     * controller permanently holds its APB lock (the CPU then silently stays at the boot
+     * frequency). Briefly acquiring a CPU_FREQ_MAX lock forces the switch to happen right
+     * here, at a controlled moment (pm_configure() is called before the radios start). */
+    esp_pm_lock_handle_t applyLock = nullptr;
+    if (esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "pm_apply", &applyLock) == ESP_OK) {
+        esp_pm_lock_acquire(applyLock);
+        esp_pm_lock_release(applyLock);
+        esp_pm_lock_delete(applyLock);
+    }
+    ESP_LOGI(TAG, "CPU frequency now %d MHz", esp_clk_cpu_freq() / 1000000);
     return ESP_OK;
 }
 

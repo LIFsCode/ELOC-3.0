@@ -472,7 +472,7 @@ void clearConfig() {
     remove(CFG_FILE);
 }
 
-esp_err_t updateConfig(const char* buf) {
+esp_err_t updateConfig(const char* buf, configChangeFlags_t* changeFlags) {
     static StaticJsonDocument<JSON_DOC_SIZE> newCfg;
     newCfg.clear();
 
@@ -480,6 +480,13 @@ esp_err_t updateConfig(const char* buf) {
     if (error) {
         ESP_LOGE(TAG, "Parsing config failed with %s!", error.c_str());
         return ESP_ERR_INVALID_ARG;
+    }
+    if (changeFlags != nullptr) {
+        JsonObjectConst newConfig = newCfg["config"];
+        changeFlags->cpu = newConfig.containsKey("cpuMaxFrequencyMHZ") ||
+                           newConfig.containsKey("cpuMinFrequencyMHZ") ||
+                           newConfig.containsKey("cpuEnableLightSleep");
+        changeFlags->logConfig = newConfig.containsKey("logConfig");
     }
     static StaticJsonDocument<JSON_DOC_SIZE> doc;
     buildConfigFile(doc);
@@ -499,5 +506,25 @@ esp_err_t updateConfig(const char* buf) {
         return ESP_ERR_FLASH_BASE;
     }
 
+    return ESP_OK;
+}
+
+bool isValidCpuMaxFrequency(int mhz) {
+    // ESP32 CPU max clock is PLL-derived; only these values are selectable.
+    return (mhz == 80) || (mhz == 160) || (mhz == 240);
+}
+
+bool isValidCpuMinFrequency(int mhz) {
+    // min clock may also use the crystal-derived low frequencies (40 MHz xtal / N).
+    return isValidCpuMaxFrequency(mhz) || (mhz == 40) || (mhz == 20) || (mhz == 10);
+}
+
+esp_err_t setCpuFrequencyConfig(int maxFrequencyMHZ, int minFrequencyMHZ, bool enableLightSleep) {
+    gElocConfig.cpuMaxFrequencyMHZ  = maxFrequencyMHZ;
+    gElocConfig.cpuMinFrequencyMHZ  = minFrequencyMHZ;
+    gElocConfig.cpuEnableLightSleep = enableLightSleep;
+    if (!writeConfig()) {
+        return ESP_ERR_FLASH_BASE;
+    }
     return ESP_OK;
 }

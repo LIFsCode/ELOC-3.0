@@ -1082,6 +1082,13 @@ void app_main(void) {
     // Validate duty cycle config after loading
     validateDutyCycleConfig();
 
+    /** Setup Power Management.
+     *  This must run BEFORE LoRa/Bluetooth start: switching to a CPU frequency with a
+     *  different PLL (240 MHz needs the 480 MHz PLL, 80/160 the 320 MHz PLL, and the chip
+     *  boots at CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ) relocks the BBPLL, which the BT radio
+     *  is clocked from — doing that with BT running causes crashes/WDT resets. */
+    ElocSystem::GetInstance().pm_configure();
+
     // On fresh boot with duty cycle enabled, initialize RTC state but do NOT
     // activate the sleep cycle. Duty cycle only activates when the user
     // explicitly enters recordOFF_detectON mode via BT command.
@@ -1312,8 +1319,8 @@ void app_main(void) {
     ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)GPIO_BUTTON));
     // ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_BUTTON, buttonISR, (void *)OTHER_GPIO_BUTTON));
 
-    /** Setup Power Management */
-    ElocSystem::GetInstance().pm_configure();
+    // Power management is configured early in setup() (right after readConfig), before
+    // LoRa/Bluetooth start — see the comment there for why the order matters.
 
     if (getConfig().testI2SClockInput)
         testInput();

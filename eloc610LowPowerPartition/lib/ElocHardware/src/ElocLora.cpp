@@ -127,12 +127,7 @@ ElocLora::ElocLora(/* args */):
 {
   const loraWAN_keys_t& loraKeys = ElocSystem::GetInstance().getLoraWAN_Keys();
   if (getRegionFromConfig() == ESP_OK) {
-    if (getConfig().loraConfig.upLinkIntervalS > C_MIN_UPLINK_INTERVAL_S) {
-      uplinkIntervalSeconds = getConfig().loraConfig.upLinkIntervalS;
-    }
-    else {
-      ESP_LOGW(TAG, "Update Interval %d is too short. Minimum %d second allowed", getConfig().loraConfig.upLinkIntervalS, C_MIN_UPLINK_INTERVAL_S);
-    }
+    refreshUplinkInterval();
     calcDevEUIfromMAC();
     ESP_LOGI(TAG, "init & Join Lora with uplink Interval %d seconds\n", uplinkIntervalSeconds);
     //TODO: how to handle the joinEUI... check that
@@ -408,6 +403,10 @@ esp_err_t ElocLora::init() {
     playJoinFeedback(true);
   } else {
     this->errMsg(F("Join/Restore failed"), state);
+    // Persist the nonces even though the join failed: the attempt consumed a DevNonce,
+    // and LoRaWAN 1.0.4 requires it to strictly increase — losing it on reboot would make
+    // the network server silently drop all future join-requests.
+    persistCurrentNonces();
     // Play failure audio feedback
     playJoinFeedback(false);
     return ESP_ERR_NOT_FINISHED;
@@ -425,12 +424,30 @@ esp_err_t ElocLora::init() {
   return ESP_OK;
 }
 
+void ElocLora::refreshUplinkInterval() {
+    uint32_t cfgIntervalS = getConfig().loraConfig.upLinkIntervalS;
+    if (static_cast<int64_t>(cfgIntervalS) == mLastCfgUplinkIntervalS) {
+      return;
+    }
+    mLastCfgUplinkIntervalS = cfgIntervalS;
+    if (cfgIntervalS > C_MIN_UPLINK_INTERVAL_S) {
+      uplinkIntervalSeconds = cfgIntervalS;
+      ESP_LOGI(TAG, "Uplink Interval set to %u seconds", uplinkIntervalSeconds);
+    }
+    else {
+      ESP_LOGW(TAG, "Update Interval %u is too short. Minimum %u second allowed, keeping %u seconds",
+          cfgIntervalS, C_MIN_UPLINK_INTERVAL_S, uplinkIntervalSeconds);
+    }
+}
+
 void ElocLora::ElocLoraLoop() {
 
     if ((!mInitDone) || (!getConfig().loraConfig.loraEnable)) {
       // if initialization failed Lora is not available so we skip everything
       return;
     }
+    // pick up setConfig changes to the uplink interval without a reboot
+    refreshUplinkInterval();
 #ifdef EDGE_IMPULSE_ENABLED
     static int64_t lastEiDetectedEvents = 0;
      //TODO: Check if we really want all classifier to trigger an event
@@ -657,6 +674,8 @@ bool ElocLora::attemptRejoin(const char* reason) {
     }
 
     ESP_LOGE(TAG, "Rejoin failed: %s (%d)", stateDecode(joinState).c_str(), joinState);
+    // Persist the DevNonce consumed by the failed attempt (see init() failure path)
+    persistCurrentNonces();
     playJoinFeedback(false);
     return false;
 }

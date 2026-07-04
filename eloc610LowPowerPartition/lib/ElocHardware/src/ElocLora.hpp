@@ -73,6 +73,12 @@ private:
     
     // how often to send an uplink - consider legal & FUP constraints - see notes
     uint32_t uplinkIntervalSeconds = 24UL * 60UL * 60UL;    // 24 hours (default heartbeat interval)
+    // last raw config value seen by refreshUplinkInterval(), to log validation warnings only once
+    int64_t mLastCfgUplinkIntervalS = -1;
+
+    /// @brief Re-read upLinkIntervalS from the config (with min-interval validation) so
+    ///        setConfig changes apply without a reboot.
+    void refreshUplinkInterval();
 
     uint64_t joinEUI;
     uint64_t devEUI;
@@ -142,6 +148,10 @@ private:
     bool loadSessionFromRTC();
     bool saveNoncesToNVS();
     bool loadNoncesFromNVS();
+    /// @brief Copy the node's current nonces into RTC memory and persist them to NVS.
+    ///        Must also be called after FAILED join attempts, so the DevNonce counter
+    ///        keeps increasing across reboots (LoRaWAN 1.0.4 requirement).
+    bool persistCurrentNonces();
 
 public:
     virtual ~ElocLora();

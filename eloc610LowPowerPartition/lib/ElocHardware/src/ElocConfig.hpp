@@ -127,6 +127,19 @@ const dutyCycleConfig_t& getDutyCycleConfig();
 /// @brief Validate and clamp duty cycle config values to safe ranges
 void validateDutyCycleConfig();
 
+/// @brief True if the value is a selectable ESP32 CPU max clock (PLL-derived: 80/160/240 MHz).
+bool isValidCpuMaxFrequency(int mhz);
+
+/// @brief True if the value is a selectable ESP32 CPU min clock: the PLL frequencies (80/160/240)
+///        or the crystal-derived low frequencies (40/20/10 MHz). See esp_pm_configure().
+bool isValidCpuMinFrequency(int mhz);
+
+/// @brief Overwrite the CPU frequency / light-sleep fields in the running config and persist them.
+///        Used to roll back a setConfig change the hardware rejected, so the stored/displayed config
+///        stays consistent with what is actually applied.
+/// @return ESP_OK on success, ESP_ERR_FLASH_BASE if persisting failed.
+esp_err_t setCpuFrequencyConfig(int maxFrequencyMHZ, int minFrequencyMHZ, bool enableLightSleep);
+
 /**
  * @brief Load configuration (.config)
  * @note Searched in priority order:
@@ -147,6 +160,13 @@ enum class CfgType {RUNTIME, DEFAULT_CFG};
 
 bool printConfig(String& buf, CfgType cfgType = CfgType::RUNTIME);
 
-esp_err_t updateConfig(const char* buf) ;
+/// @brief Reports which config groups were present in a setConfig JSON delta,
+///        so the caller can re-apply them to running subsystems (live apply).
+typedef struct {
+    bool cpu;        // any of cpuMaxFrequencyMHZ / cpuMinFrequencyMHZ / cpuEnableLightSleep
+    bool logConfig;  // any logConfig.* field
+} configChangeFlags_t;
+
+esp_err_t updateConfig(const char* buf, configChangeFlags_t* changeFlags = nullptr);
 
 #endif // ELOCCONFIG_HPP_

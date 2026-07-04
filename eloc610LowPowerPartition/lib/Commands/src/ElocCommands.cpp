@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <esp_err.h>
 #include <esp_log.h>
+#include <esp_system.h>
 
 #include "ArduinoJson.h"
 #include "WString.h"
@@ -221,7 +222,60 @@ void cmd_SetConfig(CmdParser *cmdParser) {
         return;
     }
     ESP_LOGI(TAG, "updating config with %s", cfg);
-    esp_err_t err = updateConfig(cfg);
+
+    // Snapshot the CPU frequency config so a rejected change can be rolled back, keeping the
+    // stored/displayed config consistent with what the hardware actually applies.
+    const int  prevCpuMax        = getConfig().cpuMaxFrequencyMHZ;
+    const int  prevCpuMin        = getConfig().cpuMinFrequencyMHZ;
+    const bool prevCpuLightSleep = getConfig().cpuEnableLightSleep;
+
+    configChangeFlags_t changeFlags = {};
+    esp_err_t err = updateConfig(cfg, &changeFlags);
+
+    // Re-apply settings whose subsystems otherwise only read the config at boot
+    // (see README-Config-Restart-Semantics.md).
+    if (err == ESP_OK) {
+        if (changeFlags.cpu) {
+            const int newCpuMax = getConfig().cpuMaxFrequencyMHZ;
+            const int newCpuMin = getConfig().cpuMinFrequencyMHZ;
+            const char* cpuErrMsg = nullptr;
+
+            // Validate each field individually for a clear message. Not cross-checking min<=max
+            // here avoids a lock-up where a bad stored value in one field would block fixing the
+            // other; pm_configure() at boot handles the combination (and forces min=max while
+            // LoRa is enabled).
+            if (!isValidCpuMaxFrequency(newCpuMax)) {
+                cpuErrMsg = "Invalid CPU max frequency: must be 80, 160 or 240 MHz";
+            } else if (!isValidCpuMinFrequency(newCpuMin)) {
+                cpuErrMsg = "Invalid CPU min frequency: must be 240, 160, 80, 40, 20 or 10 MHz";
+            }
+
+            if (cpuErrMsg != nullptr) {
+                ESP_LOGE(TAG, "%s -- reverting CPU config to max=%d min=%d lightSleep=%d",
+                    cpuErrMsg, prevCpuMax, prevCpuMin, prevCpuLightSleep);
+                setCpuFrequencyConfig(prevCpuMax, prevCpuMin, prevCpuLightSleep);
+                resp.setError(ESP_ERR_INVALID_ARG, cpuErrMsg);
+                return;
+            }
+            // Deliberately NOT applied live: switching between 240 MHz (480 MHz PLL) and
+            // 80/160 MHz (320 MHz PLL) relocks the BBPLL, which the Bluetooth radio is
+            // clocked from — and Bluetooth is by definition active while this command is
+            // being handled. The new value is applied by pm_configure() early on the next
+            // boot; the app prompts the user to restart the device.
+        }
+        if (changeFlags.logConfig) {
+            StaticJsonDocument<128> logCfg;
+            logCfg["logToSdCard"] = getConfig().logConfig.logToSdCard;
+            logCfg["filename"]    = getConfig().logConfig.filename;
+            logCfg["maxFiles"]    = getConfig().logConfig.maxFiles;
+            logCfg["maxFileSize"] = getConfig().logConfig.maxFileSize;
+            String logCfgStr;
+            serializeJson(logCfg, logCfgStr);
+            if (Logging::updateConfig(logCfgStr) != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to re-apply logging config");
+            }
+        }
+    }
     resp.setResult(err);
     return;
 
@@ -621,9 +675,42 @@ void cmd_GetSdCardSpeedTest(CmdParser *cmdParser) {
     return;
 }
 
+static void rebootTimerCallback(void* /*arg*/) {
+    ESP_LOGW(TAG, "Restarting device now (requested via 'reboot' command)");
+    esp_restart();
+}
+
+void cmd_Reboot(CmdParser *cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    static esp_timer_handle_t rebootTimer = nullptr;
+    if (rebootTimer == nullptr) {
+        const esp_timer_create_args_t timerArgs = {
+            .callback = &rebootTimerCallback,
+            .arg = nullptr,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "reboot"
+        };
+        esp_err_t err = esp_timer_create(&timerArgs, &rebootTimer);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to create reboot timer with %s", esp_err_to_name(err));
+            resp.setError(err, "Failed to schedule reboot");
+            return;
+        }
+    }
+    // delay the restart so the command response gets flushed over Bluetooth first
+    esp_err_t err = esp_timer_start_once(rebootTimer, 1000 * 1000);  // 1 s
+    if ((err != ESP_OK) && (err != ESP_ERR_INVALID_STATE)) {  // INVALID_STATE = reboot already pending
+        ESP_LOGE(TAG, "Failed to start reboot timer with %s", esp_err_to_name(err));
+        resp.setError(err, "Failed to schedule reboot");
+        return;
+    }
+    resp.setResultSuccess("rebooting");
+}
+
 bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     bool success = true;
     success &= cmdCallback.addCmd("setConfig", &cmd_SetConfig, "Write config key as json, e.g. setConfig#cfg={\"device\":{\"location\":\"not_set\"}}");
+    success &= cmdCallback.addCmd("reboot", &cmd_Reboot, "Restart the ELOC device. The response is sent first, the device restarts ~1 second later, e.g. reboot");
     success &= cmdCallback.addCmd("getConfig", &cmd_GetConfig, "Read config as jso. Optional argument 'cfgType' can be set to ('DEFAULT' or 'RUNTIME') to read default config or currently set config. Without 'cfgType' current set config is returned, e.g. getConfig --> return{\"device\":{\"location\":\"not_set\"}}");
     success &= cmdCallback.addCmd("delConfig", &cmd_DelConfig, "Delete the current config file. Current config is not reset to default until next reboot");
     success &= cmdCallback.addCmd("getStatus", &cmd_GetStatus, "Returns the current status in JSON format");

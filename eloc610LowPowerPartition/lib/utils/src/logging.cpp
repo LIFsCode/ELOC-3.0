@@ -65,7 +65,9 @@ static int _log_vprintf(const char *fmt, va_list args) {
 esp_err_t esp_log_to_scard(bool enable) {
 
     if (enable == log_to_scard_enabled) {
-        return ESP_ERR_INVALID_STATE;
+        // already in the requested state - treat as success, otherwise every boot with
+        // logToSdCard=false reports "Failed to initialize logging subsystem"
+        return ESP_OK;
     }
     if (enable) {
         ESP_LOGI(TAG, "***Redirecting log output to SD card log file (also keep sending logs to UART0)");

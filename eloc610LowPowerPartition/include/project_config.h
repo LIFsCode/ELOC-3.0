@@ -24,7 +24,7 @@
 
         #define BLUETOOTH_CLASSIC
 
-        #define VERSION "ELOC-P_V1.43"
+        #define VERSION "ELOC-P_V1.44"
 
         #define STATUS_LED          GPIO_NUM_4
         #define BATTERY_LED         GPIO_NUM_4
@@ -265,6 +265,10 @@
 // #define I2S_BUFFER_IN_PSRAM
 // #define WAV_BUFFER_IN_PSRAM
  #define EI_BUFFER_IN_PSRAM
+
+// Periodically log internal + PSRAM heap stats (min free, largest block, fragmentation)
+// in the main loop. Used to verify heap headroom with BT + LoRa + AI running.
+#define ENABLE_HEAP_MONITOR
 
 
 /////////////////////////////////// Thread Related configurations ///////////////////////////////////

@@ -136,6 +136,24 @@
   (suspected net miswire in the +3V3/VBAT/C26 corner); **C26 ground pad floating**; **VCC_RF (pin 14)** is
   on the switched rail (active-antenna/LNA bias via L2). Check these against the PCB.
 
+### Internal-heap headroom (BT + LoRa + AI) — ✅ Implemented & HW-validated (2026-07-05, V1.44)
+- **Problem:** with recording + AI + BT + LoRa concurrent, internal DRAM ran dry — `MFE failed
+  (-1002 = EIDSP_OUT_OF_MEM)` / classifier -5 and `BT_SDP: SDP - no buf for search rsp` (app could
+  not connect during detection)
+- **`esp_bt_controller_mem_release(ESP_BT_MODE_BLE)`** at boot frees ~30 KB internal DRAM (Classic-
+  SPP-only build never used the BLE reserve). HW-validated: free ≈ 98 KB with BT + LoRa up
+- **`ei_malloc`/`ei_calloc` strong overrides** (`src/ei_porting_overrides.cpp`): allocations ≥ 8 KB
+  go PSRAM-first, smaller stay internal-first, each falls back to the other heap. Two traps hit on
+  the way: (1) the file must live in `src/`, not the edge-impulse lib archive, or the linker keeps
+  the SDK's weak symbols (verify with `xtensa-esp32-elf-nm`); (2) pure internal-first let the MFE
+  matrices starve BT (<4 KB contiguous) and SDP failed again — hence the size threshold
+- **HW-validated end state:** during recording + AI + BT, internal min-free ≥ 20.4 KB, ~31 KB DSP
+  matrices in PSRAM, DSP time unchanged (615-735 ms), zero -1002/SDP errors incl. knock → connect
+  mid-detection. Residual: connects during detection are slow (core-1 CPU contention BT↔AI, not
+  memory; possible future fix = pin Bluedroid to core 0)
+- **`ENABLE_HEAP_MONITOR`** (`project_config.h`) gates the periodic internal+PSRAM heap log
+- **Follow-up:** re-test the 1-in-20 first-inference panic (likely same root cause)
+
 ## What's Left to Build / Fix
 
 ### Recently Fixed

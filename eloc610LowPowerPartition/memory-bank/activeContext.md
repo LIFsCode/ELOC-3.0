@@ -15,6 +15,44 @@ Recent completed work:
 
 ## Recent Changes
 
+- **Internal-heap headroom fix: BLE memory release + EI allocator PSRAM fallback** (2026-07-05,
+  V1.44). Addresses the known borderline-heap issue with BT + LoRa + GPS + AI running concurrently
+  (`MFE failed (-1002 = EIDSP_OUT_OF_MEM)` → `run_classifier` -5, and Bluedroid
+  `BT_SDP: SDP - no buf for search rsp` making app connections fail during detection).
+  - **BLE controller memory released at boot** (`main.cpp`, before `BluetoothServerSetup()`):
+    `esp_bt_controller_mem_release(ESP_BT_MODE_BLE)` returns the never-used BLE share of the BT
+    controller DRAM reserve (~30 KB) to the internal heap. The build is Classic-SPP-only
+    (`CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY`), and neither the app nor Arduino's `btStart()` ever
+    released it. Irreversible until reboot (fine — BLE is never used); safe across the runtime
+    BT stop/start cycle. Hardware-verified: with BT + LoRa up, internal free ≈ 98 KB and the SDP
+    no-buf failures are gone.
+  - **`ei_malloc`/`ei_calloc`/`ei_free` strong overrides** in `src/ei_porting_overrides.cpp`:
+    allocations ≥ 8 KB (`PSRAM_FIRST_THRESHOLD`) go PSRAM-first, smaller (hot per-frame FFT)
+    buffers stay internal-first; both fall back to the other heap instead of failing. The stock
+    espressif port uses plain `malloc()`, which with `CONFIG_SPIRAM_USE_CAPS_ALLOC` can never
+    reach PSRAM. A pure internal-first version was tried first and re-broke BT: the MFE matrices
+    consumed internal heap down to <4 KB contiguous / 70 % fragmentation and app connections
+    failed again with `SDP - no buf for search rsp`.
+    **⚠️ The file must stay in `src/`, NOT `lib/edge-impulse/`** — lib sources are linked as a
+    static archive and the linker keeps the SDK's weak `ei_malloc` without ever extracting an
+    override member from the same archive (verified with `xtensa-esp32-elf-nm`: symbols stayed
+    `W`). Objects from `src/` are always on the link line, so the strong definitions win.
+  - **Heap instrumentation**: the previously `if (0)`-disabled periodic heap log in `main.cpp` is
+    now gated by `ENABLE_HEAP_MONITOR` (`project_config.h`, currently on) — logs internal + PSRAM
+    min-free/free/largest-block/fragmentation every ~10 s with the battery line.
+  - **Hardware-validated (V1.44 final, 2026-07-05):** boot with BT+LoRa: free ≈ 98 KB. With
+    recording + AI + BT all active: internal min-free stays ≥ 20.4 KB, largest block 18-29 KB,
+    fragmentation ~25 %; ~31 KB of DSP matrices resident in PSRAM; DSP time unchanged
+    (615-735 ms, within the 1 s budget). Zero -1002 / classifier -5 / SDP no-buf across the run,
+    including knock → BT enable → app connect during active detection.
+  - **Known residual (accepted):** app connections during detection are slow — not memory, CPU:
+    the whole BT stack shares core 1 with `ei_thread` (~85-90 % busy during inference), so the
+    multi-round connect handshake gets stretched (DSP visibly rises ~618 → ~730 ms while BT is
+    active). Possible future lever: pin Bluedroid host tasks to core 0
+    (`CONFIG_BT_BLUEDROID_PINNED_TO_CORE`, core 0 has ~47 % idle) — needs an audio-dropout test.
+  - Related open TODO (1-in-20 `ei_thread` first-inference panic) likely shares this root cause;
+    re-test after this fix.
+
 - **Intruder alarm over LoRa with GPS tracking** (2026-07-04, V1.43). The knock-based intruder
   detection (LIS3DH click-interrupt counting in `ElocSystem::notifyStatusRefresh()`) previously only
   beeped the buzzer. Now, while the alarm is active, the device reports over LoRa so a stolen/moved

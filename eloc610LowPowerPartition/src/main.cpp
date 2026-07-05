@@ -34,6 +34,7 @@
 /** Arduino libraries*/
 #include "ESP32Time.h"
 #include "BluetoothSerial.h"
+#include "esp_bt.h"
 /** Arduino libraries END*/
 
 #include "version.h"
@@ -1184,6 +1185,15 @@ void app_main(void) {
     ElocLora::GetInstance();
     // GPIO ISR service is now installed earlier in the initialization sequence
 
+    // Classic-BT-only build (CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY): return the never-used BLE
+    // share of the BT controller DRAM reserve to the internal heap. Must run before
+    // esp_bt_controller_init() (inside SerialBT.begin()); irreversible until reboot, which is
+    // fine on both boot paths since BLE is never used. Frees ~30 KB internal DRAM that the
+    // EI DSP (MFE) and Bluedroid SDP buffers otherwise fight over.
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_bt_controller_mem_release(ESP_BT_MODE_BLE));
+    ESP_LOGI(TAG, "Released BLE controller memory, free internal heap now %u bytes",
+             heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+
     // Skip Bluetooth, PerfMonitor, UART test on timer wake
     if (!gIsTimerWake) {
         ESP_LOGI(TAG, "Creating Bluetooth  task...");
@@ -1438,7 +1448,8 @@ void app_main(void) {
             ESP_LOGI(TAG, "CPU clock: %d MHz", esp_clk_cpu_freq()/ 1000000);
 
             // Display memory usage
-            if (0) {
+#ifdef ENABLE_HEAP_MONITOR
+            {
                 multi_heap_info_t heapInfo;
                 heap_caps_get_info(&heapInfo, MALLOC_CAP_INTERNAL);
                 ESP_LOGI(TAG, "Heap: Min=%d, free=%d (%d%%), largestFreeBlock=%d, fragmentation=%d%%",
@@ -1453,6 +1464,7 @@ void app_main(void) {
                     heapInfo.largest_free_block,
                     100 - (heapInfo.largest_free_block*100) / heapInfo.total_free_bytes);
             }
+#endif  // ENABLE_HEAP_MONITOR
 
             // Compare time sources
             if (0) {

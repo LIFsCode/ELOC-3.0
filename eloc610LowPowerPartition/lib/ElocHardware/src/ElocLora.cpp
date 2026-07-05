@@ -346,9 +346,6 @@ esp_err_t ElocLora::init() {
   ESP_LOGI(TAG, "MISO: %u", PIN_LORA_MISO);
   ESP_LOGI(TAG, "SCK: %u", PIN_LORA_CLK);
   ESP_LOGI(TAG, "SS: %u", PIN_LORA_CS);
-  if (!gIsTimerWake) {
-    delay(5000);  // Give time to switch to the serial monitor (skip on duty cycle wake)
-  }
   ESP_LOGI(TAG, "Setup ... ");
 
   loraSPI.begin(PIN_LORA_CLK, PIN_LORA_MISO, PIN_LORA_MOSI, PIN_LORA_CS);

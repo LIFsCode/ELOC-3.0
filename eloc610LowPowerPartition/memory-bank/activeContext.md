@@ -15,6 +15,55 @@ Recent completed work:
 
 ## Recent Changes
 
+- **Intruder alarm over LoRa with GPS tracking** (2026-07-04, V1.43). The knock-based intruder
+  detection (LIS3DH click-interrupt counting in `ElocSystem::notifyStatusRefresh()`) previously only
+  beeped the buzzer. Now, while the alarm is active, the device reports over LoRa so a stolen/moved
+  unit can be tracked:
+  - **New LoRa uplink `INTRUDER_MSG` (msgType 2)**, 21 bytes: header, int64 epoch, flags (bit0 =
+    hasFix), int32 lat×1e5 BE, int32 lng×1e5 BE, battery SoC, uint16 fix-age seconds (0xFFFF = no
+    fix). Built in `ElocLora::sendIntruderAlarmMessage()`; decoder case added to
+    `payload-formatters/radiolib-uplink-formatters.js` (**must be re-pasted into the TTN console
+    uplink formatter**).
+  - **Scheduling in `ElocLoraLoop()`**: first alarm sent immediately on the rising edge of
+    `ElocSystem::isIntruderDetected()` (new getter), then every `intruderCfg.alarmIntervalS` (new
+    config field, default 600 s, live-applied, clamped ≥ 60 s); failed uplinks retry after 60 s.
+  - **GPS hold**: `manageGpsWhileAwake()` keeps the GPS powered continuously while the alarm is
+    active (overrides burst power-down) so each alarm carries a fresh position.
+  - **Sleep block**: `handleSleepCycleStateMachine()` refuses duty-cycle deep sleep while the alarm
+    is active (a knock does NOT wake from deep sleep — only the timer and the button do).
+  - **Stale-alarm fix**: `handleSystemStatus()` now clears an active alarm when `intruderCfg.enable`
+    is switched off (previously the flag/buzzer stayed latched until the next knock event).
+  - **Backend (ELOC_management)**: `TnnType.intruder`, msgType-2 handling in the TTN webhook, new
+    Firestore path `the_things_network/intruder/{deviceId}`, `lastIntruderAlert`/`lastIntruderSeen`
+    in `device_status_cache`, and an `alert_history` entry labelled `intruder` (with lat/lng).
+    Frontend UI for the alert is still a follow-up.
+  - **EXT1 knock wake from deep sleep: tried and REVERTED same day (hardware test failed).** An
+    EXT1 wake on `LIS3DH_INT_PIN` was implemented (full-boot path + auto-return-to-sleep) but field
+    testing showed: (a) the buzzer's BT-connect beep vibrates the PCB and false-triggers the knock
+    sensor — every app connection raised the alarm, and the alarm's own beeping re-triggered it in
+    a self-sustaining loop; (b) after a knock wake the device never re-entered sleep (likely the
+    false alarm + sleep-block); (c) the knock-wake full boot brings up BT+LoRa+GPS simultaneously
+    and, once AI starts, the Edge Impulse MFE/DSP mallocs fail intermittently with
+    `EIDSP_OUT_OF_MEM` (-1002) / classifier error -5 — internal heap is too tight for that
+    combination. Decision (with EDsteve): **intruder detection is a continuous-operation (24/7)
+    feature only.** All EXT1/`gIsKnockWake` code was removed again.
+  - **Fixes that came out of the field test (kept):**
+    - **Buzzer→knock-sensor guard**: `notifyStatusRefresh()` ignores accelerometer clicks while
+      the buzzer is active and for `C_BUZZER_KNOCK_GUARD_MS` (1 s) after it stops
+      (`mLastBuzzerStopMs` set in `setBuzzerIdle()`). Fixes the false alarm on every app connect
+      and the alarm self-sustain loop. The buzzer and LIS3DH share the PCB — any future buzzer
+      use must keep this in mind.
+    - **Duty-cycle gating**: `notifyStatusRefresh()` and the stale-alarm clear in
+      `handleSystemStatus()` treat intruder detection as disabled whenever
+      `getDutyCycleConfig().enable` is set (simple config-level rule, agreed with EDsteve). The
+      intruder sleep-block in `handleSleepCycleStateMachine()` was removed again — it is
+      unreachable now that detection can't be active in duty-cycle mode.
+  - **Open issue observed during the test (pre-existing, now tracked):** with BT + GPS + LoRa +
+    AI running concurrently the internal heap is borderline — MFE failed (-1002 =
+    `EIDSP_OUT_OF_MEM`) → `run_classifier` -5, intermittently. Likely related to the known
+    1-in-20 `ei_thread` first-inference panic. Needs its own investigation (heap headroom audit /
+    moving more buffers to PSRAM / freeing BT when not needed).
+
 - **GPS burst power-saving while awake + time-before-fix timezone bug fixed + device time/GPS in
   `getStatus`** (2026-06-24, validated on hardware). Three related changes; the first targets continuous
   (non-duty-cycled) operation, where the GPS was previously left powered the whole time.

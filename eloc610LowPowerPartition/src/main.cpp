@@ -745,6 +745,11 @@ void prepareCyclicDeepSleep() {
     esp_sleep_enable_timer_wakeup(sleepTimeUS);
 
     // Also allow button press to wake (for manual intervention / normal boot)
+    // NOTE: a knock (LIS3DH EXT1) wake was tried here and reverted: it boots the full
+    // BT+LoRa+GPS path, which together with AI runs out of internal heap (MFE/DSP
+    // EIDSP_OUT_OF_MEM), and buzzer vibration false-triggered the knock sensor. Intruder
+    // detection is therefore a continuous-operation (24/7) feature only — it is disabled
+    // whenever dutyCycle.enable is set (see ElocSystem::notifyStatusRefresh).
     esp_sleep_enable_ext0_wakeup(GPIO_BUTTON, 0);
 
     ESP_LOGI(TAG, "Boot #%u complete. Total detections across cycles: %u. Entering sleep...",
@@ -889,6 +894,24 @@ static void manageGpsWhileAwake(bool& gpsTzApplied) {
     const int64_t gpsEpoch = gps.lastUtcEpoch();
     if (gpsEpoch > 0 && rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC) {
         rtc_duty_cycle.lastGpsSyncS = gpsEpoch;
+    }
+
+    // Keep ElocLora's copy of the position current (used by the intruder alarm uplink).
+    // Pushed rather than pulled: lib/gps already depends on lib/ElocHardware, so ElocLora
+    // cannot include ElocGPS without creating an LDF dependency cycle.
+    ElocLora::GetInstance().setGpsInfo(gps.hasFix(), gps.getLat(), gps.getLng(),
+                                       gps.getFixAgeMs() / 1000);
+
+    // Intruder alarm active: hold the GPS powered continuously so the LoRa alarm uplinks carry a
+    // live, refreshing position while the device is being moved/carried away. Overrides the burst
+    // power management below; when the alarm clears, the normal burst cadence resumes (a still-
+    // powered GPS is adopted by the burst logic like a boot-path burst).
+    if (ElocSystem::GetInstance().isIntruderDetected()) {
+        if (!gps.isInitialized()) {
+            ESP_LOGW(TAG, "Intruder alarm: powering GPS on for location tracking");
+            gps.init();
+        }
+        return;
     }
 
     // (2) Burst power management — skipped entirely (GPS left powered) when the interval is disabled.
@@ -1102,7 +1125,7 @@ void app_main(void) {
 
     // On timer wake, restore session ID from RTC so all duty cycle wakes
     // share the same session folder and append to the same CSV file.
-    if (gIsTimerWake && rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC 
+    if (gIsTimerWake && rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC
         && rtc_duty_cycle.sessionId[0] != '\0') {
         gSessionIdentifier = String(rtc_duty_cycle.sessionId);
         session_folder_created = true;  // Folder already exists from initial session

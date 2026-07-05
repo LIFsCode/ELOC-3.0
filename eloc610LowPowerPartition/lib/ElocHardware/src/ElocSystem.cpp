@@ -133,7 +133,7 @@ private:
 
 ElocSystem::ElocSystem():
     mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true),
-    mRefreshStatus(false), mIntruderDetected(false),
+    mLastBuzzerStopMs(0), mRefreshStatus(false), mIntruderDetected(false),
     mFwUpdateProcessing(false), mFactoryInfo()
 {
     ESP_LOGI(TAG, "Reading Factory Info from NVS");
@@ -365,6 +365,15 @@ esp_err_t ElocSystem::pm_configure() {
 esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
     sd_card.update();
 
+    // notifyStatusRefresh() only runs on a knock event, so an active alarm would otherwise
+    // stay latched forever after detection is disabled via setConfig — clear it here.
+    // (Duty-cycle mode counts as disabled: intruder detection is a 24/7-only feature.)
+    if (mIntruderDetected &&
+        (!getConfig().IntruderConfig.detectEnable || getDutyCycleConfig().enable)) {
+        ESP_LOGI(TAG, "Intruder detection disabled, clearing active alarm");
+        mIntruderDetected = false;
+    }
+
     Status_t status;
     status.batteryLow = Battery::GetInstance().isLow();
     status.btEnabled = btEnabled;
@@ -447,13 +456,27 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
     return ESP_OK;
 }
 
+// Settle time after the buzzer stops during which accelerometer clicks are still ignored
+// (covers mechanical/acoustic ringing of the case after the last beep)
+static const uint32_t C_BUZZER_KNOCK_GUARD_MS = 1000;
+
 void ElocSystem::notifyStatusRefresh() {
     static uint32_t lastRefreshMs = 0;
     static uint32_t cntFastUpdates = 0;
     const intruderConfig_t& cfg = getConfig().IntruderConfig;
-    if (!cfg.detectEnable) {
+    // Intruder detection is a continuous-operation (24/7) feature only. In duty-cycle mode
+    // the device is mostly in deep sleep (where the knock ISR cannot run), and a knock wake
+    // was tried and reverted (heap exhaustion when BT+LoRa+GPS+AI all boot together).
+    if (!cfg.detectEnable || getDutyCycleConfig().enable) {
         cntFastUpdates = 0;
         mIntruderDetected = false;
+        return;
+    }
+    // The buzzer sits on the same PCB as the LIS3DH: its vibration fires the click (knock)
+    // interrupt, so the BT-connect beep would count as knocks on every app connection — and
+    // an active alarm's own beeping would keep re-triggering it indefinitely. Ignore clicks
+    // while the buzzer is running and for a short settle time after it stops.
+    if (!mBuzzerIdle || (millis() - mLastBuzzerStopMs) < C_BUZZER_KNOCK_GUARD_MS) {
         return;
     }
     if ((millis() - lastRefreshMs) <= cfg.detectWindowMS) {
@@ -472,6 +495,7 @@ void ElocSystem::notifyStatusRefresh() {
 
 void ElocSystem::setBuzzerIdle() {
     mBuzzerIdle = true;
+    mLastBuzzerStopMs = millis();
     EasyBuzzer.stopBeep();
 }
 

@@ -30,7 +30,10 @@ These are read fresh from `getConfig()` / `getInferenceConfig()` / `getDutyCycle
 iteration or check, so a `setConfig` takes effect on the next check/cycle:
 
 - `bluetoothEnableOnTapping`, `bluetoothEnableDuringRecord`, `bluetoothOffTimeoutSeconds` — `BluetoothServer.cpp:227,272-275,317`
-- `intruderCfg.*` — `ElocSystem.cpp:439`
+- `intruderCfg.*` — `ElocSystem.cpp` (`notifyStatusRefresh` reads it on every knock; `handleSystemStatus`
+  clears an active alarm when `enable` is switched off; `ElocLora.cpp` reads `alarmIntervalS` fresh
+  before scheduling each intruder alarm uplink). Note: intruder detection is treated as disabled
+  whenever `dutyCycle.enable` is set (24/7-only feature) — that check is also live.
 - `inference.*` (`threshold`, `observationWindowS`, `requiredDetections`) — `EdgeImpulse.cpp:275`
 - `dutyCycle.*` (`enable`, `sleepDurationS`, `awakeDurationS`) — read fresh at each duty-cycle decision, e.g. `main.cpp:690,789,1088`
 - `battery.noBatteryMode` — `Battery.cpp:152`

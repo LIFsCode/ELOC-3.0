@@ -91,6 +91,7 @@ private:
 
     Status_t mStatus;
     bool mBuzzerIdle;
+    uint32_t mLastBuzzerStopMs;  // millis() when the buzzer last went idle (knock-sensor guard)
     bool mRefreshStatus;
     bool mIntruderDetected;
     uint32_t mIntruderThresholdCnt;
@@ -164,6 +165,11 @@ public:
 
     void notifyStatusRefresh();
     esp_err_t handleSystemStatus(bool btEnabled, bool btConnected);
+
+    /// @brief Whether the knock-based intruder alarm is currently active
+    inline bool isIntruderDetected() const {
+        return mIntruderDetected;
+    }
 
     void notifyFwUpdateError();
     void notifyFwUpdate();

@@ -58,6 +58,7 @@ typedef struct {
     bool detectEnable;
     uint32_t thresholdCnt;
     uint32_t detectWindowMS;
+    uint32_t alarmIntervalS;   // interval between intruder alarm LoRa uplinks while the alarm is active
 }intruderConfig_t;
 
 typedef struct {

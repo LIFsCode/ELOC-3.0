@@ -63,6 +63,27 @@
 - **BT-set timezone persisted to RTC** (Bug 6 in `README-DutyCycle-BugFixes.md`) so CSV detection timestamps survive duty-cycle wakes in the user's local TZ, not the compile-time `TIMEZONE_OFFSET` default. As of 2026-06-05 this is the **highest-priority tier** of the TZ chain (app-set > GPS-longitude-derived > compile default); see the GPS section.
 - **See:** `README-DutyCycle-and-LoRa-Cooldown.md`, `README-DutyCycle-BugFixes.md`
 
+### Intruder Alarm over LoRa — ✅ Implemented (2026-07-04, V1.43, awaiting hardware validation)
+- **Knock-based trigger** (existing LIS3DH click counting in `notifyStatusRefresh()`) now raises a
+  LoRa alarm instead of only beeping the buzzer
+- **`INTRUDER_MSG` (msgType 2) uplink:** epoch, GPS fix flag, lat/lng (×1e5), fix age, battery SoC
+- **Periodic tracking:** re-sent every `intruderCfg.alarmIntervalS` (default 600 s, live-applied,
+  min 60 s) while the alarm is active; failed sends retried after 60 s
+- **GPS held powered** during an active alarm (burst power-down suspended) for a live position
+- **24/7-only feature**: intruder detection is disabled whenever `dutyCycle.enable` is set. An
+  EXT1 knock-wake-from-deep-sleep variant was tried and reverted after a failed hardware test
+  (buzzer vibration false-triggered the knock sensor on every BT connect; heap exhaustion —
+  `EIDSP_OUT_OF_MEM` -1002 / classifier -5 — when BT+LoRa+GPS+AI all run after the full-boot
+  knock wake; device failed to re-enter sleep). See activeContext for details.
+- **Buzzer→knock-sensor guard** (hardware-test fix, kept): clicks are ignored while the buzzer is
+  active + 1 s settle time after; the buzzer shares the PCB with the LIS3DH and its vibration
+  registers as knocks (previously every app-connect beep counted, and the alarm's own beeping
+  re-triggered it indefinitely)
+- **Decoder + backend:** TTN payload-formatter case 2 (paste into TTN console!), `TnnType.intruder`
+  in Cloud Functions, `lastIntruderAlert` in `device_status_cache`, `alert_history` entry
+- **Remaining limitations:** dashboard/frontend UI for the alert still open; deep sleep is
+  knock-blind by design (24/7 mode is the intended deployment for this feature)
+
 ### Hardware Support — ✅ Operational
 - **LIS3DH accelerometer** for intruder detection and double-tap BT wake
 - **PCA9557 IO expander** for expanded GPIO

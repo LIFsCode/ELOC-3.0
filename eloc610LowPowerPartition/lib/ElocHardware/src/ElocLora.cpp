@@ -448,6 +448,34 @@ void ElocLora::ElocLoraLoop() {
     }
     // pick up setConfig changes to the uplink interval without a reboot
     refreshUplinkInterval();
+
+    // Intruder alarm: send an alarm uplink immediately when the knock-based intruder
+    // detection trips, then keep re-sending (with the current GPS position) every
+    // intruderCfg.alarmIntervalS while the alarm stays active, so a stolen/moved device
+    // can be tracked. A failed uplink is retried after C_INTRUDER_RETRY_S.
+    if (ElocSystem::GetInstance().isIntruderDetected()) {
+      int64_t nowS = timeObject.getLocalEpoch();
+      if (!mIntruderAlarmActive) {
+        mIntruderAlarmActive = true;
+        mNextIntruderUplinkS = nowS;  // first alarm goes out right away
+      }
+      if (nowS >= mNextIntruderUplinkS) {
+        uint32_t intervalS = getConfig().IntruderConfig.alarmIntervalS;
+        if (intervalS < C_MIN_INTRUDER_INTERVAL_S) {
+          intervalS = C_MIN_INTRUDER_INTERVAL_S;
+        }
+        if (sendIntruderAlarmMessage() == ESP_OK) {
+          mNextIntruderUplinkS = nowS + intervalS;
+        }
+        else {
+          mNextIntruderUplinkS = nowS + C_INTRUDER_RETRY_S;
+        }
+      }
+    }
+    else {
+      mIntruderAlarmActive = false;
+    }
+
 #ifdef EDGE_IMPULSE_ENABLED
     static int64_t lastEiDetectedEvents = 0;
      //TODO: Check if we really want all classifier to trigger an event
@@ -561,6 +589,66 @@ esp_err_t ElocLora::sendEventMessage() {
 #else
     return ESP_OK;
 #endif
+}
+
+/**
+ * Intruder alarm uplink. Payload layout (must match the TTN payload formatter, msgType 2):
+ *   byte  0      : (INTRUDER_MSG << 4) | LORA_MSG_VERS
+ *   bytes 1..8   : int64 local epoch timestamp, big endian
+ *   byte  9      : flags — bit0: GPS fix available (lat/lng fields valid)
+ *   bytes 10..13 : int32 latitude  * 1e5, big endian (0 if no fix)
+ *   bytes 14..17 : int32 longitude * 1e5, big endian (0 if no fix)
+ *   byte  18     : battery SoC in percent
+ *   bytes 19..20 : uint16 fix age in seconds, big endian (0xFFFF = no fix)
+ */
+esp_err_t ElocLora::sendIntruderAlarmMessage() {
+    LoRaWANEvent_t uplinkDetails;
+
+    int64_t time = timeObject.getLocalEpoch();
+
+    portENTER_CRITICAL(&mGpsInfoMux);
+    GpsInfo_t gpsInfo = mGpsInfo;
+    portEXIT_CRITICAL(&mGpsInfoMux);
+
+    bool hasFix = gpsInfo.hasFix;
+    int32_t latE5 = 0;
+    int32_t lngE5 = 0;
+    uint16_t fixAgeS = 0xFFFF;
+    if (hasFix) {
+        latE5 = static_cast<int32_t>(gpsInfo.lat * 100000.0);
+        lngE5 = static_cast<int32_t>(gpsInfo.lng * 100000.0);
+        fixAgeS = (gpsInfo.fixAgeS > 0xFFFE) ? 0xFFFE : static_cast<uint16_t>(gpsInfo.fixAgeS);
+    }
+
+    uint8_t uplinkPayload[LORA_MAX_TX_PAYLOAD];
+    uint8_t idx = 0;
+    uint8_t msgType = t_LoraMsgType::INTRUDER_MSG;
+    if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (msgType << 4) | (LORA_MSG_VERS & 0x0F);
+    for (int i = sizeof(time) -1; i >= 0; i--) {
+      if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (time >> (i*8))  & 0xFF;
+    }
+    if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = hasFix ? 0x01 : 0x00;
+    for (int i = sizeof(latE5) -1; i >= 0; i--) {
+      if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (latE5 >> (i*8)) & 0xFF;
+    }
+    for (int i = sizeof(lngE5) -1; i >= 0; i--) {
+      if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (lngE5 >> (i*8)) & 0xFF;
+    }
+    uint8_t batSoC = static_cast<uint8_t>(Battery::GetInstance().getSoC());
+    if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = batSoC;
+    if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (fixAgeS >> 8) & 0xFF;
+    if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = fixAgeS & 0xFF;
+
+    ESP_LOGW(TAG, "Sending INTRUDER ALARM (%d bytes): time = %lld, fix=%d, lat=%.5f, lng=%.5f, fixAge=%us, SoC=%hu",
+        idx, time, hasFix, latE5 / 100000.0, lngE5 / 100000.0, fixAgeS, batSoC);
+    // Perform an uplink (with conservative recovery)
+    int16_t state = sendReceiveWithRecovery(uplinkPayload, idx, &uplinkDetails);
+    debug(state < RADIOLIB_ERR_NONE, F("Error in sendReceive"), state, false);
+
+    if (state < RADIOLIB_ERR_NONE) {
+      return ESP_FAIL;
+    }
+    return parseResponse(state);
 }
 
 void ElocLora::captureSignalQuality() {

@@ -127,6 +127,7 @@ static const elocConfig_T C_ElocConfig_Default {
         .detectEnable = false,
         .thresholdCnt = INTRUDER_DETECTION_THRSH,
         .detectWindowMS = 2000,
+        .alarmIntervalS = 600,      // 10 minutes between intruder alarm LoRa msgs
     },
     .batteryConfig = {
         .updateIntervalMs = 10*60*1000, //10 minutes
@@ -259,6 +260,7 @@ void loadConfig(const JsonObject& config) {
     gElocConfig.IntruderConfig.detectEnable   = config["intruderCfg"]["enable"]       | C_ElocConfig_Default.IntruderConfig.detectEnable;
     gElocConfig.IntruderConfig.thresholdCnt   = config["intruderCfg"]["threshold"]    | C_ElocConfig_Default.IntruderConfig.thresholdCnt;
     gElocConfig.IntruderConfig.detectWindowMS = config["intruderCfg"]["windowsMs"]    | C_ElocConfig_Default.IntruderConfig.detectWindowMS;
+    gElocConfig.IntruderConfig.alarmIntervalS = config["intruderCfg"]["alarmIntervalS"] | C_ElocConfig_Default.IntruderConfig.alarmIntervalS;
     /** battery config*/
     gElocConfig.batteryConfig.updateIntervalMs = config["battery"]["updateIntervalMs"] | C_ElocConfig_Default.batteryConfig.updateIntervalMs;
     gElocConfig.batteryConfig.avgSamples       = config["battery"]["avgSamples"]       | C_ElocConfig_Default.batteryConfig.avgSamples;
@@ -402,6 +404,7 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     config["intruderCfg"]["enable"]       = ElocConfig.IntruderConfig.detectEnable;
     config["intruderCfg"]["threshold"]    = ElocConfig.IntruderConfig.thresholdCnt;
     config["intruderCfg"]["windowsMs"]    = ElocConfig.IntruderConfig.detectWindowMS;
+    config["intruderCfg"]["alarmIntervalS"] = ElocConfig.IntruderConfig.alarmIntervalS;
     config["battery"]["updateIntervalMs"] = ElocConfig.batteryConfig.updateIntervalMs;
     config["battery"]["avgSamples"]       = ElocConfig.batteryConfig.avgSamples;
     config["battery"]["avgIntervalMs"]    = ElocConfig.batteryConfig.avgIntervalMs;

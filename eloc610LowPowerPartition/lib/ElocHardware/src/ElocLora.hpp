@@ -57,6 +57,7 @@ private:
     enum t_LoraMsgType {
         STATUS_MSG = 0,
         EVENT_MSG = 1,
+        INTRUDER_MSG = 2,
     };
 
 
@@ -120,7 +121,26 @@ private:
 
     esp_err_t sendStatusUpdateMessage();
     esp_err_t sendEventMessage();
+    esp_err_t sendIntruderAlarmMessage();
     esp_err_t parseResponse(int16_t state);
+
+    // Intruder alarm uplink scheduling (see ElocLoraLoop)
+    bool mIntruderAlarmActive = false;       // edge detection on ElocSystem's intruder flag
+    int64_t mNextIntruderUplinkS = 0;        // epoch time the next alarm uplink is due
+    static constexpr int64_t C_INTRUDER_RETRY_S = 60;         // retry delay after a failed alarm uplink
+    static constexpr uint32_t C_MIN_INTRUDER_INTERVAL_S = 60; // lower bound for intruderCfg.alarmIntervalS
+
+    // Last known GPS position, pushed in from main.cpp via setGpsInfo(). ElocLora deliberately
+    // does not include ElocGPS itself: lib/gps already depends on lib/ElocHardware, and the
+    // reverse include would create an LDF dependency cycle that breaks the build.
+    struct GpsInfo_t {
+        bool hasFix = false;
+        double lat = 0.0;
+        double lng = 0.0;
+        uint32_t fixAgeS = 0;
+    };
+    GpsInfo_t mGpsInfo;
+    portMUX_TYPE mGpsInfoMux = portMUX_INITIALIZER_UNLOCKED;
 
     // Conservative recovery helpers
     bool attemptRejoin(const char* reason);
@@ -169,6 +189,18 @@ public:
     bool  hasSignalInfo() const { return mHasRSSI; }
     /// @brief Whether LoRa is initialized and joined
     bool  isJoined() const { return mInitDone; }
+
+    /// @brief Push the current GPS position (called from main.cpp's GPS management).
+    ///        Used by the intruder alarm uplink; safe to call from a different task
+    ///        than the LoRa loop.
+    void setGpsInfo(bool hasFix, double lat, double lng, uint32_t fixAgeS) {
+        portENTER_CRITICAL(&mGpsInfoMux);
+        mGpsInfo.hasFix = hasFix;
+        mGpsInfo.lat = lat;
+        mGpsInfo.lng = lng;
+        mGpsInfo.fixAgeS = fixAgeS;
+        portEXIT_CRITICAL(&mGpsInfoMux);
+    }
 };
 
 

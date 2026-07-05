@@ -23,7 +23,8 @@
     "intruderCfg": {
       "enable": false,
       "threshold": 5,
-      "windowsMs": 2000
+      "windowsMs": 2000,
+      "alarmIntervalS": 600
     },
     "battery": {
       "updateIntervalMs": 600000,

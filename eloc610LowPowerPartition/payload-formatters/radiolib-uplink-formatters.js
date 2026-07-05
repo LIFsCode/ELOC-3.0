@@ -123,9 +123,43 @@ function decodeUplink(input) {
                 errors: []
             };
           break;
+        case 2: // intruder alarm (knock-based intruder detection + GPS position)
+            timestamp = 0
+            for (let i = 0; i < 8; i++) {  // retrieve 64 bit timestamp
+                timestamp = timestamp * 256 + input.bytes[idx++];
+            }
+            var date = timeConverter(timestamp);
+            var flags = input.bytes[idx++];
+            var hasFix = (flags & 0x01) != 0;
+            // int32 big endian, degrees * 1e5 (signed)
+            var latRaw = ((input.bytes[idx++] << 24) | (input.bytes[idx++] << 16) |
+                          (input.bytes[idx++] << 8)  |  input.bytes[idx++]) | 0;
+            var lngRaw = ((input.bytes[idx++] << 24) | (input.bytes[idx++] << 16) |
+                          (input.bytes[idx++] << 8)  |  input.bytes[idx++]) | 0;
+            batterySoC = input.bytes[idx++];
+            var fixAgeS = (input.bytes[idx++] << 8) | input.bytes[idx++];
+
+            return {
+                data: {
+                msgType: msgType,
+                msgVers: msgVers,
+                time: date,
+                timestamp: timestamp,
+                intruderAlarm: true,
+                hasFix: hasFix,
+                latitude: hasFix ? latRaw / 100000.0 : null,
+                longitude: hasFix ? lngRaw / 100000.0 : null,
+                fixAgeS: hasFix ? fixAgeS : null,
+                Battery: batterySoC,
+                bytes: input.bytes
+                },
+                warnings: [],
+                errors: []
+            };
+          break;
         default:
           // code block
-      } 
+      }
 
     return {
         data: {

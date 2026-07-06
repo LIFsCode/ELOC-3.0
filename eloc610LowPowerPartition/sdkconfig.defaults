@@ -105,6 +105,10 @@ CONFIG_ESP32_WIFI_ENABLED=n
 #
 # FAT Filesystem support
 #
+# exFAT support is enabled via tools/patch_fatfs_exfat.py (patches FF_FS_EXFAT 0->1 in the
+# packaged ffconf.h). IDF 4.4.7 has no CONFIG_FATFS_USE_EXFAT Kconfig option - it only exists
+# from IDF 5.1 onward. On a future IDF >=5.1 upgrade, replace the patch script with
+# CONFIG_FATFS_USE_EXFAT=y here.
 CONFIG_FATFS_LFN_HEAP=y
 CONFIG_FATFS_MAX_LFN=255
 CONFIG_FATFS_API_ENCODING_ANSI_OEM=y

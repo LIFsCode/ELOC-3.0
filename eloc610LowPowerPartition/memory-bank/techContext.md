@@ -32,6 +32,7 @@
 - **generic_unit_tests** — Desktop/native unit tests
 
 ### Pre-build Scripts
+- `tools/patch_fatfs_exfat.py` — Patches `FF_FS_EXFAT 0 → 1` in the packaged IDF FatFs `ffconf.h` to enable exFAT (see below)
 - `tools/genVersion.py` — Generates version.h with build timestamp
 - `tools/genNVS.py` — Compiles nvs.csv into nvs.bin for NVS partition
 - `tools/setUploadMonitorPort.py` — Auto-detects serial port for upload/monitor
@@ -42,6 +43,18 @@ Key settings managed via `sdkconfig.defaults`:
 - FreeRTOS tickless idle (`CONFIG_FREERTOS_USE_TICKLESS_IDLE`)
 - Long filenames on FAT filesystem
 - SPI RAM enabled
+
+### SD card filesystems: FAT32 and exFAT
+SD cards may be formatted as **FAT32 or exFAT** (cards >32 GB ship factory-formatted as exFAT).
+IDF 4.4.7 bundles FatFs R0.13c, which supports exFAT but hardcodes `FF_FS_EXFAT 0` in its
+`ffconf.h` with no Kconfig switch (`CONFIG_FATFS_USE_EXFAT` only exists from IDF 5.1). The
+pre-build script `tools/patch_fatfs_exfat.py` (first entry in `platformio.ini` `extra_scripts`)
+patches the packaged header on every build — idempotent, self-heals after a package reinstall,
+and fails loudly if a platform bump changes the FatFs revision (`FFCONF_DEF != 86604`). On a
+future IDF ≥5.1 upgrade, replace the script with `CONFIG_FATFS_USE_EXFAT=y` in
+`sdkconfig.defaults`. The mounted filesystem type is logged after mount in `SDCardSDIO::init()`
+(`Filesystem: FAT32` / `exFAT`). After the very first patch, do one full clean build so no stale
+fatfs objects remain.
 
 ## Dependencies
 

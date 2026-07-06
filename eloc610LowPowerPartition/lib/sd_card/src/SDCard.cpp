@@ -61,8 +61,7 @@ esp_err_t SDCard::init(const char *mount_point, gpio_num_t miso, gpio_num_t mosi
   {
     if (ret == ESP_FAIL)
     {
-      ESP_LOGE(TAG, "Failed to mount filesystem. "
-                    "If you want the card to be formatted, set the EXAMPLE_FORMAT_IF_MOUNT_FAILED menuconfig option.");
+      ESP_LOGE(TAG, "Failed to mount filesystem - card must be formatted as FAT32 or exFAT");
     }
     else
     {

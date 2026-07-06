@@ -1,6 +1,6 @@
 # Add exFAT Support (keep FAT32 working)
 
-**Status: planned, not yet implemented.**
+**Status: implemented (2026-07-06) — build-verified; hardware verification (steps 2–4 below) pending.**
 
 ## Context
 

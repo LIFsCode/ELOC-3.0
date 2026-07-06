@@ -8,6 +8,10 @@
 - **Double-buffered writing** pipeline with FreeRTOS tasks on separate cores
 - **Three recording modes:** disabled, single (triggered), continuous
 - **SD card** mounting via SDIO with free space checking and session folder creation
+- **FAT32 + exFAT SD cards** (2026-07-06, build-verified, hardware verification pending): exFAT
+  enabled by patching `FF_FS_EXFAT` in the packaged IDF 4.4.7 FatFs via pre-build script
+  `tools/patch_fatfs_exfat.py`; filesystem type logged at mount; free-space 32-bit overflow fixed
+  for large cards. See `README-exFAT-Support-Plan.md` and `techContext.md`.
 
 ### AI Inference — ✅ Operational
 - **Edge Impulse integration** with TFLite Micro models
@@ -36,6 +40,10 @@
 
 ### Power Management — ✅ Operational
 - **Dynamic frequency scaling** (DFS) with configurable min/max
+- **Automatic mode-based CPU frequency profiles** (2026-07-05, not yet hardware-verified): AI modes
+  → fixed 240 MHz; recording-only (no AI/LoRa) → min 10 / max 80 MHz; otherwise configured values.
+  Deferred while BT is up (PLL relock constraint), applied on BT teardown or at duty-cycle wake boot.
+  See `ElocSystem::pm_requestProfile()` and `README-Config-Restart-Semantics.md`.
 - **Light sleep** configuration (effectiveness during recording uncertain)
 - **Deep sleep** with GPIO button wake-up
 - **Battery monitoring** with configurable intervals and averaging

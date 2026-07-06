@@ -14,6 +14,20 @@ static const char *TAG = "SDC";
 
 #define SPI_DMA_CHAN 1
 
+// Map FatFs fs_type to a human-readable name. FS_EXFAT only exists when the
+// FatFs library is built with FF_FS_EXFAT (see tools/patch_fatfs_exfat.py).
+static const char *fsTypeName(BYTE fs_type) {
+  switch (fs_type) {
+    case FS_FAT12: return "FAT12";
+    case FS_FAT16: return "FAT16";
+    case FS_FAT32: return "FAT32";
+#if FF_FS_EXFAT
+    case FS_EXFAT: return "exFAT";
+#endif
+    default: return "unknown";
+  }
+}
+
 SDCardSDIO::SDCardSDIO() : m_mounted(false), m_card(nullptr) {
 }
 
@@ -43,7 +57,7 @@ esp_err_t SDCardSDIO::init(const char *mount_point) {
 
   if (ret != ESP_OK) {
     if (ret == ESP_FAIL) {
-      ESP_LOGE(TAG, "Failed to mount filesystem");
+      ESP_LOGE(TAG, "Failed to mount filesystem - card must be formatted as FAT32 or exFAT");
     } else {
       ESP_LOGE(TAG, "Failed to initialize the card (%s)", esp_err_to_name(ret));
     }
@@ -53,6 +67,12 @@ esp_err_t SDCardSDIO::init(const char *mount_point) {
   m_mounted = true;
   m_failedMounts = 0;
   ESP_LOGI(TAG, "SDCard mounted at: %s", m_mount_point.c_str());
+
+  FATFS *fs = nullptr;
+  DWORD fre_clust;
+  if (f_getfree(m_mount_point.c_str(), &fre_clust, &fs) == FR_OK && fs != nullptr) {
+    ESP_LOGI(TAG, "Filesystem: %s", fsTypeName(fs->fs_type));
+  }
 
   // Card has been initialized, print its properties
   sdmmc_card_print_info(stdout, m_card);
@@ -99,7 +119,7 @@ esp_err_t SDCardSDIO::updateFreeSpace() {
      * Free bytes =  free clusters * sectors per cluster * sector size
      *            =  fre_clust * fs->csize * fs->ssize
      */
-    uint64_t fre_sect = fre_clust * fs->csize;
+    uint64_t fre_sect = static_cast<uint64_t>(fre_clust) * fs->csize;
     m_free_bytes = fre_sect * fs->ssize;
     if (0) {
       ESP_LOGI(TAG, "SD card free space: %llu bytes", m_free_bytes);

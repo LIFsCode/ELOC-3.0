@@ -15,6 +15,52 @@ Recent completed work:
 
 ## Recent Changes
 
+- **exFAT SD card support** (2026-07-06). SD cards may now be FAT32 **or exFAT** (cards >32 GB
+  ship factory-formatted as exFAT; previously they silently failed to mount and had to be
+  reformatted in the field). Root cause of the old restriction: IDF 4.4.7's bundled FatFs R0.13c
+  hardcodes `FF_FS_EXFAT 0` with no Kconfig switch. Fix: new pre-build script
+  `tools/patch_fatfs_exfat.py` (first `extra_scripts` entry in `platformio.ini`) patches the
+  packaged `ffconf.h` to `FF_FS_EXFAT 1` — idempotent, self-heals after package reinstall, fails
+  loudly if the FatFs revision changes (`FFCONF_DEF != 86604`; on IDF ≥5.1 use
+  `CONFIG_FATFS_USE_EXFAT=y` instead). Alongside: `SDCardSDIO::updateFreeSpace()` 32-bit overflow
+  fix (`fre_clust * csize` now widened before multiply — mattered for large exFAT cards),
+  filesystem type logged after mount (`Filesystem: FAT32/exFAT`), clearer mount-failure messages
+  in both `SDCardSDIO.cpp` and `SDCard.cpp`. Details in `README-exFAT-Support-Plan.md`.
+  Build-verified; **hardware verification pending** (FAT32 regression, exFAT ≥64 GB card,
+  duty-cycle remount).
+
+- **Automatic mode-based CPU frequency profiles** (2026-07-05). Selecting a recording mode now
+  selects the CPU frequency automatically; the stored `cpu*` config is untouched and remains the
+  fallback:
+  - **AI modes** (`recordOn_detectOn`, `recordOff_detectOn`, `recordOnEvent`) → fixed **240 MHz**
+    (min = max, DFS off). **Recording-only** (`recordOn_detectOff`, no LoRa) → **min 10 / max 80 MHz**
+    (min 20 if sample rate ≥ 30 kHz, issue #30). **No mode / record-only with LoRa** → configured
+    values (LoRa still forces min = max, light sleep off).
+  - Implementation: `ElocSystem::PmProfile` + `pm_requestProfile()` (`ElocSystem.hpp/.cpp`);
+    `pm_configure()` is now profile-aware. The main loop calls
+    `updatePmProfileFromRecordingMode()` (`main.cpp`) every iteration, which derives the profile
+    from `ai_run_enable` + `wav_writer` mode — so BT commands, the physical button, and duty-cycle
+    restores are all covered by one path.
+  - **BT PLL constraint honoured**: a profile change while BT is up is deferred (switching between
+    the 320 MHz and 480 MHz PLL relocks the BBPLL the BT radio runs from). It is applied in
+    `disableBluetooth()` right after `SerialBT.end()` (`BluetoothServer.cpp` →
+    `ElocSystem::setBluetoothActive(false)`); `enableBluetooth()` marks BT active *before*
+    controller bring-up. Consequence: with `bluetoothEnableDuringRecord=true` (default) the switch
+    happens only after the BT-off timeout (default 360 s without connection); with `=false` it
+    happens seconds after recording starts. If BT never shuts down, the device stays at the
+    boot-time frequency (physics, not a bug).
+  - **Duty-cycle timer wakes** apply the profile at boot (before LoRa init) from
+    `rtc_duty_cycle.aiEnabled`/`recordMode` (`main.cpp`, at the `pm_configure()` call site).
+  - **Console UART moved to REF_TICK** (`configureConsoleUartRefTick()` in `main.cpp`, called
+    early in setup before `pm_configure()`). Bench-observed: after the switch to the
+    RECORDING_LOW_POWER profile the DFS drop of the APB clock to ~10 MHz garbled all ESP_LOG
+    output (baud divisor is APB-derived). REF_TICK is a fixed 1 MHz reference DFS doesn't touch —
+    the exact fix `ElocGPS::init()` already uses for the GPS UART (so GPS/recording were never
+    affected, only the console). Cosmetic (no field console) but keeps bench logs readable.
+  - See the new section in `README-Config-Restart-Semantics.md`. Remaining to hardware-verify:
+    AI inference runs at the boot frequency (80 MHz default) until BT drops — DSP was measured
+    615-735 ms at the old settings, so the 1 s slice budget still holds during that window.
+
 - **Internal-heap headroom fix: BLE memory release + EI allocator PSRAM fallback** (2026-07-05,
   V1.44). Addresses the known borderline-heap issue with BT + LoRa + GPS + AI running concurrently
   (`MFE failed (-1002 = EIDSP_OUT_OF_MEM)` → `run_classifier` -5, and Bluedroid

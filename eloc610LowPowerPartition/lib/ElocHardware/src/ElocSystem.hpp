@@ -80,6 +80,14 @@ public:
                     (this->intruderDetected == rhs.intruderDetected));
         }
     }Status_t;
+
+    /// @brief CPU power-management profile, selected automatically from the active recording mode
+    ///        (see pm_requestProfile()).
+    enum class PmProfile {
+        CONFIG_DEFAULT,       ///< no mode active: frequencies from the stored config
+        AI_MAX_PERF,          ///< any AI detection mode: fixed 240 MHz
+        RECORDING_LOW_POWER,  ///< recording only, no AI: min 10 / max 80 MHz (ignored if LoRa is enabled)
+    };
 private:
     /* data */
     ElocSystem();
@@ -102,8 +110,12 @@ private:
         uint16_t hw_gen;
         uint16_t hw_rev;
         uint32_t serialNumber;
-    }mFactoryInfo; 
+    }mFactoryInfo;
     loraWAN_keys_t mLoraWAN_keys;
+
+    PmProfile mTargetPmProfile;   // profile that should be in effect (may be pending while BT is up)
+    PmProfile mAppliedPmProfile;  // profile last applied successfully via pm_configure()
+    bool mBtActive;               // BT controller running: CPU frequency must not be switched (PLL relock)
 
     /**
      * @brief Set implementation-specific power management configuration. This is a wrapper for esp_pm_configure
@@ -159,9 +171,30 @@ public:
     /// @return ESP_OK on success, error code otherwise
     esp_err_t pm_check_ForRecording(int sample_rate);
 
-    /// @brief Configures the Power Management based on the ElocConfig
+    /// @brief Configures the Power Management based on the currently targeted PmProfile
+    ///        (CONFIG_DEFAULT reads the frequencies from the ElocConfig).
+    /// @warning Must not be called while the Bluetooth controller is running: switching
+    ///          between the 320 MHz PLL (80/160 MHz) and the 480 MHz PLL (240 MHz) relocks
+    ///          the BBPLL the BT radio is clocked from and crashes/WDT-resets the device.
     /// @return ESP_OK on success, error code otherwise
     esp_err_t pm_configure();
+
+    /// @brief Request the CPU power-management profile matching the active recording mode.
+    ///        Applied immediately if Bluetooth is down; otherwise stored and applied by
+    ///        setBluetoothActive(false) once the BT controller has been torn down.
+    ///        Safe to call periodically: it is a no-op if the profile is already applied.
+    /// @return ESP_OK on success (including a deferred request), error code otherwise
+    esp_err_t pm_requestProfile(PmProfile profile);
+
+    /// @brief Track the Bluetooth controller state. Must be set true BEFORE the BT controller
+    ///        starts and false only AFTER it is fully stopped. On the transition to false any
+    ///        pending PM profile is applied.
+    void setBluetoothActive(bool active);
+
+    /// @brief The PM profile that should currently be in effect (may still be pending while BT is up)
+    inline PmProfile getPmProfile() const {
+        return mTargetPmProfile;
+    }
 
     void notifyStatusRefresh();
     esp_err_t handleSystemStatus(bool btEnabled, bool btConnected);

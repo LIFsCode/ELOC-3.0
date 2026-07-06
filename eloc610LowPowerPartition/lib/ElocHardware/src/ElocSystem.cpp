@@ -134,7 +134,9 @@ private:
 ElocSystem::ElocSystem():
     mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true),
     mLastBuzzerStopMs(0), mRefreshStatus(false), mIntruderDetected(false),
-    mFwUpdateProcessing(false), mFactoryInfo()
+    mFwUpdateProcessing(false), mFactoryInfo(),
+    mTargetPmProfile(PmProfile::CONFIG_DEFAULT), mAppliedPmProfile(PmProfile::CONFIG_DEFAULT),
+    mBtActive(false)
 {
     ESP_LOGI(TAG, "Reading Factory Info from NVS");
 
@@ -306,25 +308,58 @@ esp_err_t ElocSystem::pm_check_ForRecording(int sample_rate) {
     return ESP_OK;
 }
 
+static const char* toString(ElocSystem::PmProfile profile) {
+    switch (profile) {
+        case ElocSystem::PmProfile::AI_MAX_PERF:         return "AI_MAX_PERF";
+        case ElocSystem::PmProfile::RECORDING_LOW_POWER: return "RECORDING_LOW_POWER";
+        case ElocSystem::PmProfile::CONFIG_DEFAULT:      return "CONFIG_DEFAULT";
+    }
+    return "UNKNOWN";
+}
+
 esp_err_t ElocSystem::pm_configure() {
     /**
-     * Setup Power Management
-     * @warning If CPU freq is set to > CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ
-     *          in sdkconfig file expect crashes & WDT resets!
+     * Setup Power Management based on the targeted PmProfile
+     * @warning Must not run while the BT controller is up (BBPLL relock), see pm_requestProfile()
      * @ref https://docs.espressif.com/projects/esp-idf/en/v4.4.4/esp32/api-reference/system/power_management.html#configuration
      */
-    auto max_freq  = getConfig().cpuMaxFrequencyMHZ;
-    if (max_freq > CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ) {
-        ESP_LOGW(TAG, "CPU Max Frequency is set to %d MHz, but CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ = %d MHz",
-            max_freq, CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ);
+    PmProfile profile = mTargetPmProfile;
+
+    // The low-power recording profile only applies without LoRa: with LoRa enabled DFS/light
+    // sleep are not usable anyway (min is forced to max below), so use the configured values.
+    if (profile == PmProfile::RECORDING_LOW_POWER && getConfig().loraConfig.loraEnable) {
+        ESP_LOGI(TAG, "LoraWAN is enabled, using configured CPU frequencies instead of the low-power recording profile");
+        profile = PmProfile::CONFIG_DEFAULT;
     }
-    ESP_LOGI(TAG, "Setting CPU Max Frequency to %d MHz", max_freq);
 
     esp_pm_config_esp32_t cfg = {
-        .max_freq_mhz = max_freq,
+        .max_freq_mhz = getConfig().cpuMaxFrequencyMHZ,
         .min_freq_mhz = getConfig().cpuMinFrequencyMHZ,
         .light_sleep_enable = getConfig().cpuEnableLightSleep
     };
+    switch (profile) {
+        case PmProfile::AI_MAX_PERF:
+            // AI inference needs full performance: pin the clock at 240 MHz so the model
+            // never runs downclocked (DFS off via min = max).
+            cfg.max_freq_mhz = 240;
+            cfg.min_freq_mhz = 240;
+            break;
+        case PmProfile::RECORDING_LOW_POWER:
+            cfg.max_freq_mhz = 80;
+            // sample rates >= 30 kHz require a higher APB bus speed, which is bound to the
+            // min CPU clock: see https://github.com/LIFsCode/ELOC-3.0/issues/30
+            cfg.min_freq_mhz = (getMicInfo().MicSampleRate >= 30000) ? 20 : 10;
+            break;
+        case PmProfile::CONFIG_DEFAULT:
+        default:
+            if (cfg.max_freq_mhz > CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ) {
+                ESP_LOGW(TAG, "CPU Max Frequency is set to %d MHz, but CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ = %d MHz",
+                    cfg.max_freq_mhz, CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ);
+            }
+            break;
+    }
+    ESP_LOGI(TAG, "Applying PM profile %s: CPU max %d MHz, min %d MHz, light sleep %s",
+        toString(profile), cfg.max_freq_mhz, cfg.min_freq_mhz, cfg.light_sleep_enable ? "on" : "off");
     if (getConfig().loraConfig.loraEnable) {
         cfg.min_freq_mhz = cfg.max_freq_mhz;
         cfg.light_sleep_enable = false;
@@ -348,8 +383,36 @@ esp_err_t ElocSystem::pm_configure() {
         esp_pm_lock_release(applyLock);
         esp_pm_lock_delete(applyLock);
     }
+    mAppliedPmProfile = mTargetPmProfile;
     ESP_LOGI(TAG, "CPU frequency now %d MHz", esp_clk_cpu_freq() / 1000000);
     return ESP_OK;
+}
+
+esp_err_t ElocSystem::pm_requestProfile(PmProfile profile) {
+    bool changed = (profile != mTargetPmProfile);
+    mTargetPmProfile = profile;
+    if (profile == mAppliedPmProfile) {
+        return ESP_OK;
+    }
+    if (mBtActive) {
+        // Switching between the 320 MHz PLL (80/160 MHz) and the 480 MHz PLL (240 MHz)
+        // relocks the BBPLL the BT radio is clocked from and would crash the device.
+        // The profile stays pending and is applied by setBluetoothActive(false) once the
+        // BT controller is torn down (recording start / BT timeout / app disconnect).
+        if (changed) {
+            ESP_LOGI(TAG, "PM profile %s requested, deferred until Bluetooth shuts down", toString(profile));
+        }
+        return ESP_OK;
+    }
+    return pm_configure();
+}
+
+void ElocSystem::setBluetoothActive(bool active) {
+    mBtActive = active;
+    if (!active && (mTargetPmProfile != mAppliedPmProfile)) {
+        ESP_LOGI(TAG, "Bluetooth is down, applying deferred PM profile");
+        pm_configure();
+    }
 }
 
 esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {

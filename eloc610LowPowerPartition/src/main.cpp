@@ -29,6 +29,7 @@
 #include "esp_sleep.h"
 #include "rtc_wdt.h"
 #include <driver/rtc_io.h>
+#include <driver/uart.h>
 //#include "soc/efuse_reg.h"
 
 /** Arduino libraries*/
@@ -256,6 +257,58 @@ static void IRAM_ATTR buttonISR(void *args)
      */
 
     // xQueueSendFromISR(rec_req_evt_queue, &mode, (TickType_t)0);
+}
+
+/**
+ * @brief Move the console/log UART off the APB clock onto REF_TICK so ESP_LOG output stays
+ *        readable while DFS is active.
+ * @note  The console UART's baud divisor is derived from its clock source. With power
+ *        management enabled the APB clock scales down to the configured CPU min frequency
+ *        whenever no peripheral holds an APB lock (e.g. the recording-only profile drops it
+ *        to ~10 MHz), which turns 115200-baud output into garbage. REF_TICK is a fixed 1 MHz
+ *        reference that DFS does not touch — the same fix already used for the GPS UART
+ *        (see ElocGPS::init()). Purely cosmetic (no serial console in the field) but keeps
+ *        the logs usable for bench debugging in the low-power modes.
+ */
+static void configureConsoleUartRefTick()
+{
+#if defined(CONFIG_PM_ENABLE) && defined(CONFIG_ESP_CONSOLE_UART_NUM)
+    const uart_port_t consolePort = static_cast<uart_port_t>(CONFIG_ESP_CONSOLE_UART_NUM);
+    uart_config_t uart_config = {
+        .baud_rate = CONFIG_ESP_CONSOLE_UART_BAUDRATE,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .rx_flow_ctrl_thresh = 0,
+        .source_clk = UART_SCLK_REF_TICK,
+    };
+    if (esp_err_t err = uart_param_config(consolePort, &uart_config)) {
+        ESP_LOGW(TAG, "Failed to switch console UART to REF_TICK: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "Console UART%d clock set to REF_TICK (DFS-stable)", CONFIG_ESP_CONSOLE_UART_NUM);
+    }
+#endif
+}
+
+/**
+ * @brief Keep the CPU frequency profile in sync with the active recording mode:
+ *        any AI detection mode (recordOn_detectOn, recordOff_detectOn, recordOnEvent)
+ *        runs at a fixed 240 MHz, recording-only (no AI, no LoRa) at min 10 / max 80 MHz,
+ *        otherwise the configured frequencies apply.
+ * @note  ElocSystem defers the actual switch while Bluetooth is up (the PLL relock would
+ *        crash the BT radio), so this is re-called every main loop iteration — the request
+ *        is a no-op once the profile is applied.
+ */
+static void updatePmProfileFromRecordingMode()
+{
+    ElocSystem::PmProfile profile = ElocSystem::PmProfile::CONFIG_DEFAULT;
+    if (ai_run_enable) {
+        profile = ElocSystem::PmProfile::AI_MAX_PERF;
+    } else if (wav_writer.get_mode() != WAVFileWriter::Mode::disabled) {
+        profile = ElocSystem::PmProfile::RECORDING_LOW_POWER;
+    }
+    ElocSystem::GetInstance().pm_requestProfile(profile);
 }
 
 
@@ -1106,12 +1159,34 @@ void app_main(void) {
     // Validate duty cycle config after loading
     validateDutyCycleConfig();
 
+    // Move the console UART onto REF_TICK before any DFS frequency drop can garble it
+    // (the low-power recording profile scales the APB clock down to ~10 MHz).
+    configureConsoleUartRefTick();
+
     /** Setup Power Management.
      *  This must run BEFORE LoRa/Bluetooth start: switching to a CPU frequency with a
      *  different PLL (240 MHz needs the 480 MHz PLL, 80/160 the 320 MHz PLL, and the chip
      *  boots at CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ) relocks the BBPLL, which the BT radio
-     *  is clocked from — doing that with BT running causes crashes/WDT resets. */
-    ElocSystem::GetInstance().pm_configure();
+     *  is clocked from — doing that with BT running causes crashes/WDT resets.
+     *
+     *  On a duty-cycle timer wake the recording mode from before deep sleep is restored
+     *  further down (wav mode + AI enable from RTC memory). Select the matching CPU
+     *  frequency profile already here so it is applied while the radios are still down:
+     *  AI modes run at a fixed 240 MHz, recording-only at min 10 / max 80 MHz. */
+    bool pmProfileApplied = false;
+    if (gIsTimerWake && getDutyCycleConfig().enable && rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC) {
+        if (rtc_duty_cycle.aiEnabled) {
+            pmProfileApplied = (ElocSystem::GetInstance().pm_requestProfile(
+                                    ElocSystem::PmProfile::AI_MAX_PERF) == ESP_OK);
+        } else if (static_cast<WAVFileWriter::Mode>(rtc_duty_cycle.recordMode) !=
+                   WAVFileWriter::Mode::disabled) {
+            pmProfileApplied = (ElocSystem::GetInstance().pm_requestProfile(
+                                    ElocSystem::PmProfile::RECORDING_LOW_POWER) == ESP_OK);
+        }
+    }
+    if (!pmProfileApplied) {
+        ElocSystem::GetInstance().pm_configure();
+    }
 
     // On fresh boot with duty cycle enabled, initialize RTC state but do NOT
     // activate the sleep cycle. Duty cycle only activates when the user
@@ -1475,6 +1550,10 @@ void app_main(void) {
                 ESP_LOGI(TAG, "esp32Time.getTime = %s", timeObject.getTime().c_str());
             }
         }
+
+        // Keep the CPU frequency in sync with the recording mode (AI = 240 MHz,
+        // recording-only = 10/80 MHz). Deferred internally while Bluetooth is up.
+        updatePmProfileFromRecordingMode();
 
         // Need to start I2S?
         // Note: Once started continues to run..

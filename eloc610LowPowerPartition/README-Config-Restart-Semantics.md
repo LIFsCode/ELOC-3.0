@@ -63,6 +63,25 @@ block fixing the other. A valid new value is persisted and takes effect on the n
 `pm_configure()` (run early, before the radios) applies and force-switches to it; the app shows the
 restart-required popup so the user can reboot immediately.
 
+**Automatic mode-based frequency profiles (layered on top of the config):** the firmware selects a PM
+*profile* from the active recording mode (`ElocSystem::pm_requestProfile()`, driven from the `main.cpp`
+loop via `updatePmProfileFromRecordingMode()`):
+
+- any AI detection mode (`recordOn_detectOn`, `recordOff_detectOn`, `recordOnEvent`) → fixed **240 MHz**
+  (min = max, DFS off);
+- recording-only without AI and without LoRa (`recordOn_detectOff`) → **min 10 / max 80 MHz**
+  (min raised to 20 for sample rates ≥ 30 kHz, see issue #30);
+- no mode active (or recording-only with LoRa enabled) → the configured `cpu*` values
+  (`CONFIG_DEFAULT` profile; the LoRa min=max override still applies).
+
+Because of the BT PLL constraint above, a profile change requested while Bluetooth is up is **deferred**
+and applied the moment the BT controller is torn down (`disableBluetooth()` → recording start with
+`bluetoothEnableDuringRecord=false`, the BT-off timeout, or a failed BT start). If BT never shuts down
+(e.g. `bluetoothEnableDuringRecord=true` and no LIS3DH for the timeout path), the device keeps running at
+the boot-time frequency. On duty-cycle timer wakes the profile matching the restored mode is applied at
+boot, before the radios start. The stored `cpu*` config is never modified by profiles — it remains the
+user's baseline.
+
 ## LoRa fields (traced)
 
 - `lorawan.loraEnable` — disable: live; enable: reboot (see table above).

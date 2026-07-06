@@ -119,12 +119,17 @@ static esp_err_t disableBluetooth() {
     }
 
     SerialBT.end();
+    // BT controller is fully stopped now: safe to apply a pending CPU frequency profile
+    // (the switch relocks the BBPLL the BT radio is clocked from).
+    ElocSystem::GetInstance().setBluetoothActive(false);
     return ESP_OK;
 }
 
 static esp_err_t enableBluetooth() {
     String nodeName = getDeviceInfo().nodeName;
     ESP_LOGI(TAG, "Enable BT with node %s", nodeName.c_str());
+    // Mark BT active BEFORE the controller starts so no PM profile switch can race the bring-up
+    ElocSystem::GetInstance().setBluetoothActive(true);
     SerialBT.begin(nodeName, false);
     vTaskDelay(pdMS_TO_TICKS(100));
     if (SerialBT.isReady()) {

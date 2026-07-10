@@ -21,189 +21,307 @@
  * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
+#ifndef GENERIC_HW
+
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <cstring>
+#include <cstdio>
 
 #include "config.h"
 
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
-#include "esp_sleep.h"
-#include "soc/rtc_wdt.h"
+#include "esp_app_format.h"
+#include "mbedtls/sha256.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <time.h>
-#include <sys/time.h>
+
+#include "ArduinoJson.h"
 
 #include "ffsutils.h"
+#include "SDCardSDIO.h"
 #include "ElocSystem.hpp"
+#include "ElocStatus.hpp"
+#include "FirmwareUpdate.hpp"
 
 static const char *TAG = "UPDATE";
 
-static const char* UPDATE_TRIGGER_FILE = "/sdcard/eloc/doUpdate.txt";
+extern SDCardSDIO sd_card;
 
-//for update
-typedef struct binary_data_t {
-    unsigned long size;
-    unsigned long remaining_size;
-    void *data;
-} binary_data_t;
+namespace fwupd {
 
-size_t fpread(void *buffer, size_t size, size_t nitems, size_t offset, FILE *fp) {
-    if (fseek(fp, offset, SEEK_SET) != 0)
-        return 0;
-    return fread(buffer, size, nitems, fp);
-}
-
-bool success=false;
-
-const esp_partition_t * checkIfCanUpdate(const char *filename, const char *partitionName) {
-
-    long fileDate = 0;
-    long partitionDate = 1;
-    struct stat st;
-    struct tm timestruct;
-    esp_app_desc_t app_info;
-    const esp_partition_t *thePartition = NULL;
-
-    stat(filename, &st);
-    fileDate = st.st_mtim.tv_sec;
-    ESP_LOGI(TAG, "%s: File creation date: %ld", filename, st.st_mtim.tv_sec); // tv_sec is a long int
-
-    // high power
-     thePartition = esp_ota_get_next_update_partition(NULL);
-    // thePartition = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, partitionName);
-
-    ESP_LOGI(TAG, "Update partition: '%s' at offset 0x%" PRIx32 " with size 0x%" PRIx32, thePartition->label, thePartition->address, thePartition->size);
-    if (esp_ota_get_partition_description(thePartition, &app_info) == ESP_OK) {
-        ESP_LOGI(TAG, "compilation_date:%s", app_info.date);
-        ESP_LOGI(TAG, "compilation_time:%s", app_info.time);
-    } else {
-        ESP_LOGI(TAG, "could not read partition information");
-        return thePartition;
+esp_err_t sha256File(const char* path, char hexOut[65]) {
+    FILE* f = fopen(path, "rb");
+    if (f == NULL) {
+        return ESP_ERR_NOT_FOUND;
     }
-
-    struct tm *timeptr, result;
-    char buf[100] = "\0";
-    strcat(buf, app_info.date);
-    strcat(buf, " ");
-    strcat(buf, app_info.time);
-    ESP_LOGI(TAG, "buf concatenated %s", buf);
-    if (strptime(buf, "%b %d %Y %H:%M:%S", &result) == NULL) {
-
-        printf("\nstrptime failed\n");
-        return NULL;
-    } else {
-        printf("tm_hour:  %d\n", result.tm_hour);
-        printf("tm_min:  %d\n", result.tm_min);
-        printf("tm_sec:  %d\n", result.tm_sec);
-        printf("tm_mon:  %d\n", result.tm_mon);
-        printf("tm_mday:  %d\n", result.tm_mday);
-        printf("tm_year:  %d\n", result.tm_year);
-        printf("tm_yday:  %d\n", result.tm_yday);
-        printf("tm_wday:  %d\n", result.tm_wday);
-
-        time_t temp; // time_t is a long in seconds.
-        partitionDate = mktime(&result);
-
-        ESP_LOGI(TAG, "partition creation date/time in unix timestamp seconds is  %ld", partitionDate);
-
-        if (partitionDate >= fileDate) {
-            ESP_LOGI(TAG, "partitionDateTime is greater or equal to fileDateTime, returning false");
-            return NULL;
-        } else {
-            ESP_LOGI(TAG, "partitionDateTime is less than fileDateTime, returning true");
-            return thePartition;
-        }
+    const size_t BUF_SIZE = 4096;
+    uint8_t* buf = static_cast<uint8_t*>(malloc(BUF_SIZE));
+    if (buf == NULL) {
+        fclose(f);
+        return ESP_ERR_NO_MEM;
     }
-}
-
-static esp_err_t validate_image_header(esp_app_desc_t *new_app_info) {
-
-    // char time[16];              /*!< Compile time */
-    // char date[16];              /*!< Compile date*/
-
-    if (new_app_info == NULL) {
-        return ESP_ERR_INVALID_ARG;
+    mbedtls_sha256_context ctx;
+    mbedtls_sha256_init(&ctx);
+    mbedtls_sha256_starts_ret(&ctx, 0 /* SHA-256, not SHA-224 */);
+    size_t n;
+    while ((n = fread(buf, 1, BUF_SIZE, f)) > 0) {
+        mbedtls_sha256_update_ret(&ctx, buf, n);
     }
-
-    const esp_partition_t *running = esp_ota_get_running_partition();
-    esp_app_desc_t running_app_info;
-    if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK) {
-        ESP_LOGI(TAG, "Running firmware version: %s", running_app_info.version);
+    bool readError = (ferror(f) != 0);
+    unsigned char digest[32];
+    mbedtls_sha256_finish_ret(&ctx, digest);
+    mbedtls_sha256_free(&ctx);
+    free(buf);
+    fclose(f);
+    if (readError) {
+        return ESP_FAIL;
     }
-
+    for (int i = 0; i < 32; i++) {
+        snprintf(&hexOut[i * 2], 3, "%02x", digest[i]);
+    }
+    hexOut[64] = '\0';
     return ESP_OK;
 }
 
-#define BUFFER_SIZE 2000
-
-void try_update(const esp_partition_t *update_partition, const char *filename) {
-    // return;
-    esp_ota_handle_t update_handle = 0;
-    esp_err_t err = esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &update_handle);
-    if (err != ESP_OK) {
-        ESP_LOGI(TAG, "esp_begin result = %s", esp_err_to_name(err));
+esp_err_t validateImageFile(const char* path, String& newVersion, String& errMsg) {
+    long fileSize = ffsutil::getFileSize(path);
+    if (fileSize <= 0) {
+        errMsg = "update file missing or empty";
+        return ESP_ERR_NOT_FOUND;
     }
-    binary_data_t data;
-    FILE *file = fopen(filename, "rb");
-    // Get file length
+    const esp_partition_t* target = esp_ota_get_next_update_partition(NULL);
+    if (target == NULL) {
+        errMsg = "no inactive OTA partition found";
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (static_cast<uint32_t>(fileSize) > target->size) {
+        errMsg = "update file larger than OTA slot (";
+        errMsg += String(fileSize);
+        errMsg += " > ";
+        errMsg += String(target->size);
+        errMsg += " bytes)";
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    FILE* f = fopen(path, "rb");
+    if (f == NULL) {
+        errMsg = "failed to open update file";
+        return ESP_ERR_NOT_FOUND;
+    }
+    /* The app descriptor sits at a fixed offset in every ESP32 app image:
+     * esp_image_header_t + esp_image_segment_header_t + esp_app_desc_t. */
+    struct {
+        esp_image_header_t image;
+        esp_image_segment_header_t segment;
+        esp_app_desc_t app;
+    } hdr;
+    size_t got = fread(&hdr, 1, sizeof(hdr), f);
+    fclose(f);
+    if (got != sizeof(hdr)) {
+        errMsg = "update file too small for image header";
+        return ESP_ERR_INVALID_SIZE;
+    }
+    if (hdr.image.magic != ESP_IMAGE_HEADER_MAGIC) {
+        errMsg = "not an ESP32 app image (bad magic)";
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (hdr.app.magic_word != ESP_APP_DESC_MAGIC_WORD) {
+        errMsg = "app descriptor missing (bad magic word)";
+        return ESP_ERR_INVALID_ARG;
+    }
+    // project_version is NUL-terminated by the build system, but don't trust it
+    char version[sizeof(hdr.app.version) + 1] = {};
+    memcpy(version, hdr.app.version, sizeof(hdr.app.version));
+    newVersion = version;
+
+    // Guard against flashing a structurally valid image of a *different*
+    // project: rollback only reverts images that crash, so a foreign image
+    // that runs stably would leave the device unreachable over BT. Compare
+    // against the running image's own descriptor — no hardcoded name.
+    char newProject[sizeof(hdr.app.project_name) + 1] = {};
+    memcpy(newProject, hdr.app.project_name, sizeof(hdr.app.project_name));
+    const esp_app_desc_t* running = esp_ota_get_app_description();
+    if (running != NULL && strcmp(newProject, running->project_name) != 0) {
+        errMsg = "image belongs to project '";
+        errMsg += newProject;
+        errMsg += "', this device runs '";
+        errMsg += running->project_name;
+        errMsg += "'";
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    ESP_LOGI(TAG, "%s: valid app image, version '%s', project '%s', size %ld",
+             path, version, newProject, fileSize);
+    return ESP_OK;
+}
+
+/// Persist the outcome of an update attempt so the app can read it after reconnect.
+static void writeResultFile(const char* fromVersion, const char* toVersion, const char* outcome) {
+    FILE* f = fopen(RESULT_FILE, "w");
+    if (f == NULL) {
+        ESP_LOGW(TAG, "Could not write %s", RESULT_FILE);
+        return;
+    }
+    StaticJsonDocument<384> doc;
+    doc["fromVersion"] = fromVersion;
+    doc["toVersion"] = toVersion;
+    doc["outcome"] = outcome;
+    doc["timestamp"] = static_cast<long>(time(NULL));
+    String out;
+    serializeJson(doc, out);
+    fputs(out.c_str(), f);
+    fclose(f);
+}
+
+}  // namespace fwupd
+
+using namespace fwupd;
+
+#define FLASH_COPY_BUF_SIZE 4096
+
+/// Stream the staged file into the inactive OTA slot and activate it.
+static esp_err_t flashStagedImage(const esp_partition_t* update_partition, const char* filename) {
+    FILE* file = fopen(filename, "rb");
+    if (file == NULL) {
+        ESP_LOGE(TAG, "Failed to open %s", filename);
+        return ESP_ERR_NOT_FOUND;
+    }
     fseek(file, 0, SEEK_END);
-    data.size = ftell(file);
-    data.remaining_size = data.size;
+    long size = ftell(file);
     fseek(file, 0, SEEK_SET);
-    ESP_LOGI(TAG, "size %lu", data.size);
-    data.data = (char *)malloc(BUFFER_SIZE);
-    while (data.remaining_size > 0) {
+    ESP_LOGI(TAG, "Flashing %ld bytes from %s to partition '%s'", size, filename, update_partition->label);
+
+    uint8_t* buf = static_cast<uint8_t*>(malloc(FLASH_COPY_BUF_SIZE));
+    if (buf == NULL) {
+        fclose(file);
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_ota_handle_t update_handle = 0;
+    esp_err_t err = esp_ota_begin(update_partition, size, &update_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_begin failed (%s)", esp_err_to_name(err));
+        free(buf);
+        fclose(file);
+        return err;
+    }
+
+    long remaining = size;
+    while (remaining > 0) {
         ElocSystem::GetInstance().notifyFwUpdate();
-        size_t size = data.remaining_size <= BUFFER_SIZE ? data.remaining_size : BUFFER_SIZE;
-        fpread(data.data, size, 1, data.size - data.remaining_size, file);
-        err = esp_ota_write(update_handle, data.data, size);
-        if (data.remaining_size <= BUFFER_SIZE) {
+        size_t chunk = (remaining < FLASH_COPY_BUF_SIZE) ? remaining : FLASH_COPY_BUF_SIZE;
+        if (fread(buf, 1, chunk, file) != chunk) {
+            ESP_LOGE(TAG, "Read error on %s with %ld bytes remaining", filename, remaining);
+            err = ESP_FAIL;
             break;
         }
-        data.remaining_size -= BUFFER_SIZE;
+        err = esp_ota_write(update_handle, buf, chunk);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "esp_ota_write failed (%s) with %ld bytes remaining", esp_err_to_name(err), remaining);
+            break;
+        }
+        remaining -= chunk;
+    }
+    free(buf);
+    fclose(file);
+
+    if (err != ESP_OK) {
+        esp_ota_abort(update_handle);
+        return err;
     }
 
-    ESP_LOGI(TAG, "Ota result = %d", err);
     err = esp_ota_end(update_handle);
     if (err != ESP_OK) {
         if (err == ESP_ERR_OTA_VALIDATE_FAILED) {
             ESP_LOGE(TAG, "Image validation failed, image is corrupted");
         }
         ESP_LOGE(TAG, "esp_ota_end failed (%s)!", esp_err_to_name(err));
-    } else {
-        err = esp_ota_set_boot_partition(update_partition);
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG, "esp_ota_set_boot_partition failed (%s)!", esp_err_to_name(err));
-            return;
-        }
-        ESP_LOGI(TAG, "update success.");
-        success = true;
+        return err;
     }
+    err = esp_ota_set_boot_partition(update_partition);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_set_boot_partition failed (%s)!", esp_err_to_name(err));
+        return err;
+    }
+    ESP_LOGI(TAG, "update success.");
+    return ESP_OK;
 }
-
 
 bool updateFirmware() {
 
-    FILE *f = fopen("/sdcard/eloc/update/elocupdate.bin", "r");
-
-    if (f == NULL) {
-        fclose(f);
-        ESP_LOGI(TAG, "No update file found in /sdcard/eloc/update");
-    } else {
-        fclose(f);
-        ESP_LOGI(TAG, "Trying to update ELOC Firmware");
-        const esp_partition_t *updatePartition = checkIfCanUpdate("/sdcard/eloc/update/elocupdate.bin", "partition1");
-        if (updatePartition != NULL) {
-        }
-        try_update(updatePartition, "/sdcard/eloc/update/elocupdate.bin");
+    if (!ffsutil::fileExist(STAGED_BIN)) {
+        ESP_LOGI(TAG, "No update file found at %s", STAGED_BIN);
+        return false;
     }
-    if (success) {
+
+    const char* fromVersion = gFirmwareVersion.c_str();
+
+    // 1) Image sanity: magic, app descriptor, size vs. the inactive slot.
+    //    No date/version comparison — downgrades are legitimate; the device
+    //    only guards integrity.
+    String newVersion;
+    String errMsg;
+    if (validateImageFile(STAGED_BIN, newVersion, errMsg) != ESP_OK) {
+        ESP_LOGE(TAG, "Refusing update: %s", errMsg.c_str());
+        writeResultFile(fromVersion, "", "refused: invalid image");
+        ElocSystem::GetInstance().notifyFwUpdateError();
+        return false;
+    }
+
+    // 2) SHA-256 verification against the metadata file, when present. The
+    //    BT path (setFwUpdateApply) always writes it; the manual SD-swap path
+    //    may omit it — warn but proceed for backward compatibility.
+    if (ffsutil::fileExist(STAGED_META)) {
+        String expectedSha;
+        {
+            FILE* f = fopen(STAGED_META, "r");
+            if (f != NULL) {
+                char buf[512] = {};
+                fread(buf, 1, sizeof(buf) - 1, f);
+                fclose(f);
+                StaticJsonDocument<512> doc;
+                if (deserializeJson(doc, buf) == DeserializationError::Ok) {
+                    expectedSha = doc["sha256"] | "";
+                }
+            }
+        }
+        if (expectedSha.length() == 64) {
+            char actualSha[65];
+            if (sha256File(STAGED_BIN, actualSha) != ESP_OK ||
+                !expectedSha.equalsIgnoreCase(actualSha)) {
+                ESP_LOGE(TAG, "SHA-256 mismatch: expected %s", expectedSha.c_str());
+                writeResultFile(fromVersion, newVersion.c_str(), "refused: sha256 mismatch");
+                ElocSystem::GetInstance().notifyFwUpdateError();
+                return false;
+            }
+            ESP_LOGI(TAG, "SHA-256 verified: %s", actualSha);
+        } else {
+            ESP_LOGW(TAG, "%s has no usable sha256 field, skipping hash check", STAGED_META);
+        }
+    } else {
+        ESP_LOGW(TAG, "No %s metadata — manual SD-swap update without hash check", STAGED_META);
+    }
+
+    ESP_LOGI(TAG, "Updating ELOC firmware %s -> %s", fromVersion, newVersion.c_str());
+    const esp_partition_t* updatePartition = esp_ota_get_next_update_partition(NULL);
+    ESP_LOGI(TAG, "Update partition: '%s' at offset 0x%" PRIx32 " with size 0x%" PRIx32,
+             updatePartition->label, updatePartition->address, updatePartition->size);
+
+    esp_err_t err = flashStagedImage(updatePartition, STAGED_BIN);
+
+    if (err == ESP_OK) {
+        writeResultFile(fromVersion, newVersion.c_str(), "flashed");
+        // Clean up the staged files so the next boot doesn't re-flash and a
+        // fresh transfer never resumes into a stale image.
+        remove(STAGED_BIN);
+        remove(STAGED_META);
+        remove(TRANSFER_META);
+
         // Status LED is on the PCA9557 IO expander (GPIO4 is now the GPS UART TX).
         if (ElocSystem::GetInstance().hasIoExpander()) {
             ElocSystem::GetInstance().getIoExpander().setOutputBit(ELOC_IOEXP::LED_STATUS, true);
@@ -213,28 +331,61 @@ bool updateFirmware() {
 
         ESP_LOGI(TAG, "Prepare to restart system!");
         esp_restart();
-
-        return true;
-
-    } else {
-        ESP_LOGI(TAG, "No update was performed");
-        ElocSystem::GetInstance().notifyFwUpdateError();
-        return false;
+        return true;  // not reached
     }
+
+    ESP_LOGE(TAG, "Update failed (%s), keeping current firmware", esp_err_to_name(err));
+    writeResultFile(fromVersion, newVersion.c_str(), "failed: flash error");
+    ElocSystem::GetInstance().notifyFwUpdateError();
+    return false;
 }
 
 
 void checkForFirmwareUpdateFile() {
 
-    if (ffsutil::fileExist(UPDATE_TRIGGER_FILE)) {
-        ESP_LOGI(TAG, "%s exists: Doing Firmware update now...", UPDATE_TRIGGER_FILE);
-        if (remove(UPDATE_TRIGGER_FILE)) {
-            ESP_LOGI(TAG, "%s deleted successfully... doing update", UPDATE_TRIGGER_FILE);
+    if (ffsutil::fileExist(TRIGGER_FILE)) {
+        ESP_LOGI(TAG, "%s exists: Doing Firmware update now...", TRIGGER_FILE);
+        if (remove(TRIGGER_FILE) == 0) {
+            ESP_LOGI(TAG, "%s deleted successfully... doing update", TRIGGER_FILE);
         } else {
-            ESP_LOGI(TAG, "unable to delete file %s", UPDATE_TRIGGER_FILE);
+            ESP_LOGI(TAG, "unable to delete file %s", TRIGGER_FILE);
         }
-        // TODO: store the update.bin filename in the update file and read it in here
         updateFirmware();
     }
     return;
 }
+
+void markRunningFirmwareValid() {
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    esp_ota_img_states_t state;
+    if (esp_ota_get_state_partition(running, &state) != ESP_OK) {
+        return;
+    }
+    if (state == ESP_OTA_IMG_PENDING_VERIFY) {
+        esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "First boot after update: marked firmware %s as valid (rollback cancelled)",
+                     gFirmwareVersion.c_str());
+            // Promote the boot-time "flashed" record to a confirmed success,
+            // keeping the fromVersion recorded by the updater.
+            if (sd_card.isMounted()) {
+                String fromVersion;
+                FILE* f = fopen(RESULT_FILE, "r");
+                if (f != NULL) {
+                    char buf[512] = {};
+                    fread(buf, 1, sizeof(buf) - 1, f);
+                    fclose(f);
+                    StaticJsonDocument<384> doc;
+                    if (deserializeJson(doc, buf) == DeserializationError::Ok) {
+                        fromVersion = doc["fromVersion"] | "";
+                    }
+                }
+                writeResultFile(fromVersion.c_str(), gFirmwareVersion.c_str(), "success");
+            }
+        } else {
+            ESP_LOGE(TAG, "esp_ota_mark_app_valid_cancel_rollback failed (%s)", esp_err_to_name(err));
+        }
+    }
+}
+
+#endif  // GENERIC_HW

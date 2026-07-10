@@ -33,6 +33,14 @@
 /// @return 
 esp_err_t BluetoothServerSetup(bool installGpioIsr);
 
+/**
+ * Route the raw SPP byte stream to FwUpdateTransfer::feed() (binary firmware
+ * transfer mode) instead of the command parser. Called by setFwUpdateBegin
+ * before its response is sent; wait_for_bt_command() unhooks it again when
+ * the transfer state machine leaves binary mode.
+ */
+void btEnterFwBinaryMode();
+
 
 // Control sound recording
 extern WAVFileWriter wav_writer;

@@ -1276,6 +1276,12 @@ void app_main(void) {
             ESP_LOGI(TAG, "BluetoothServerSetup failed with %s", esp_err_to_name(err));
         }
 
+        // Post-boot self-test passed (SD mounted, config loaded, BT server started):
+        // confirm this image so the bootloader's OTA rollback doesn't revert it.
+        // The first boot after an update is always a full boot (esp_restart), never
+        // a timer wake, so this path is guaranteed to run after every update.
+        markRunningFirmwareValid();
+
     #ifdef USE_PERF_MONITOR
         ESP_LOGI(TAG, "Creating Performance Monitor task...");
         if (esp_err_t err = PerfMonitor::setup()) {

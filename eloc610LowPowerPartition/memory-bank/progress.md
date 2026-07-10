@@ -38,6 +38,27 @@
 - **Configurable timeout,** auto-off, enable-on-tapping (accelerometer)
 - **Runtime configuration** changes written to SD card/SPIFFS
 
+### Firmware Update — 🔨 Built, hardware verification pending (2026-07-06, V1.47)
+- **SD updater fixed** (Phase 0): NULL-deref/error-handling bugs gone, date-comparison removed
+  (integrity checks only, downgrades allowed), optional SHA-256 via `elocupdate.json`,
+  `result.json` outcome file, **bootloader rollback** (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`)
+  with post-boot confirm in `main.cpp`. Manual SD-swap path unchanged and still supported.
+- **BT transfer protocol** (Phase 1): `setFwUpdateBegin`/binary frames/`getFwUpdateStatus`/
+  `setFwUpdateAbort`/`setFwUpdateApply`; preflight (recording/AI off, SD, free space, battery
+  3.1 V LiFePo / 3.5 V LiPo, slot size); resume across disconnects; `fwUpdateProto`/`buildVariant`
+  advertised in `getStatus`. Counterpart UI in the Android app (Device Settings → Advanced).
+- **Review fixes 2026-07-10 (V1.51)**: fully-staged resume no longer deadlocks (`begin()` skips
+  binary mode when the partial is already complete; Begin response gained `state:
+  "receiving"|"staged"`; app applies directly, or sends the len==0 sentinel against V1.47–V1.50
+  firmware); `validateImageFile()` now refuses images from a different project
+  (`esp_app_desc_t.project_name` vs the running image — foreign images that boot stably would
+  escape rollback); app variant guard reads `OpenableColumns.DISPLAY_NAME` instead of the opaque
+  `lastPathSegment`. Details + deferred minor findings in `activeContext.md`.
+- Verification still owed: SD-swap regression, power-pull during flash,
+  crashing-image auto-rollback, full BT transfer + mid-transfer drop + resume on hardware
+  (including the fully-staged-resume path: drop BT right after the last frame, then re-run the
+  update). Partition0 ground truth on deployed devices still gates *field rollout* (see plan doc).
+
 ### Power Management — ✅ Operational
 - **Dynamic frequency scaling** (DFS) with configurable min/max
 - **Automatic mode-based CPU frequency profiles** (2026-07-05, not yet hardware-verified): AI modes

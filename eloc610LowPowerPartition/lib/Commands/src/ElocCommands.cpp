@@ -37,6 +37,9 @@
 #include "ElocConfig.hpp"
 #include "ElocStatus.hpp"
 #include "Battery.hpp"
+#include "BluetoothServer.hpp"
+#include "FwUpdateTransfer.hpp"
+#include "esp_ota_ops.h"
 #include "../../ElocHardware/src/config.h"
 #include "../../ElocHardware/src/ElocLora.hpp"
 #include "macros.hpp"
@@ -116,7 +119,7 @@ void addEnum(JsonObject& object, T val) {
 
 void printStatus(String& buf) {
 
-    StaticJsonDocument<1024> doc;
+    StaticJsonDocument<1536> doc;
     JsonObject battery = doc.createNestedObject("battery");
     battery["type"]                = Battery::GetInstance().getBatType();
     battery["state"]               = Battery::GetInstance().getState();
@@ -144,6 +147,17 @@ void printStatus(String& buf) {
 #endif
     JsonObject device = doc.createNestedObject("device");
     device["firmware"]                   = gFirmwareVersion;
+    // Firmware-update capability advertisement: the app gates its update UI on
+    // fwUpdateProto and picks the matching release binary via buildVariant.
+    // Old apps ignore unknown keys.
+    device["fwUpdateProto"]              = 1;
+#ifdef EDGE_IMPULSE_ENABLED
+    device["buildVariant"]               = "ei";
+#else
+    device["buildVariant"]               = "no-ai";
+#endif
+    const esp_partition_t* otaSlot = esp_ota_get_next_update_partition(NULL);
+    device["otaSlotSize"]                = otaSlot ? otaSlot->size : 0;
     device["Uptime[h]"]                  = round((timeObject.getUpTimeSecs() / 60.f / 60.f), 3);
     device["totalRecordingTime[h]"]      = round((wav_writer.get_recording_time_total_sec() / 60.f / 60.f), 3);
     // Current device clock: a human-readable local-time string for display plus the raw UTC epoch
@@ -430,6 +444,15 @@ void cmd_SetTime(CmdParser *cmdParser) {
 
 void cmd_SetRecordMode(CmdParser* cmdParser) {
     CmdResponse& resp = CmdResponse::getInstance();
+
+    // Defense in depth: a firmware transfer requires recording/AI off and the
+    // command parser is bypassed while it is receiving, but never allow a mode
+    // change to slip in around a transfer.
+    if (FwUpdateTransfer::GetInstance().isBinaryMode()) {
+        resp.setError(ESP_ERR_INVALID_STATE, "firmware transfer in progress");
+        return;
+    }
+
     const char* req_mode = cmdParser->getValueFromKey("mode");
     // rec_req_t rec_req;
 
@@ -676,12 +699,12 @@ void cmd_GetSdCardSpeedTest(CmdParser *cmdParser) {
 }
 
 static void rebootTimerCallback(void* /*arg*/) {
-    ESP_LOGW(TAG, "Restarting device now (requested via 'reboot' command)");
+    ESP_LOGW(TAG, "Restarting device now (scheduled restart)");
     esp_restart();
 }
 
-void cmd_Reboot(CmdParser *cmdParser) {
-    CmdResponse& resp = CmdResponse::getInstance();
+/// Restart shortly after returning so the command response gets flushed over Bluetooth first.
+static esp_err_t scheduleRestart(uint64_t delayUs) {
     static esp_timer_handle_t rebootTimer = nullptr;
     if (rebootTimer == nullptr) {
         const esp_timer_create_args_t timerArgs = {
@@ -693,18 +716,102 @@ void cmd_Reboot(CmdParser *cmdParser) {
         esp_err_t err = esp_timer_create(&timerArgs, &rebootTimer);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Failed to create reboot timer with %s", esp_err_to_name(err));
-            resp.setError(err, "Failed to schedule reboot");
-            return;
+            return err;
         }
     }
-    // delay the restart so the command response gets flushed over Bluetooth first
-    esp_err_t err = esp_timer_start_once(rebootTimer, 1000 * 1000);  // 1 s
-    if ((err != ESP_OK) && (err != ESP_ERR_INVALID_STATE)) {  // INVALID_STATE = reboot already pending
+    esp_err_t err = esp_timer_start_once(rebootTimer, delayUs);
+    if (err == ESP_ERR_INVALID_STATE) {  // restart already pending
+        err = ESP_OK;
+    }
+    if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start reboot timer with %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
+void cmd_Reboot(CmdParser *cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    if (esp_err_t err = scheduleRestart(1000 * 1000)) {
         resp.setError(err, "Failed to schedule reboot");
         return;
     }
     resp.setResultSuccess("rebooting");
+}
+
+/****************************************************************************************
+ * Firmware update over Bluetooth (see README-FirmwareUpdate-From-App-Plan.md, Phase 1)
+ ****************************************************************************************/
+
+void cmd_SetFwUpdateBegin(CmdParser *cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    const char* meta = cmdParser->getValueFromKey("meta");
+    if (!meta) {
+        resp.setError(ESP_ERR_INVALID_ARG, "Missing key 'meta'");
+        return;
+    }
+    String errMsg;
+    uint32_t resumeOffset = 0;
+    uint16_t chunkSize = 0;
+    esp_err_t err = FwUpdateTransfer::GetInstance().begin(meta, errMsg, resumeOffset, chunkSize);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "setFwUpdateBegin refused: %s", errMsg.c_str());
+        resp.setError(err, errMsg.c_str());
+        return;
+    }
+    // begin() skips binary mode when the staged file is already complete
+    // (resume after the final ack was lost) — only hook the raw data sink
+    // when there is actually something to receive. Hooking happens before
+    // the response goes out: the first binary frame can never race past the
+    // response and hit the command parser.
+    bool receiving = FwUpdateTransfer::GetInstance().isBinaryMode();
+    if (receiving) {
+        btEnterFwBinaryMode();
+    }
+
+    StaticJsonDocument<128> doc;
+    doc["resumeOffset"] = resumeOffset;
+    doc["chunkSize"] = chunkSize;
+    // "staged" tells the app to skip streaming and apply directly
+    doc["state"] = receiving ? "receiving" : "staged";
+    String& payload = resp.getPayload();
+    serializeJson(doc, payload);
+    resp.setResultSuccess(payload);
+}
+
+void cmd_GetFwUpdateStatus(CmdParser *cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    String& payload = resp.getPayload();
+    FwUpdateTransfer::GetInstance().statusJson(payload);
+    resp.setResultSuccess(payload);
+}
+
+void cmd_SetFwUpdateAbort(CmdParser *cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    const char* discardStr = cmdParser->getValueFromKey("discard");
+    bool discard = (discardStr != NULL) && !strcasecmp(discardStr, "true");
+    String msg;
+    FwUpdateTransfer::GetInstance().abortTransfer(discard, msg);
+    String& payload = resp.getPayload();
+    payload = "\"";
+    payload += msg;
+    payload += "\"";
+    resp.setResultSuccess(payload);
+}
+
+void cmd_SetFwUpdateApply(CmdParser *cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    String errMsg;
+    esp_err_t err = FwUpdateTransfer::GetInstance().apply(errMsg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "setFwUpdateApply refused: %s", errMsg.c_str());
+        resp.setError(err, errMsg.c_str());
+        return;
+    }
+    if ((err = scheduleRestart(1500 * 1000))) {
+        resp.setError(err, "update staged but restart failed - reboot manually");
+        return;
+    }
+    resp.setResultSuccess("\"applying - device will restart and flash the update\"");
 }
 
 bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
@@ -720,6 +827,10 @@ bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     success &= cmdCallback.addCmd("setBattery", &cmd_SetBattery, "Set battery calibration values. Mode otions: \"clear\", \"add\", cal in the format {\"<esp meas voltage>\" : <real voltage>} e.g. setBattery#mode=add#cal={\"3.0\":3.1}");
     success &= cmdCallback.addCmd("getBattery", &cmd_GetBattery, "read the battery calibration or the raw (uncalibrated voltage). Mode options: \"raw\", \"cal\"");
 success &= cmdCallback.addCmd("getSdSpeedTest", &cmd_GetSdCardSpeedTest, "write and read a blocks (1k - 64k) of data to/from the sd card and check the speed. Additinoal option \"size\", size of overall file (default 512 kByte), -1 means file size = block size, e.g. getSdSpeedTest#size=524288");
+    success &= cmdCallback.addCmd("setFwUpdateBegin", &cmd_SetFwUpdateBegin, "Start a firmware transfer over BT. meta JSON: size, sha256, version, variant, chunkSize (default 4096, max 8192). Returns {resumeOffset, chunkSize} and switches the link to binary frame mode, e.g. setFwUpdateBegin#meta={\"size\":123456,\"sha256\":\"<64 hex>\",\"version\":\"1.23\",\"variant\":\"ei\",\"chunkSize\":4096}");
+    success &= cmdCallback.addCmd("getFwUpdateStatus", &cmd_GetFwUpdateStatus, "Status of the staged firmware transfer: {state: idle/receiving/staged/error, bytesReceived, expectedSize, sha256}. Drives resume and app UI");
+    success &= cmdCallback.addCmd("setFwUpdateAbort", &cmd_SetFwUpdateAbort, "Abort the current firmware transfer. Optional discard=true also deletes the partial file (otherwise it is kept for resume), e.g. setFwUpdateAbort#discard=true");
+    success &= cmdCallback.addCmd("setFwUpdateApply", &cmd_SetFwUpdateApply, "Verify the staged firmware (SHA-256 + image header) and restart to flash it via the SD updater");
 
     if (!success) {
         ESP_LOGE(TAG, "Failed to add all BT commands!");

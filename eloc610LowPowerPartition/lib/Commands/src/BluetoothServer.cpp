@@ -47,6 +47,7 @@
 #include "ElocCommands.hpp"
 #include "BluetoothServer.hpp"
 #include "FirmwareUpdate.hpp"
+#include "FwUpdateTransfer.hpp"
 #include "ElocConfig.hpp"
 #include "ElocSystem.hpp"
 #include "ElocStatus.hpp"
@@ -200,6 +201,31 @@ static CmdBuffer<2048> cmdBuffer;
 static CmdParser     cmdParser;
 static CmdAdvCallback<MAX_COMMANDS> cmdCallback;
 
+/* ---- binary firmware transfer mode -------------------------------------- */
+
+// Registered while a BT firmware transfer is receiving: bypasses the (512-byte,
+// lossy on overflow) BluetoothSerial RX queue and the command parser, feeding
+// the raw stream straight into the transfer state machine.
+static void fwBinaryDataSink(const uint8_t* buffer, size_t size) {
+    FwUpdateTransfer::GetInstance().feed(buffer, size);
+}
+
+void btEnterFwBinaryMode() {
+    SerialBT.onData(fwBinaryDataSink);
+}
+
+static void btExitFwBinaryMode() {
+    SerialBT.onData(nullptr);
+    FwUpdateTransfer::GetInstance().releaseBinaryResources();
+    // drop any junk that reached the normal RX queue while switching over
+    cmdBuffer.clear();
+    while (SerialBT.available()) {
+        SerialBT.read();
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+
 void cmd_GetHelp(CmdParser* cmdParser) {
     CmdResponse& resp = CmdResponse::getInstance();
     String& help = resp.getPayload(); // write directly to output buffer to avoid reallocation
@@ -227,6 +253,16 @@ void wait_for_bt_command() {
     static bool sentSettings = false;
 
     String serialIN;
+
+    // Binary firmware transfer active: pump frames instead of parsing commands.
+    // Every exit path (complete/end-of-stream/error/timeout/disconnect) returns
+    // false exactly once — unhook the data callback and free the RX resources.
+    if (FwUpdateTransfer::GetInstance().isBinaryMode()) {
+        if (!FwUpdateTransfer::GetInstance().service(SerialBT, SerialBT.connected())) {
+            btExitFwBinaryMode();
+        }
+        return;
+    }
 
     if (wav_writer.get_mode() != WAVFileWriter::Mode::disabled &&
         !getConfig().bluetoothEnableDuringRecord) {
@@ -361,7 +397,13 @@ esp_err_t BluetoothServerSetup(bool installGpioIsr) {
     // a single event is enough, it is only used to trigger the start of BT
     gpio_evt_queue = xQueueCreate(1, sizeof(uint8_t));
 
-    xTaskCreate(wakeup_task, "BT Server", 4096, NULL, TASK_PRIO_CMD, NULL);
+    // 8 KB, raised from 4 KB: getStatus serializes a large JSON document on this
+    // task's stack (StaticJsonDocument), and if the SD log needs rotating during
+    // the call it descends into the deep FatFS/VFS stat path (vfs_fat_stat ->
+    // prepend_drive_to_path). The two together overran the old 4 KB stack
+    // (double-exception panic in _xt_alloca_exc). Keep headroom here rather than
+    // shrinking the status document.
+    xTaskCreate(wakeup_task, "BT Server", 8192, NULL, TASK_PRIO_CMD, NULL);
 
     if (!ElocSystem::GetInstance().hasLIS3DH()) {
         ESP_LOGW(TAG, "No LIS3DH avaiable! No possibility to enable BT during runtime! System will enable BT continously to guarantee communication...");

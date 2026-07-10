@@ -12,8 +12,9 @@ Before starting any non-trivial task, read the files in `memory-bank/` — they 
 - `memory-bank/activeContext.md` — current work focus, recent changes, decisions in flight
 - `memory-bank/progress.md` — what works, what's left, known issues
 - `memory-bank/productContext.md` — product motivation
+- `memory-bank/changelog.md` — dated history of *completed* work, moved out of `activeContext.md`; read only when you need the history
 
-`.clinerules` documents the workflow expectation: read all six on every task. When you finish a significant change, update `activeContext.md` and `progress.md` so the next session has the latest state. The user can trigger a full review with the phrase **"update memory bank"**.
+`.clinerules` documents the workflow expectation: read all six core files on every task. When you finish a significant change, update `activeContext.md` and `progress.md` so the next session has the latest state — and when a work stream is *finished*, move its dated entry from `activeContext.md` → `changelog.md` (verbatim, newest first) so activeContext stays focused on current work. The user can trigger a full review with the phrase **"update memory bank"**.
 
 Auxiliary deep-dives also live at the repo root: `README-DutyCycle-and-LoRa-Cooldown.md`, `README-DutyCycle-BugFixes.md`, `README-LoRa Session Persistence.md`, `README-DMM-4026-B-I2S-R.md`, `README-ai.md`, `README-nvs.md`, `README-Config-Restart-Semantics.md` (which `setConfig` fields apply live vs. require a reboot).
 

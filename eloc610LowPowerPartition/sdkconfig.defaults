@@ -24,6 +24,17 @@ CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 
 #
+# Bootloader / OTA rollback
+#
+# A freshly flashed OTA image boots in PENDING_VERIFY state; main.cpp calls
+# esp_ota_mark_app_valid_cancel_rollback() after the post-boot self-test
+# (markRunningFirmwareValid). If the new image crashes before that, the
+# bootloader reverts to the previous slot. Only protects updates from this
+# firmware version onward; devices with an older factory bootloader (built
+# without rollback) degrade gracefully to the previous behavior.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+#
 # Bluetooth
 #
 CONFIG_BT_ENABLED=y

@@ -225,6 +225,21 @@ void ElocGPS::syncTimeFromGps() {
     if (!mGps.date.isValid() || !mGps.time.isValid()) {
         return;
     }
+    // TinyGPS++ commits the RMC date/time UNCONDITIONALLY (see its endOfTermHandler) — even for a
+    // "void" (status 'V') sentence the module keeps emitting while tracking NO satellites (sats=0).
+    // That free-running-RTC time is fresh (age ~0) but wrong: seen in the field frozen for tens of
+    // seconds and then jumping 40+ minutes, and previously reappearing as a backwards clock step
+    // (WAV files whose modified time preceded their creation time). So a fresh sentence is not
+    // enough — the date/time is only satellite-disciplined when the SAME fix cycle also produced a
+    // real position solution. Only location.commit() is gated on an actual fix, so use it as the
+    // trust signal: require the fix to be valid AND fresh (isValid() latches true off the last good
+    // fix, so its age must also be checked; the module emits at 1 Hz, so a live fix is < ~1.5 s old).
+    // App-set time is authoritative and GPS only trims drift here, so declining to trim without a
+    // genuine fix simply keeps the good clock instead of poisoning it.
+    constexpr uint32_t GPS_FIX_MAX_AGE_MS = 1500;
+    if (!mGps.location.isValid() || mGps.location.age() > GPS_FIX_MAX_AGE_MS) {
+        return;
+    }
     // Sanity guard against pre-lock garbage dates (module may emit year 2000/2080 before almanac).
     if (mGps.date.year() < 2024 || mGps.date.year() > 2099) {
         return;

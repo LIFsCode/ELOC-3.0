@@ -22,6 +22,25 @@ GPS integration + burst power-saving (June 2026), duty-cycle deep sleep + 24h Lo
 
 ## Recent Changes
 
+- **Real version embedded in app descriptor; project name deliberately unchanged** (2026-07-11,
+  V1.52): top-level `CMakeLists.txt` now derives `PROJECT_VER` at configure time by parsing the
+  `VERSION` define out of `include/project_config.h` (no duplicated version string; header added
+  to `CMAKE_CONFIGURE_DEPENDS` so editing it re-triggers CMake), set before `project()` so
+  ESP-IDF's override picks it up. The built `esp_app_desc_t` now carries
+  `version = "ELOC-P_V1.52"` instead of the git-describe fallback, which alone fixes the app's
+  false "RolledBack" report on same-version reflashes and the confusing update dialog (it used
+  to show the git hash instead of a real version).
+  `project()` was **kept as `idf-wav-sdcard`** (an earlier attempt to rename it to `ELOC` was
+  reverted): `FirmwareUpdate.cpp`'s `validateImageFile()` project-name guard (added 2026-07-10)
+  runs on the *currently deployed, unchangeable* firmware and rejects any incoming image whose
+  `project_name` differs from its own — since it gates both the BT-staged path and the manual
+  SD-swap fallback (same `updateFirmware()`/`STAGED_BIN` code path), renaming the project in
+  V1.52 would have made this release un-installable on any device still running V1.51 or earlier,
+  via either update path. Instead, `validateImageFile()` was given a minimal forward-compat
+  allowlist: it now also accepts an incoming image whose `project_name == "ELOC"` (logged as
+  "known future project name, accepting"), so a genuine project rename can ship cleanly in a
+  later release once the whole fleet is on ≥V1.52.
+
 - **BT firmware update review fixes** (2026-07-10, V1.51; app changes in the same cycle):
   - **Fully-staged resume deadlock fixed.** Previously, when a resume found the staged file
     already complete (`resumeOffset == size`, e.g. the final "staged" ack was lost in a

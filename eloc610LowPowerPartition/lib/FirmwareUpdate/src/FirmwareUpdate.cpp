@@ -142,17 +142,24 @@ esp_err_t validateImageFile(const char* path, String& newVersion, String& errMsg
     // Guard against flashing a structurally valid image of a *different*
     // project: rollback only reverts images that crash, so a foreign image
     // that runs stably would leave the device unreachable over BT. Compare
-    // against the running image's own descriptor — no hardcoded name.
+    // against the running image's own descriptor — no hardcoded name, except
+    // for "ELOC", allowlisted so a future release can rename the CMake
+    // project once the whole fleet has moved past this version.
     char newProject[sizeof(hdr.app.project_name) + 1] = {};
     memcpy(newProject, hdr.app.project_name, sizeof(hdr.app.project_name));
     const esp_app_desc_t* running = esp_ota_get_app_description();
     if (running != NULL && strcmp(newProject, running->project_name) != 0) {
-        errMsg = "image belongs to project '";
-        errMsg += newProject;
-        errMsg += "', this device runs '";
-        errMsg += running->project_name;
-        errMsg += "'";
-        return ESP_ERR_INVALID_ARG;
+        if (strcmp(newProject, "ELOC") == 0) {
+            ESP_LOGI(TAG, "%s: project '%s' differs from running '%s', but is a known future "
+                          "project name, accepting", path, newProject, running->project_name);
+        } else {
+            errMsg = "image belongs to project '";
+            errMsg += newProject;
+            errMsg += "', this device runs '";
+            errMsg += running->project_name;
+            errMsg += "'";
+            return ESP_ERR_INVALID_ARG;
+        }
     }
 
     ESP_LOGI(TAG, "%s: valid app image, version '%s', project '%s', size %ld",

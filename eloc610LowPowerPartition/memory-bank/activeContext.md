@@ -22,6 +22,17 @@ GPS integration + burst power-saving (June 2026), duty-cycle deep sleep + 24h Lo
 
 ## Recent Changes
 
+- **Stale-PROJECT_VER guard pre-script** (2026-07-19): the V1.52 `CMAKE_CONFIGURE_DEPENDS`
+  mechanism (next entry) turned out **not to work under PlatformIO** — PlatformIO builds with
+  SCons and runs the CMake configure only once, caching `PROJECT_VER` in
+  `project_description.json`, so a `VERSION` bump in `project_config.h` kept stamping the *old*
+  version into `esp_app_desc_t` (symptom: app's update dialog showed a bogus V1.53→V1.52
+  "downgrade" for a freshly built V1.53 bin). New `tools/checkProjectVer.py` (wired as a
+  `pre:` script in `platformio.ini`) compares the header's `VERSION` against the cached
+  `project_version` and deletes `CMakeCache.txt`/`project_description.json` on mismatch,
+  forcing a reconfigure so version bumps are self-correcting. Verified: mismatch path fixed the
+  embedded version manually; match path builds clean (4.5 min incremental).
+
 - **Real version embedded in app descriptor; project name deliberately unchanged** (2026-07-11,
   V1.52): top-level `CMakeLists.txt` now derives `PROJECT_VER` at configure time by parsing the
   `VERSION` define out of `include/project_config.h` (no duplicated version string; header added

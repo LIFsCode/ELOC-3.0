@@ -50,13 +50,14 @@ extern ESP32Time timeObject;
 
 // Lean by design: internal SRAM is nearly full.
 #define GPS_RX_RING_BYTES   512   // NMEA @ 9600 baud ~= 960 B/s, drained continuously
-#define GPS_TASK_STACK      3072
+#define GPS_TASK_STACK      4096  // logStatus() does %f printf — 3072 left too little headroom
 #define GPS_TASK_PRIO       2
 #define GPS_TASK_CORE       0
 #define GPS_READ_BUF        256   // local stack buffer for uart_read_bytes
 
 ElocGPS::ElocGPS() :
-    mGps(), mTaskHandle(nullptr), mInitialized(false), mLastUtcEpoch(0) {
+    mGps(), mTaskHandle(nullptr), mInitialized(false),
+    mShutdownReq(false), mTaskExited(false), mLastUtcEpoch(0) {
 }
 
 ElocGPS::~ElocGPS() {
@@ -112,6 +113,8 @@ esp_err_t ElocGPS::init() {
         return err;
     }
 
+    mShutdownReq = false;
+    mTaskExited = false;
     BaseType_t ok = xTaskCreatePinnedToCore(&ElocGPS::taskWrapper, "gps", GPS_TASK_STACK,
                                             this, GPS_TASK_PRIO, &mTaskHandle, GPS_TASK_CORE);
     if (ok != pdPASS) {
@@ -133,9 +136,23 @@ esp_err_t ElocGPS::deinit() {
         return ESP_OK;  // nothing to tear down
     }
 
-    // 1) Stop the reader task first so nothing touches the UART while we remove it.
+    // 1) Stop the reader task first so nothing touches the UART while we remove it. Cooperative
+    //    shutdown only — a vTaskDelete() from here can land while the task holds the esp_log mutex
+    //    (it logs constantly) and orphans it, which panics the system minutes to hours later with
+    //    "vTaskPriorityDisinheritAfterTimeout (pxTCB->uxMutexesHeld)". The task polls mShutdownReq
+    //    at least every 200 ms (its uart_read_bytes timeout), acks via mTaskExited — touching
+    //    nothing else after the ack — and deletes itself.
     if (mTaskHandle) {
-        vTaskDelete(mTaskHandle);
+        mShutdownReq = true;
+        for (int waitedMs = 0; !mTaskExited && waitedMs < 2000; waitedMs += 10) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        if (!mTaskExited) {
+            // Should be impossible (the task never blocks longer than 200 ms). Last resort: the old
+            // unsafe delete, so a wedged GPS task cannot keep the module powered forever.
+            ESP_LOGE(TAG, "GPS task did not exit within 2 s, force-deleting it");
+            vTaskDelete(mTaskHandle);
+        }
         mTaskHandle = nullptr;
     }
 
@@ -176,7 +193,7 @@ void ElocGPS::gpsTask() {
     int64_t nextLogUs = esp_timer_get_time();   // log immediately on first pass, then every interval
     int64_t nextSyncUs = esp_timer_get_time();
 
-    while (true) {
+    while (!mShutdownReq) {
         int len = uart_read_bytes(GPS_UART_PORT, buf, sizeof(buf), pdMS_TO_TICKS(200));
         for (int i = 0; i < len; i++) {
             mGps.encode(buf[i]);
@@ -201,6 +218,12 @@ void ElocGPS::gpsTask() {
             logStatus();
         }
     }
+
+    // Shutdown requested by deinit(). The ack MUST be the last thing before self-delete: once
+    // mTaskExited is set, deinit() proceeds to uart_driver_delete(), so no UART/log/parser access
+    // is allowed past this point.
+    mTaskExited = true;
+    vTaskDelete(nullptr);
 }
 
 esp_err_t ElocGPS::waitForTimeSync(uint32_t timeoutMs) {

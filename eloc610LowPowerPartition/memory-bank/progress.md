@@ -149,8 +149,18 @@
   Affects only human-readable strings / WAV+CSV filenames; epochs stay UTC. Ignores DST/borders by design.
 - **Logs position + time to serial every 30 s**
 - **GPIO4 reclaimed** from the vestigial direct-GPIO status LED (LEDs are on the IO expander)
-- Builds clean on `esp32dev`. `USE_GPS` **enabled** in `project_config.h`. **TODO:** surface lat/lon in
-  `getStatus`/LoRa; record measured heap/power delta of the per-wake GPS window.
+- **Live accuracy & clock-source for the app** (2026-07-21, V1.54, build-green, bench pending):
+  `getStatus` `hasFix` is now **live-gated** (`ElocGPS::hasLiveFix()`, valid && age < 3 s) — fixes the
+  app's indoor "Fix (0 sats)"; internal `hasFix()` stays latched for last-known-position consumers. GPS
+  is **held powered while a BT client is connected** (`manageGpsWhileAwake`, 10 s failed-init backoff)
+  so the app sees a live fix + HDOP; on disconnect the burst logic adopts and powers it down. New
+  getStatus keys `gps.fixAge[s]`, `gps.hdop` (0.0 = no live solution; HDOP→m stays app-side),
+  `device.timeSource`, `device.tzSource`; new persisted `clock_source_t clockSource` in
+  `rtc_duty_cycle_t` (magic `0xE10CDC2E → 0xE10CDC3E`), stamped in `cmd_SetTime`/`manageGpsWhileAwake`.
+  `printStatus` JSON doc 1536→2048. `GPS_RESYNC_INTERVAL_S` restored 200→3600.
+- Builds clean on `esp32dev`. `USE_GPS` **enabled** in `project_config.h`. Lat/lon now in `getStatus`
+  (and LoRa via the intruder uplink). **TODO:** record measured heap/power delta of the per-wake GPS
+  window; measure `printStatus` stack high-water under recording+LoRa+BT (validate the 2048 doc).
 
 #### Bring-up findings (2026-05-31)
 - **Fixed inverted power polarity (firmware)** — code assumed IO5 high = ON; the schematic is active-low
@@ -164,6 +174,15 @@
 - **Other hardware defects to verify (did not cause the leak):** VBAT (pin 6) ≈ 0.2 V → not receiving +3V3
   (suspected net miswire in the +3V3/VBAT/C26 corner); **C26 ground pad floating**; **VCC_RF (pin 14)** is
   on the switched rail (active-antenna/LNA bias via L2). Check these against the PCB.
+
+### Recording Scheduler — ⏮️ REVERTED, not shipped (removed 2026-07-21)
+The full scheduler (firmware `lib/ElocScheduler/` NOAA sun-calc engine + config/RTC/sleep-path
+integration; app `SchedulerActivity`/`ScheduleEntryEditorActivity`/`driver/Scheduler.kt` + DeviceSettings
+section) was code-complete but never hardware-verified. It was surgically removed before the V1.54 push
+(user decision) so the GPS-accuracy/uptime work could ship on its own. Entangled files were reverted to
+HEAD and the V1.54 hunks re-applied; both builds green after removal. **Full pre-removal state is backed
+up** (git-diff patches + untracked dirs) under the session scratchpad `sched-removal-backup/{fw,app}/` —
+reapply from there to resurrect it. See `activeContext.md` for the removal detail.
 
 ### Internal-heap headroom (BT + LoRa + AI) — ✅ Implemented & HW-validated (2026-07-05, V1.44)
 - **Problem:** with recording + AI + BT + LoRa concurrent, internal DRAM ran dry — `MFE failed
@@ -186,6 +205,15 @@
 ## What's Left to Build / Fix
 
 ### Recently Fixed
+- [x] **Spontaneous panic-reboot during 24/7 recording (V1.53, 2026-07-14; hardware soak pending)** —
+  `ElocGPS::deinit()`'s `vTaskDelete()` of the gps reader task eventually landed while the task held
+  the global esp_log mutex inside an `ESP_LOGx`, orphaning the mutex; later log-lock takes timed out
+  (interleaved garbage output) until FreeRTOS's `vTaskPriorityDisinheritAfterTimeout
+  (pxTCB->uxMutexesHeld)` assert panicked (serial-confirmed on V1.52 after ~33 h; earlier SD log
+  showed the same death at ~3 h). Every GPS burst timeout→deinit rolled these dice. Fixed with a
+  cooperative shutdown handshake in `lib/gps/ElocGPS.{hpp,cpp}` (`mShutdownReq`/`mTaskExited`, task
+  self-deletes, deinit polls ack ≤2 s) + `GPS_TASK_STACK` 3072→4096. Needs a 24/7 bench soak past the
+  33 h failure horizon to close.
 - [x] **Buzzer drones for seconds during LoRa uplink** — `EasyBuzzer` is non-blocking and its tone is only switched off by `EasyBuzzer.update()`, pumped once per cycle in `ElocSystem::handleSystemStatus()`. The LoRa loop runs at the tail of that same cycle, and `node.sendReceive()` blocks for the full airtime + RX1/RX2 windows (seconds at AS923 SF10-SF12). A beep started earlier in the cycle (classically the "Bluetooth ready" notification colliding with the immediate first heartbeat) kept sounding in PWM hardware for the whole transmit. Fixed by calling `EasyBuzzer.stopBeep()` at the top of `ElocLora::sendReceiveWithRecovery()` (the single blocking choke point for both heartbeat and event uplinks) so no uplink can leave a tone droning.
 
 ### Known Issues
@@ -196,9 +224,21 @@
 - [ ] **SD card hot-swap** — removing and replacing SD card requires reboot ("spi bus already initialized")
 - [ ] **BT not reconnecting** after certain restart scenarios (esp_restart() BLE issue)
 - [ ] **NVS LoRaWAN keys unencrypted** — security risk with physical access
+- [ ] **`generic_unit_tests` whole-env run fails** — pre-existing (predates the scheduler work),
+  unrelated `test_generic_fw_frame_parser` lib-isolation defect: its test.cpp includes only the pure
+  `lib/FirmwareUpdate/src/FwFrameParser.hpp`, but PlatformIO's LDF pulls in the rest of
+  `FirmwareUpdate`'s hardware-dependent sources (`esp_log.h`/FreeRTOS/`esp_partition.h`), which can't
+  compile natively. Needs `FwFrameParser` split into its own pure lib, or `FirmwareUpdate.cpp`
+  otherwise isolated from the test's LDF resolution.
+- [ ] **`target_unit_selected_tests` build fails at HEAD** — pre-existing LDF chain-mode defect:
+  a project lib only reachable via a *second-hop* include (e.g. `lib/Accel`'s `lis3dh_types.h`, via
+  `lib/ElocHardware/src/config.h`) isn't resolved when the test file (no `src/main.cpp` entry point)
+  is the LDF's only entry point. `esp32dev`/`esp32dev-ei` are unaffected (their entry point is
+  `src/main.cpp`, one hop from every project lib). Discovered while adding the scheduler's target
+  tests (`lib/ElocScheduler` hits the same defect via `lib/edge-impulse`); needs a fix in
+  `lib/Accel`/`lib/CPPANALOGIO_Battery`/`platformio.ini` LDF config.
 
 ### Desired Improvements
-- [ ] **Recording Scheduler** — extend duty cycle into a full scheduler: daily time windows, sunrise/sunset anchors (on-device NOAA calc from GPS), weekday masks, within-window duty cycle, app presets. Full plan: [README-Scheduler-Plan.md](../README-Scheduler-Plan.md) (firmware + app, backward compatible with `config.dutyCycle`)
 - [ ] **LoRa Event Cooldown** — Phase 2 of duty cycle (reduce LoRa msgs to ~10-15/day)
 - [ ] Migrate from Bluetooth Classic to BLE for power savings
 - [ ] Add mutex/semaphore guards to all shared task variables

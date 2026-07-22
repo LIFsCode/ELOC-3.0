@@ -2,6 +2,70 @@
 
 ## Current Work Focus
 
+**GPS live accuracy & clock-source markers (2026-07-21, V1.54), build-green, awaiting bench
+verification.** Coordinated firmware + app (5.42) change; full record in `changelog.md`. The app's new
+30 s status auto-refresh exposed a latch bug (indoor "Fix (0 sats)") and gaps in the GPS/time UI.
+Firmware side: `getStatus` `hasFix` is now **live-gated** via new `ElocGPS::hasLiveFix()` (internal
+`hasFix()` stays latched for last-known-position consumers); GPS is **held powered while a BT client is
+connected** (`manageGpsWhileAwake`, 10 s failed-init backoff) so the app sees a live fix + HDOP; new
+getStatus keys `gps.fixAge[s]`, `gps.hdop`, `device.timeSource`, `device.tzSource`; new persisted
+`clockSource` marker in `rtc_duty_cycle_t`, stamped in `cmd_SetTime` (app) / `manageGpsWhileAwake` (gps,
+last-writer-wins); `printStatus` JSON doc 1536→2048; `GPS_RESYNC_INTERVAL_S` restored 200→3600.
+**Uptime fix (same V1.54):** `device.Uptime[h]` was really "wall-clock since firmware **build** time"
+(`ESP32Time::getUpTimeSecs()` = `getEpoch() - boot_time_unix`, and `boot_time_unix` is init'd to the
+build epoch on a fresh boot) — showed e.g. 3h44m right after a brownout reboot. Now `printStatus`
+computes uptime from a new persisted `rtc_duty_cycle.firstBootEpochS` (deployment wall-clock, **survives
+duty-cycle deep sleep**; stamped the first time the clock is set by app or GPS), falling back to
+`getUpTimeSecs()` — itself rewritten to `esp_timer_get_time()` (true since-boot/wake) — when the clock
+isn't set yet. On a duty-cycle wake this shows real deployment age, not the tiny awake-window value.
+RTC magic bumped `0xE10CDC1E → 0xE10CDC5E` (appended `clockSource` + `firstBootEpochS`); OTA'd devices
+re-init RTC once (TZ + deployment-uptime clock restart until next connect/GPS). **Owed (bench):** BT-connect GPS-hold + no burst power-off while connected; indoor latch
+regression (never "Fix (0 sats)"); time suffix GPS↔Phone; disconnect → burst adoption/power-down; skip
+auto time-sync when timeSource=gps & tzSource=gps; `printStatus` stack high-water under recording+LoRa+BT
+(validate 2048); OTA magic-mismatch re-init (no boot loop); uptime shows deployment age after a
+duty-cycle wake (not <1m). Keep the still-open V1.53 GPS cooperative-shutdown 24/7 soak running on V1.54
+**including repeated BT connect/disconnect cycles** (this change adds init/deinit at BT boundaries +
+extends GPS runtime).
+
+---
+
+**24/7-recording spontaneous-reboot fix — GPS task cooperative shutdown (2026-07-14, V1.53), awaiting
+hardware soak verification.** Symptom: 24/7 recording (no LoRa, no schedule) panic-rebooted after
+hours (~3 h and ~33 h observed). Serial backtrace (decoded, V1.52) pinned it: `assert failed:
+vTaskPriorityDisinheritAfterTimeout tasks.c:5007 (pxTCB->uxMutexesHeld)` — `ElocGPS::deinit()` used
+`vTaskDelete()` on the gps reader task, which sooner or later landed while the task was inside an
+`ESP_LOGx` holding the **global esp_log mutex**, orphaning it. Every later log-lock take then timed
+out (visible as interleaved binary garbage in the serial log), and once the dead task's freed TCB was
+reused, the FreeRTOS priority-disinherit assert panicked the system. The GPS-burst timeout→deinit
+path rolled these dice every `GPS_RESYNC_INTERVAL_S` (crash observed on ~17th and ~200th burst).
+Fix in `lib/gps/ElocGPS.{hpp,cpp}`: cooperative shutdown handshake — `deinit()` raises
+`mShutdownReq` (volatile), the task exits its loop within one 200 ms `uart_read_bytes` timeout, acks
+via `mTaskExited` **as its last action** (no UART/log/parser access after the ack, since `deinit()`
+then runs `uart_driver_delete`), and self-deletes; `deinit()` polls the ack up to 2 s with an
+ESP_LOGE + force-delete fallback that should never fire. Also bumped `GPS_TASK_STACK` 3072→4096
+(`%f` printf headroom, cheap insurance against the second suspect). Version → V1.53;
+`esp32dev-ei` build green (RAM 31.2%). **Owed:** re-run the 24/7 bench soak (ideally with
+`GPS_RESYNC_INTERVAL_S` at the 600 s test value or lower to accumulate burst cycles fast) past the
+previous 33 h failure horizon, then restore the normal resync interval.
+
+---
+
+**Recording Scheduler — REVERTED out of the working tree (2026-07-21), not shipped.** The full
+scheduler (firmware `lib/ElocScheduler/` NOAA sun-calc engine + config/RTC/sleep-path integration; app
+`SchedulerActivity`/`ScheduleEntryEditorActivity`/`driver/Scheduler.kt` + DeviceSettings section) was
+code-complete but never hardware-verified, and the user decided not to push it with the V1.54 GPS work.
+It was surgically removed so V1.54 could ship alone: firmware entangled files (`main.cpp`,
+`ElocConfig.*`, `ElocSystem.cpp`, docs, `test.cpp`, `README-Scheduler-Plan.md`) reverted to HEAD
+(`995e7d5`), scheduler blocks stripped from `ElocStatus.hpp`/`ElocCommands.cpp`/`project_config.h`, the
+RTC struct's scheduler fields dropped (magic re-landed at `0xE10CDC5E`); app entangled files
+(`DeviceDriver.kt`, `DeviceSettingsActivity.kt`, `Command.kt`, `JsonHelper.kt`, manifest, layouts)
+reverted to HEAD and the V1.54 hunks (`isIdle`, GPS/time parsing) re-applied. Both builds green after
+removal (firmware RAM 30.5%, app `compileDebugKotlin` OK). **The complete pre-removal state is backed up**
+as git-diff patches + copied untracked dirs under the session scratchpad
+(`…/scratchpad/sched-removal-backup/{fw,app}/`) — reapply from there if the scheduler is resurrected.
+
+---
+
 **Firmware update over Bluetooth (app-driven OTA) — Phases 0–2 implemented, hardware verification
 in progress.** Current firmware V1.51 (2026-07-10 review fixes) + app MVP shipped in the same cycle.
 Plan doc: `README-FirmwareUpdate-From-App-Plan.md`. What is still owed before field rollout:
@@ -147,6 +211,9 @@ GPS integration + burst power-saving (June 2026), duty-cycle deep sleep + 24h Lo
 ## Next Steps
 
 ### High Priority
+- **Hardware-verify V1.54** (GPS live accuracy + uptime fix, scheduler-removed): BT-connect GPS-hold,
+  indoor "Searching…" latch regression, time-source suffix, deployment uptime across reboot/wake, and
+  confirm the reverted duty-cycle deep-sleep path still works — gates the push.
 - **Hardware-verify the BT firmware update matrix** (see Current Work Focus) — gates field rollout.
 - **1-in-20 first-inference panic**: add coredump-to-flash + `ei_thread` stack high-water logging;
   re-test the suspect unit on ≥ V1.44.

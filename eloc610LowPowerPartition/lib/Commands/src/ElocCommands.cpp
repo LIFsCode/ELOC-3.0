@@ -119,7 +119,7 @@ void addEnum(JsonObject& object, T val) {
 
 void printStatus(String& buf) {
 
-    StaticJsonDocument<1536> doc;
+    StaticJsonDocument<2048> doc;
     JsonObject battery = doc.createNestedObject("battery");
     battery["type"]                = Battery::GetInstance().getBatType();
     battery["state"]               = Battery::GetInstance().getState();
@@ -158,12 +158,35 @@ void printStatus(String& buf) {
 #endif
     const esp_partition_t* otaSlot = esp_ota_get_next_update_partition(NULL);
     device["otaSlotSize"]                = otaSlot ? otaSlot->size : 0;
-    device["Uptime[h]"]                  = round((timeObject.getUpTimeSecs() / 60.f / 60.f), 3);
+    // Uptime: prefer the true deployment wall-clock — seconds since this deployment first got a
+    // valid time (firstBootEpochS), which survives duty-cycle deep sleep so a field unit shows how
+    // long it has actually been out. Fall back to time-since-this-boot (esp_timer, resets on wake)
+    // when the clock is not set yet or the RTC state is fresh/invalid.
+    int64_t uptimeSecs;
+    if (rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC && rtc_duty_cycle.firstBootEpochS > 0 &&
+        timeObject.getEpoch() >= rtc_duty_cycle.firstBootEpochS) {
+        uptimeSecs = timeObject.getEpoch() - rtc_duty_cycle.firstBootEpochS;
+    } else {
+        uptimeSecs = static_cast<int64_t>(timeObject.getUpTimeSecs());
+    }
+    device["Uptime[h]"]                  = round(uptimeSecs / 3600.0, 3);
     device["totalRecordingTime[h]"]      = round((wav_writer.get_recording_time_total_sec() / 60.f / 60.f), 3);
     // Current device clock: a human-readable local-time string for display plus the raw UTC epoch
     // (seconds) so the app can detect drift against its own clock if it wants to.
     device["time"]                       = timeObject.getDateTime(false);
     device["epoch"]                      = static_cast<long>(timeObject.getEpoch());
+    // Clock-source markers so the app can label the ELOC Time row: who last set the wall clock, and
+    // where the active timezone came from. Both survive deep sleep via rtc_duty_cycle (guard on magic).
+    if (rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC) {
+        const char* clkSrc = rtc_duty_cycle.clockSource == CLOCK_SRC_GPS ? "gps"
+                           : rtc_duty_cycle.clockSource == CLOCK_SRC_APP ? "app" : "build";
+        device["timeSource"]             = clkSrc;
+        device["tzSource"]               = rtc_duty_cycle.timezoneOffsetValid ? "app"
+                                         : rtc_duty_cycle.gpsTimezoneValid    ? "gps" : "default";
+    } else {
+        device["timeSource"]             = "build";
+        device["tzSource"]               = "default";
+    }
 
     float sdCardSizeGB = 0;
     float sdCardFreeSpaceGB = 0;
@@ -196,9 +219,13 @@ void printStatus(String& buf) {
     ElocGPS& gpsInst = ElocGPS::GetInstance();
     gps["present"]                       = true;
     gps["powered"]                       = gpsInst.isInitialized();
-    gps["hasFix"]                        = gpsInst.hasFix();
+    gps["hasFix"]                        = gpsInst.hasLiveFix();       // live-gated (latch-bug fix)
     gps["satellites"]                    = gpsInst.getSatellites();
     gps["timeSynced"]                    = gpsInst.lastUtcEpoch() != 0;
+    gps["fixAge[s]"]                     = gpsInst.hasFix() ? static_cast<long>(gpsInst.getFixAgeMs() / 1000) : -1;
+    gps["hdop"]                          = round(gpsInst.getHdop(), 2);  // 0.0 = no live solution
+    // lat/lon stay gated on the LATCHED hasFix() (last-KNOWN position) — they may be present while the
+    // live "hasFix" above is false (e.g. GPS just powered down, or the fix was lost indoors).
     if (gpsInst.hasFix()) {
         gps["lat"]                       = round(gpsInst.getLat(), 6);
         gps["lon"]                       = round(gpsInst.getLng(), 6);
@@ -415,6 +442,13 @@ void cmd_SetTime(CmdParser *cmdParser) {
     if (rtc_duty_cycle.magic != DUTY_CYCLE_RTC_MAGIC) {
         rtc_duty_cycle.magic = DUTY_CYCLE_RTC_MAGIC;
     }
+    rtc_duty_cycle.clockSource = CLOCK_SRC_APP;  // the app just set the wall clock (getStatus timeSource)
+    // Anchor the deployment-uptime clock the first time this deployment gets a real time (from the
+    // app here, or from GPS in main.cpp). Persists across duty-cycle sleep; only re-armed on a full
+    // power loss / magic bump. See the Uptime[h] computation in printStatus().
+    if (rtc_duty_cycle.firstBootEpochS == 0) {
+        rtc_duty_cycle.firstBootEpochS = timeObject.getEpoch();
+    }
 
     // timeObject.setTime(atol(seconds.c_str()),  (atol(milliseconds.c_str()))*1000    );
     //  timestamps coming in from android are always GMT (minus 7 hrs)
@@ -531,7 +565,6 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
             xQueueSend(rec_ai_evt_queue, &new_ai_mode, (TickType_t)0);
         }
 
-        // Activate duty cycle if enabled in config AND the mode supports it.
         // Duty cycle applies to the AI-only patrol mode (recordOff_detectOn) and to both
         // record-ON modes (recordOn_detectOn, recordOn_detectOff). recordOnEvent and the
         // off/toggle modes stay non-duty-cycled. Persist the wav mode + AI state in RTC so

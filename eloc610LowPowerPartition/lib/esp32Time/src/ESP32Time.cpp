@@ -27,6 +27,7 @@
 #include "esp_app_format.h"
 #include "esp_ota_ops.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include <stdio.h>
 #include <sys/time.h>
 
@@ -469,9 +470,11 @@ int ESP32Time::getYear(){
 }
 
 /*!
-    @brief  get the current uptime as uint64_t
-    @warning  Untested
+    @brief  Seconds since this boot (or since the last deep-sleep wake — esp_timer restarts on
+            each wake). Monotonic and independent of the wall clock, so it stays correct even
+            before/while the RTC clock is set. For a deployment-lifetime uptime that survives
+            duty-cycle sleep, see the firstBootEpochS-based computation in ElocCommands::printStatus.
 */
 uint64_t ESP32Time::getUpTimeSecs() {
-    return (getEpoch() - boot_time_unix);
+    return static_cast<uint64_t>(esp_timer_get_time() / 1000000LL);
 }

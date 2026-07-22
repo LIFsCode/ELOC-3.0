@@ -948,6 +948,16 @@ static void manageGpsWhileAwake(bool& gpsTzApplied) {
     const int64_t gpsEpoch = gps.lastUtcEpoch();
     if (gpsEpoch > 0 && rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC) {
         rtc_duty_cycle.lastGpsSyncS = gpsEpoch;
+        static int64_t prevStampedGpsEpoch = 0;
+        if (gpsEpoch != prevStampedGpsEpoch) {           // a NEW GPS clock write happened
+            rtc_duty_cycle.clockSource = CLOCK_SRC_GPS;  // last-writer-wins vs cmd_SetTime
+            prevStampedGpsEpoch = gpsEpoch;
+        }
+        // Anchor the deployment-uptime clock if GPS is the first to supply a real time this
+        // deployment (mirrors the app path in cmd_SetTime). See printStatus() Uptime[h].
+        if (rtc_duty_cycle.firstBootEpochS == 0) {
+            rtc_duty_cycle.firstBootEpochS = gpsEpoch;
+        }
     }
 
     // Keep ElocLora's copy of the position current (used by the intruder alarm uplink).
@@ -964,6 +974,22 @@ static void manageGpsWhileAwake(bool& gpsTzApplied) {
         if (!gps.isInitialized()) {
             ESP_LOGW(TAG, "Intruder alarm: powering GPS on for location tracking");
             gps.init();
+        }
+        return;
+    }
+
+    // BT client connected: hold GPS powered so getStatus carries live fix/HDOP for the app. On
+    // disconnect the still-powered GPS is adopted by the burst logic below (powerOnUs==0 path), which
+    // then powers it down at the end of the current burst. Unlike the intruder block above we throttle
+    // the (re)init attempts — a repeatedly failing power-up must not busy-spin gps.init() every loop.
+    if (ElocSystem::GetInstance().isBtClientConnected()) {
+        if (!gps.isInitialized()) {
+            static int64_t lastInitAttemptUs = 0;
+            if (esp_timer_get_time() - lastInitAttemptUs > 10 * 1000000LL) {  // failed-init backoff
+                ESP_LOGI(TAG, "BT client connected: powering GPS on for live status");
+                lastInitAttemptUs = esp_timer_get_time();
+                gps.init();
+            }
         }
         return;
     }
@@ -1013,7 +1039,7 @@ static void manageGpsWhileAwake(bool& gpsTzApplied) {
         // lingers as "valid" in the parser after a previous burst's power-down, so require a recent
         // update (< 3 s) to confirm it belongs to THIS burst. The clock itself is synced in the
         // background as soon as time is valid, so we never lose the time even if no fix follows.
-        const bool liveFix = gps.hasFix() && gps.getFixAgeMs() < 3000;
+        const bool liveFix = gps.hasLiveFix();  // single source of truth (see ElocGPS::hasLiveFix)
         const bool acquireTimedOut =
             (nowUs - powerOnUs) > static_cast<int64_t>(effectiveTimeoutS) * 1000000LL;
         if (liveFix || acquireTimedOut) {

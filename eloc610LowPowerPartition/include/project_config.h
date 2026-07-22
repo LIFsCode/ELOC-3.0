@@ -24,7 +24,7 @@
 
         #define BLUETOOTH_CLASSIC
 
-        #define VERSION "ELOC-P_V1.52"
+        #define VERSION "ELOC-P_V1.54"
 
         #define STATUS_LED          GPIO_NUM_4
         #define BATTERY_LED         GPIO_NUM_4
@@ -102,7 +102,7 @@
         //     gated off until this interval elapses. The ATGM336H draws nearly as much as the ESP32 at
         //     16 kHz, so leaving it on would roughly double idle current.
         // Set to 0 to disable both optimisations (re-sync every wake / keep GPS powered continuously).
-        #define GPS_RESYNC_INTERVAL_S    600     // TESTING: re-acquire every 10 min (normal: 3600 = 1 h)
+        #define GPS_RESYNC_INTERVAL_S    3600    // re-acquire every 1 h (warm-start cadence in the field)
         // Acquisition ceiling for the FIRST burst of a session that still has no valid clock (the RTC
         // is at firmware build-time — e.g. a cold boot after total power loss with no app present, so
         // the GPS does a slow COLD start with no almanac). A normal warm-start trim gives up after

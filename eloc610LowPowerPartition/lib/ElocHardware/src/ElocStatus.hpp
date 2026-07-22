@@ -62,8 +62,24 @@ extern int64_t g_ai_deferred_start_time;
  * Duty-Cycle Deep Sleep State Machine
  ******************************************************************************/
 
-/// @brief Magic number to validate RTC duty cycle state (0xE10CDC1E = "ELOC DC IE")
-#define DUTY_CYCLE_RTC_MAGIC 0xE10CDC1E
+/// @brief Magic number to validate RTC duty cycle state (0xE10CDC5E = "ELOC DC IE")
+///        Bumped 0xE10CDC1E -> 0xE10CDC5E when clockSource + firstBootEpochS were appended for the
+///        GPS/clock-source + deployment-uptime work, so stale RTC content after an OTA re-inits
+///        cleanly instead of being (mis)read as valid. (5E rather than a lower value: some bench
+///        units briefly ran an unshipped build whose struct layout differed, so a distinct magic
+///        forces them to re-init too.)
+///        Consequence of a bump: one-time RTC wipe on the first boot of the new firmware — the
+///        persisted TZ is lost until the next app connect / GPS fix (falls back to TIMEZONE_OFFSET),
+///        and the deployment-uptime clock (firstBootEpochS) restarts.
+#define DUTY_CYCLE_RTC_MAGIC 0xE10CDC5E
+
+/// @brief Source that last set the device wall clock. Persisted in RTC so the app can label the ELOC
+///        Time row. The zero value (CLOCK_SRC_BUILD) is the fresh-boot / re-init default for free.
+typedef enum : uint8_t {
+    CLOCK_SRC_BUILD = 0,  // clock still at firmware build-time (never set)
+    CLOCK_SRC_APP   = 1,  // last set by the app's BT setTime
+    CLOCK_SRC_GPS   = 2   // last set/trimmed from GPS UTC
+} clock_source_t;
 
 /// @brief Sleep cycle state machine states
 typedef enum {
@@ -93,6 +109,10 @@ typedef struct {
     int64_t  lastGpsSyncS;           // when the clock was last set from GPS UTC (epoch seconds, 0=never)
     int8_t   gpsTimezoneOffset;      // TZ offset derived from GPS longitude (used when no app TZ is set)
     bool     gpsTimezoneValid;       // false until a GPS-longitude offset has been derived at least once
+    // New fields must only ever be appended below (keeps the RTC layout stable across sleep).
+    uint8_t  clockSource;            // clock_source_t: who last set the wall clock (0=build/default)
+    int64_t  firstBootEpochS;        // wall-clock epoch when this deployment first got a valid time
+                                     // (0=not yet). Survives deep sleep; used for deployment uptime.
 } rtc_duty_cycle_t;
 
 /// @brief Global sleep cycle state (non-persistent, reset each boot)

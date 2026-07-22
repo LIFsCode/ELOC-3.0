@@ -67,6 +67,10 @@ public:
 
     // --- Status getters (for later getStatus / LoRa integration) ---
     // Note: TinyGPS++ accessors are non-const, so these cannot be const-qualified.
+    /// @brief LATCHED fix: TinyGPS++ location.isValid() stays true forever once a fix is seen (it is
+    ///        never invalidated on power-down / signal loss). This is intentional here — the consumers
+    ///        want the last-KNOWN position: main.cpp record-location, TZ derivation, persistGpsFix, and
+    ///        the LoRa position push. Use hasLiveFix() for anything that must reflect the CURRENT state.
     inline bool hasFix() { return mGps.location.isValid(); }
     inline double getLat() { return mGps.location.lat(); }
     inline double getLng() { return mGps.location.lng(); }
@@ -75,6 +79,15 @@ public:
     /// @brief Milliseconds since the position fix was last updated. A fix lingers as "valid" in the
     ///        parser after a power-down, so use this to tell a live fix from a stale one.
     inline uint32_t getFixAgeMs() { return mGps.location.age(); }
+
+    static constexpr uint32_t LIVE_FIX_MAX_AGE_MS = 3000;  // 1 Hz emit; >3 s = stale/latched
+    /// @brief Live-gated fix: valid AND updated within the last LIVE_FIX_MAX_AGE_MS. Use this for the
+    ///        app's getStatus so a powered-down / lost fix stops reporting "Fix" (hasFix() latches).
+    inline bool hasLiveFix() { return mGps.location.isValid() && mGps.location.age() < LIVE_FIX_MAX_AGE_MS; }
+    /// @brief HDOP of the current LIVE solution; 0.0 = no live solution (hdop latches like location).
+    inline double getHdop() {
+        return (mGps.hdop.isValid() && mGps.hdop.age() < LIVE_FIX_MAX_AGE_MS) ? mGps.hdop.hdop() : 0.0;
+    }
 
 private:
     ElocGPS();
@@ -94,6 +107,14 @@ private:
     TinyGPSPlus mGps;
     TaskHandle_t mTaskHandle;
     bool mInitialized;
+    // Cooperative shutdown handshake. deinit() must NEVER vTaskDelete() the reader task from
+    // outside: the task logs via ESP_LOGx, and killing it while it holds the global esp_log mutex
+    // orphans that mutex — every later log lock acquisition times out and FreeRTOS eventually hits
+    // "assert failed: vTaskPriorityDisinheritAfterTimeout (pxTCB->uxMutexesHeld)" and panics
+    // (observed after ~33 h of 24/7 recording). Instead deinit() raises mShutdownReq, the task
+    // exits its loop on its own (touching nothing after acking mTaskExited) and deletes itself.
+    volatile bool mShutdownReq;
+    volatile bool mTaskExited;
     int64_t mLastUtcEpoch;   // epoch seconds of the last successful GPS time sync (0 = never)
 };
 

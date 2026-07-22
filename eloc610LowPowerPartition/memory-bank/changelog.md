@@ -4,6 +4,52 @@ Dated history of completed work, newest first. Entries are moved here verbatim f
 `activeContext.md` → 'Recent Changes' once a work stream is finished, so activeContext stays
 focused on current work. The two newest/in-flight entries always stay in activeContext.
 
+- **GPS live accuracy & clock-source markers** (2026-07-21, V1.54). Coordinated with app 5.42. The
+  app's new 30 s status auto-refresh exposed a latch bug and gaps in the GPS/time UI; this change:
+  - **Live-gated `getStatus` `hasFix`**: `gps["hasFix"]` now uses a new `ElocGPS::hasLiveFix()`
+    (`location.isValid() && location.age() < 3000 ms`) instead of the latched `hasFix()`. TinyGPS++
+    `location.isValid()` latches true forever, so indoors/after a power-down the app used to show
+    "Fix (0 sats)". Internal `hasFix()` stays **latched** on purpose — its consumers want the
+    last-KNOWN position (record-location, TZ derivation, `persistGpsFix`, LoRa push, lat/lon in
+    getStatus). `manageGpsWhileAwake`'s burst end-condition (`main.cpp`) now also routes through
+    `hasLiveFix()` (single source of truth).
+  - **Hold GPS powered while a BT client is connected** (`manageGpsWhileAwake`): mirrors the
+    intruder-alarm override so the app gets live fix + HDOP, but with a 10 s failed-init backoff (no
+    unthrottled `gps.init()` retry). On disconnect the still-powered GPS is adopted by the burst logic
+    and powered down at the end of the current burst. New `ElocSystem::isBtClientConnected()` getter
+    (reads `mStatus.btConnected`).
+  - **New getStatus keys**: `gps["fixAge[s]"]` (−1 when no fix), `gps["hdop"]` (0.0 = no live
+    solution; HDOP→meters conversion stays in the app, ~5 m/HDOP UERE, tunable without OTA),
+    `device["timeSource"]` ("build"/"app"/"gps"), `device["tzSource"]` ("app"/"gps"/"default").
+  - **Persisted clock-source marker**: new `clock_source_t` enum + `uint8_t clockSource` appended to
+    `rtc_duty_cycle_t`. Stamped `CLOCK_SRC_APP` in `cmd_SetTime`, `CLOCK_SRC_GPS` on a new GPS clock
+    write in `manageGpsWhileAwake` (last-writer-wins). Fresh-boot/re-init zeroing gives `CLOCK_SRC_BUILD`
+    free.
+  - **Uptime bug fix (deployment wall-clock + esp_timer fallback)**: `device["Uptime[h]"]` was really
+    "wall-clock since firmware **build** time" — `ESP32Time::getUpTimeSecs()` returns
+    `getEpoch() - boot_time_unix`, and `boot_time_unix` is init'd to the build epoch on a fresh
+    (non-timer) boot (`initBuildTime`), so a unit tested for hours on one build showed a large, growing
+    "uptime" (seen: 3h44m right after a brownout reboot). Now `printStatus` computes uptime from a new
+    persisted `int64_t firstBootEpochS` in `rtc_duty_cycle_t` (wall-clock epoch when the deployment
+    first got a valid time; **survives duty-cycle deep sleep**, stamped once alongside the clockSource
+    stamps in `cmd_SetTime`/`manageGpsWhileAwake`), giving true deployment age. Falls back to
+    `getUpTimeSecs()` — **rewritten to `esp_timer_get_time()/1e6`** (true monotonic since boot/wake,
+    resets on deep-sleep wake) — when the clock isn't set yet. So a duty-cycle wake now shows real
+    deployment age, not the tiny awake-window value; `boot_time_unix` is left in place (now unused by
+    uptime).
+  - **RTC magic bumped `0xE10CDC1E → 0xE10CDC5E`** (appended `clockSource` + `firstBootEpochS`), so
+    stale post-OTA RTC re-inits cleanly. (Note: this release ships **without** the Recording Scheduler,
+    which was reverted before push — see activeContext; the scheduler's own interim magic bumps are gone.)
+  - **`printStatus` JSON doc 1536→2048 B** to fit the new keys (stack-allocated on the 8 KB BT
+    `wakeup_task` — bench step 9 validates headroom; if thin, raise the task stack, don't shrink the
+    doc).
+  - **`GPS_RESYNC_INTERVAL_S` restored 200 (TESTING) → 3600** (1 h warm-start cadence in the field).
+  - **OTA consequence (R2)**: the magic bump wipes live duty-cycle RTC state once per OTA'd device —
+    TZ falls back to +7 until the next app connect/GPS fix. Field protocol: reconnect the app once
+    after OTA. **R4**: the V1.53 GPS cooperative-shutdown soak is still open; this change extends GPS
+    runtime and adds init/deinit at BT connect/disconnect boundaries — keep the 24/7 soak running on
+    V1.54 including repeated BT connect/disconnect cycles. `esp32dev-ei` build green.
+
 - **exFAT SD card support** (2026-07-06). SD cards may now be FAT32 **or exFAT** (cards >32 GB
   ship factory-formatted as exFAT; previously they silently failed to mount and had to be
   reformatted in the field). Root cause of the old restriction: IDF 4.4.7's bundled FatFs R0.13c

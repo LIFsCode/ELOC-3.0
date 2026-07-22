@@ -204,6 +204,12 @@ public:
         return mIntruderDetected;
     }
 
+    /// @brief Whether a Bluetooth SPP client is currently connected (mStatus.btConnected is refreshed
+    ///        by BluetoothServer -> handleSystemStatus). Used to hold GPS powered for live app status.
+    inline bool isBtClientConnected() const {
+        return mStatus.btConnected;
+    }
+
     void notifyFwUpdateError();
     void notifyFwUpdate();
 

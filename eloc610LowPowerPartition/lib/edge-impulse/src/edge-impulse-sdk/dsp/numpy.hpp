@@ -1742,20 +1742,30 @@ public:
     static int software_rfft(float *fft_input, fft_complex_t *output, size_t n_fft, size_t n_fft_out_features)
     {
     #if EIDSP_INCLUDE_KISSFFT || !defined(EIDSP_INCLUDE_KISSFFT)
-        // create fftr context
-        size_t kiss_fftr_mem_length;
+        // Building a KissFFT plan calculates all twiddle factors. MFE calls this
+        // function once per spectrogram frame, so keep the plan for subsequent
+        // frames and inferences instead of rebuilding it every time. The ELOC
+        // inference pipeline calls this serially; the plan owns a mutable tmpbuf.
+        static kiss_fftr_cfg cached_cfg = NULL;
+        static size_t cached_n_fft = 0;
 
-        kiss_fftr_cfg cfg = kiss_fftr_alloc(n_fft, 0, NULL, NULL, &kiss_fftr_mem_length);
-        if (!cfg) {
-            EIDSP_ERR(EIDSP_OUT_OF_MEM);
+        if (!cached_cfg || cached_n_fft != n_fft) {
+            if (cached_cfg) {
+                kiss_fftr_free(cached_cfg);
+                cached_cfg = NULL;
+                cached_n_fft = 0;
+            }
+
+            cached_cfg = kiss_fftr_alloc(n_fft, 0, NULL, NULL);
+            if (!cached_cfg) {
+                EIDSP_ERR(EIDSP_OUT_OF_MEM);
+            }
+
+            cached_n_fft = n_fft;
         }
 
-        ei_dsp_register_alloc(kiss_fftr_mem_length, cfg);
-
         // execute the rfft operation
-        kiss_fftr(cfg, fft_input, (kiss_fft_cpx*)output);
-
-        ei_dsp_free(cfg, kiss_fftr_mem_length);
+        kiss_fftr(cached_cfg, fft_input, (kiss_fft_cpx*)output);
 
         return EIDSP_OK;
     #else

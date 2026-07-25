@@ -20,6 +20,12 @@
 - **CSV logging** of inference results to SD card
 - **AI-triggered recording:** detection can start WAV recording in single mode
 - **Deferred AI startup** to prevent BT command timeouts
+- **Reusable KissFFT plan** (2026-07-23, hardware-validated 2026-07-25):
+  `numpy.hpp::software_rfft()` now creates the ~10.5 KB plan once and reuses it across all 32 MFE
+  frames/inferences instead of regenerating twiddles and reallocating PSRAM per frame. This addresses
+  the placement-sensitive V1.54 DSP regression (~616 ms -> ~900 ms). A two-day hardware soak held DSP
+  at 52–54 ms and classification at 127–130 ms with stable internal/PSRAM heaps and no reported DSP
+  allocation or classifier failures. The plan remains PSRAM-first and costs only 8 B of internal BSS.
 
 ### LoRaWAN — ✅ Operational
 - **SX1262 radio** via RadioLib 7.2.1

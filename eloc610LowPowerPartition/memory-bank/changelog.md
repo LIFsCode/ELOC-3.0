@@ -4,6 +4,28 @@ Dated history of completed work, newest first. Entries are moved here verbatim f
 `activeContext.md` → 'Recent Changes' once a work stream is finished, so activeContext stays
 focused on current work. The two newest/in-flight entries always stay in activeContext.
 
+- **V1.54 DSP-time regression — reusable KissFFT plan** (implemented 2026-07-23, hardware-validated
+  2026-07-25). Steady DSP time increased from about 616 ms on the uncommitted V1.53 build to about
+  900 ms on V1.54 while classification stayed near 125 ms. CPU frequency, GPS load, and heap
+  exhaustion/fragmentation were ruled out from cycle counts, task stats, and serial heap logs. A
+  reconstructed V1.53 link map plus the V1.54 map showed unchanged hot-function sizes but shifted
+  flash addresses; adding diagnostics also changed the slowdown, pointing to flash/PSRAM shared-cache
+  placement sensitivity. The underlying avoidable cost was in Edge Impulse
+  `numpy.hpp::software_rfft()`: each of the model's 32 MFE frames allocated, initialized (including
+  twiddle generation), and freed a ~10.5 KB KissFFT plan in PSRAM. It now initializes one plan on
+  first use and reuses it across frames and inferences, replacing it only if `n_fft` changes. The
+  ELOC inference pipeline is serialized; `kiss_fftr_cfg` contains a mutable scratch buffer and would
+  need a mutex or per-classifier cache if concurrent classifiers are introduced. Full-clean
+  `esp32dev-ei` build passed; linked size: text 1,410,813 B, data 360,949 B, BSS 80,736 B. Link-map
+  verification shows only 8 B of new internal BSS (`cached_cfg` + `cached_n_fft`) and confirms
+  `ei_malloc` resolves to `src/ei_porting_overrides.cpp`, so the ~10.5 KB persistent allocation
+  remains PSRAM-first. **Hardware result:** a two-day recording+inference soak held DSP at 52–54 ms
+  and classification at 127–130 ms; late-run cycle totals remained 44.7–45.6 M at 240 MHz, internal
+  free heap stayed about 86.9 KB with a 27.6 KB largest block, and PSRAM free stayed about 4.026 MB.
+  No DSP allocation/classifier failures or performance regression were reported. A fresh Edge
+  Impulse SDK export overwrites this vendor file, so `README-ai.md` now requires checking/reapplying
+  the cached-plan patch during every model update.
+
 - **GPS live accuracy & clock-source markers** (2026-07-21, V1.54). Coordinated with app 5.42. The
   app's new 30 s status auto-refresh exposed a latch bug and gaps in the GPS/time UI; this change:
   - **Live-gated `getStatus` `hasFix`**: `gps["hasFix"]` now uses a new `ElocGPS::hasLiveFix()`

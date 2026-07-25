@@ -26,6 +26,10 @@
   the placement-sensitive V1.54 DSP regression (~616 ms -> ~900 ms). A two-day hardware soak held DSP
   at 52–54 ms and classification at 127–130 ms with stable internal/PSRAM heaps and no reported DSP
   allocation or classifier failures. The plan remains PSRAM-first and costs only 8 B of internal BSS.
+- **Automatic FFT-cache patch recovery after model exports** (V1.56, 2026-07-25, build-verified):
+  `tools/patch_ei_fft_cache.py` runs before PlatformIO compilation and restores the cached-plan edit
+  when a new Edge Impulse SDK overwrites `numpy.hpp`. It is sentinel-idempotent and fails closed when
+  the upstream `software_rfft()` no longer matches the verified implementation.
 
 ### LoRaWAN — ✅ Operational
 - **SX1262 radio** via RadioLib 7.2.1

@@ -1,8 +1,20 @@
-﻿# Changelog (moved out of activeContext.md)
+# Changelog (moved out of activeContext.md)
 
 Dated history of completed work, newest first. Entries are moved here verbatim from
 `activeContext.md` → 'Recent Changes' once a work stream is finished, so activeContext stays
 focused on current work. The two newest/in-flight entries always stay in activeContext.
+
+- **V1.56 — automatic Edge Impulse FFT-cache patch reapplication** (2026-07-25, build-verified). New
+  project-local pre-build script `tools/patch_ei_fft_cache.py` protects the V1.55 reusable-KissFFT
+  optimization when a model refresh replaces `edge-impulse-sdk/dsp/numpy.hpp`. It runs from
+  `platformio.ini` before compilation, recognizes the `// ELOC-FFT-CACHE` sentinel as an idempotent
+  no-op, and otherwise replaces exactly one verified stock `software_rfft()` allocate/run/free block.
+  If a future Edge Impulse SDK changes that implementation, the script fails the build instead of
+  modifying unknown code. The patch automatically follows a changed `n_fft`; the current cache still
+  assumes serialized inference because `kiss_fftr_cfg` owns a mutable scratch buffer. Standalone
+  tests cover fresh LF/CRLF exports, byte-stable second application, current-file no-op, and
+  incompatible-SDK rejection. A full-clean `esp32dev-ei` build passed with the real pre-build hook;
+  `README-ai.md` documents the automatic behavior and required clean build after an SDK replacement.
 
 - **V1.55 fix for the V1.54 DSP-time regression — reusable KissFFT plan** (implemented 2026-07-23,
   hardware-validated 2026-07-25). Steady DSP time increased from about 616 ms on the uncommitted

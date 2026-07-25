@@ -25,13 +25,14 @@ Build using 'esp32dev-ei' in the 'Project Tasks':
 7. Copy the three new folders (edge-impulse-sdk, model-parameters & tflite-model) & model header file from the downloaded model into 'lib/src/'. 
 8. Amend the following line (currently #10) in /lib/edge-impulse/src/EdgeImpulse.cppn.cpp with the correct model header file name (if necessary)
     `#include "trumpet_inferencing.h"`
-9. Reapply and verify the ELOC reusable-KissFFT-plan patch in
-   `lib/edge-impulse/src/edge-impulse-sdk/dsp/numpy.hpp`. A new Edge Impulse SDK export overwrites
-   this file. In `numpy::software_rfft()`, confirm that `cached_cfg` and `cached_n_fft` exist and that
-   `kiss_fftr_alloc()` runs only when the cached FFT size changes; `kiss_fftr()` must still run on
-   every frame. Without this patch the current 32-frame MFE model rebuilds its ~10.5 KB FFT plan for
-   every frame and DSP time can regress from the hardware-validated 52–54 ms to 600–900 ms. The cache
-   adapts automatically to a different `n_fft`; it assumes the current serialized inference pipeline.
+9. The project-local pre-build script `tools/patch_ei_fft_cache.py` automatically reapplies the ELOC
+   reusable-KissFFT-plan patch when a new SDK export overwrites
+   `lib/edge-impulse/src/edge-impulse-sdk/dsp/numpy.hpp`. The script is idempotent and deliberately
+   stops the build if a future SDK changes `numpy::software_rfft()` instead of patching unknown code.
+   In the build output, verify it reports either `patched numpy.hpp` or `already patched
+   (// ELOC-FFT-CACHE)`. Without this patch the current 32-frame MFE model rebuilds its ~10.5 KB FFT
+   plan for every frame and DSP time can regress from the hardware-validated 52–54 ms to 600–900 ms.
+   The cache adapts automatically to a different `n_fft`; it assumes serialized inference.
 10. Under 'esp32dev-ei' in the 'Project Tasks' menu run:
     'Full Clean' **(Very important, otherwise the new model will not be pulled into .pio build folder)**
     'Build'

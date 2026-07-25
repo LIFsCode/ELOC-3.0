@@ -1742,6 +1742,7 @@ public:
     static int software_rfft(float *fft_input, fft_complex_t *output, size_t n_fft, size_t n_fft_out_features)
     {
     #if EIDSP_INCLUDE_KISSFFT || !defined(EIDSP_INCLUDE_KISSFFT)
+        // ELOC-FFT-CACHE
         // Building a KissFFT plan calculates all twiddle factors. MFE calls this
         // function once per spectrogram frame, so keep the plan for subsequent
         // frames and inferences instead of rebuilding it every time. The ELOC

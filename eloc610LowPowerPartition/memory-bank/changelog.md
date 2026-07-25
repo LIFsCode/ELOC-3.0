@@ -4,9 +4,10 @@ Dated history of completed work, newest first. Entries are moved here verbatim f
 `activeContext.md` → 'Recent Changes' once a work stream is finished, so activeContext stays
 focused on current work. The two newest/in-flight entries always stay in activeContext.
 
-- **V1.54 DSP-time regression — reusable KissFFT plan** (implemented 2026-07-23, hardware-validated
-  2026-07-25). Steady DSP time increased from about 616 ms on the uncommitted V1.53 build to about
-  900 ms on V1.54 while classification stayed near 125 ms. CPU frequency, GPS load, and heap
+- **V1.55 fix for the V1.54 DSP-time regression — reusable KissFFT plan** (implemented 2026-07-23,
+  hardware-validated 2026-07-25). Steady DSP time increased from about 616 ms on the uncommitted
+  V1.53 build to about 900 ms on V1.54 while classification stayed near 125 ms. CPU frequency, GPS
+  load, and heap
   exhaustion/fragmentation were ruled out from cycle counts, task stats, and serial heap logs. A
   reconstructed V1.53 link map plus the V1.54 map showed unchanged hot-function sizes but shifted
   flash addresses; adding diagnostics also changed the slowdown, pointing to flash/PSRAM shared-cache

@@ -2,6 +2,25 @@
 
 ## Current Work Focus
 
+**Duty-cycle bench session (2026-07-25, on V1.55): I2S clock + light sleep — full writeup in
+[`README-I2S-Clock-And-LightSleep-Issues.md`](../README-I2S-Clock-And-LightSleep-Issues.md).**
+Three independent bugs. (1) **I2S ran at exactly 8× the configured rate after every duty-cycle
+wake** — BCK straight off the APLL with `mclk_div`×`bclk_div` (2×4) not in effect; surfaced only as
+mass clipping + buffer overruns, no error anywhere. Fixed two ways, both hardware-verified:
+`MicUseAPLL: false` (config) and an explicit `i2s_set_clk()` re-apply after install in
+`I2SMEMSSampler::install_and_start()` (code, uncommitted). (2) **`rst:0x10 RTCWDT_RTC_RESET` reboots**
+— the device hangs inside automatic light sleep and `esp_light_sleep_start()`'s own 1 s safety-net
+watchdog resets it; only reachable when BT is down and not recording, i.e. idle-after-BT-timeout
+(deterministic) and the duty-cycle GPS wait (~1 in 8). Costly because the reset is not a deep-sleep
+wake, so the RTC duty-cycle state is memset and the unit silently drops out of duty cycling.
+Mitigation `cpuEnableLightSleep: false`. (3) **OPEN:** `RECORDING_LOW_POWER` at min 10 MHz shows a
+~8 % audio deficit and garbled console; not yet separated from possible `esp_timer` inaccuracy under
+DFS — needs a stopwatch-vs-WAV-duration test. **Owed:** re-test the idle/BT-timeout reboot with light
+sleep off; soak APLL=true + re-apply across many wakes; the stopwatch test; then decide the compiled
+defaults for `MicUseAPLL` / `cpuEnableLightSleep` / `cpuMinFrequencyMHZ`.
+
+---
+
 **GPS live accuracy & clock-source markers (2026-07-21, V1.54), build-green, awaiting bench
 verification.** Coordinated firmware + app (5.42) change; full record in `changelog.md`. The app's new
 30 s status auto-refresh exposed a latch bug (indoor "Fix (0 sats)") and gaps in the GPS/time UI.
@@ -85,6 +104,28 @@ frequency profiles (V1.45), internal-heap headroom fix (V1.44), intruder alarm o
 GPS integration + burst power-saving (June 2026), duty-cycle deep sleep + 24h LoRa heartbeat (May 2026).
 
 ## Recent Changes
+
+- **`battery.avgIntervalMs` was silently dead; setRecordMode literals normalised** (2026-07-30,
+  V1.57, build-green, not yet bench-verified). Two config/command-surface fixes:
+  1. **`ElocConfig.cpp:267` read the key as `avgIntervalMrs`** (stray `r`) while
+     `buildConfigFile()` writes it as `avgIntervalMs` (`:410`). Because `updateConfig()` merges the
+     incoming `setConfig` JSON into a freshly built config doc and then re-runs `loadConfig()`,
+     the misspelt lookup never matched — the value fell back to the compile default (`0`) and
+     `writeConfig()` then persisted that `0` back to SD/SPIFFS. Net effect: the app's *Battery avg
+     interval* knob round-tripped to 0 on every set and on every boot, so `Battery::avgIntervalMs`
+     was permanently 0 and `readRawVoltage()` sampled its `avgSamples` ADC reads back-to-back with
+     no spacing. No field config file can contain the misspelt key (nothing ever wrote it), so the
+     plain rename needs no backward-compatibility alias. Still **reboot-only** to take effect —
+     `Battery` latches it into a `const` member in its ctor init list (already documented in
+     `README-Config-Restart-Semantics.md:19`).
+  2. **`cmd_SetRecordMode` string literals + `getHelp` used mixed capitalisation** (`recordOn_DetectOFF`,
+     help example `recordOff_DetectOn`) that matched neither the `RecState` enum spelling nor what
+     the Android app sends (`recordOn_detectOff`). Harmless today — the dispatcher uses
+     `strcasecmp`, the app parses state back from the numeric `code` not the string, and the web
+     dashboard lowercases before matching (`ElocMapPage.tsx:627`) — but it made the published
+     command reference wrong. Literals now match the enum exactly; `getHelp` lists all five accepted
+     modes and states that matching is case-insensitive while `getStatus` reports the canonical
+     spelling. `strcasecmp` kept, so any existing integration sending the old casing still works.
 
 - **Stale-PROJECT_VER guard pre-script** (2026-07-19): the V1.52 `CMAKE_CONFIGURE_DEPENDS`
   mechanism (next entry) turned out **not to work under PlatformIO** — PlatformIO builds with

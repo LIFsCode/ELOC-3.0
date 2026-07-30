@@ -264,7 +264,7 @@ void loadConfig(const JsonObject& config) {
     /** battery config*/
     gElocConfig.batteryConfig.updateIntervalMs = config["battery"]["updateIntervalMs"] | C_ElocConfig_Default.batteryConfig.updateIntervalMs;
     gElocConfig.batteryConfig.avgSamples       = config["battery"]["avgSamples"]       | C_ElocConfig_Default.batteryConfig.avgSamples;
-    gElocConfig.batteryConfig.avgIntervalMs    = config["battery"]["avgIntervalMrs"]   | C_ElocConfig_Default.batteryConfig.avgIntervalMs;
+    gElocConfig.batteryConfig.avgIntervalMs    = config["battery"]["avgIntervalMs"]    | C_ElocConfig_Default.batteryConfig.avgIntervalMs;
     gElocConfig.batteryConfig.noBatteryMode    = config["battery"]["noBatteryMode"]    | C_ElocConfig_Default.batteryConfig.noBatteryMode;
     /** lora config*/
     gElocConfig.loraConfig.loraEnable          = config["lorawan"]["loraEnable"]       | C_ElocConfig_Default.loraConfig.loraEnable;

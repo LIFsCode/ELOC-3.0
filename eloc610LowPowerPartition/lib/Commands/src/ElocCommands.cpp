@@ -513,19 +513,21 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
         ESP_LOGI(TAG, "setRecordMode requested %s", req_mode);
         ai_mode_change = true;
 
-        if (!strcasecmp(req_mode, "recordOn_DetectOFF")) {
+        // Comparison is case-insensitive, but keep the literals spelled exactly like the
+        // RecState enum (and getHelp) so the accepted values match what getStatus reports back.
+        if (!strcasecmp(req_mode, "recordOn_detectOff")) {
             new_mode = RecState::recordOn_detectOff;
             new_ai_mode = false;
             wav_writer.set_mode(WAVFileWriter::Mode::continuous);
-        } else if (!strcasecmp(req_mode, "recordOn_DetectOn")) {
+        } else if (!strcasecmp(req_mode, "recordOn_detectOn")) {
             new_mode = RecState::recordOn_detectOn;
             new_ai_mode = true;
             wav_writer.set_mode(WAVFileWriter::Mode::continuous);
-        } else if (!strcasecmp(req_mode, "recordOff_DetectOn")) {
+        } else if (!strcasecmp(req_mode, "recordOff_detectOn")) {
             new_mode = RecState::recordOff_detectOn;
             new_ai_mode = true;
             wav_writer.set_mode(WAVFileWriter::Mode::disabled);
-        } else if (!strcasecmp(req_mode, "recordOff_DetectOff")) {
+        } else if (!strcasecmp(req_mode, "recordOff_detectOff")) {
             new_mode = RecState::recordOff_detectOff;
             new_ai_mode = false;
             wav_writer.set_mode(WAVFileWriter::Mode::disabled);
@@ -855,7 +857,7 @@ bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     success &= cmdCallback.addCmd("delConfig", &cmd_DelConfig, "Delete the current config file. Current config is not reset to default until next reboot");
     success &= cmdCallback.addCmd("getStatus", &cmd_GetStatus, "Returns the current status in JSON format");
     success &= cmdCallback.addCmd("setTime", &cmd_SetTime, "Set the current Time. Time format is given as JSON, e.g. setTime#time={\"seconds\":1351824120,\"ms\":42,\"timezone\":6,\"type\":\"G\"}");
-    success &= cmdCallback.addCmd("setRecordMode", &cmd_SetRecordMode, "Enable/disable recording. If used without arguments, current mode is toggled(on/off). Otherwise set recording to specified mode, e.g. setRecordMode#mode=recordOff_DetectOn");
+    success &= cmdCallback.addCmd("setRecordMode", &cmd_SetRecordMode, "Enable/disable recording. If used without arguments, current mode is toggled(on/off). Otherwise set recording to specified mode. Accepted modes (matched case-insensitively, reported back by getStatus in this exact spelling): recordOff_detectOff, recordOn_detectOff, recordOn_detectOn, recordOff_detectOn, recordOnEvent, e.g. setRecordMode#mode=recordOff_detectOn");
     success &= cmdCallback.addCmd("setLogPersistent", &cmd_SetLogPersistent, "Configure the logging messages to be stored on a rotating log file on SD carde.g. setLogPersitent#cfg={\"logToSdCard\":\"true\",\"filename\":\"/sdcard/log/eloc.log\",\"maxFiles\":6,\"maxFileSize\":1024}");
     success &= cmdCallback.addCmd("setBattery", &cmd_SetBattery, "Set battery calibration values. Mode otions: \"clear\", \"add\", cal in the format {\"<esp meas voltage>\" : <real voltage>} e.g. setBattery#mode=add#cal={\"3.0\":3.1}");
     success &= cmdCallback.addCmd("getBattery", &cmd_GetBattery, "read the battery calibration or the raw (uncalibrated voltage). Mode options: \"raw\", \"cal\"");

@@ -2,6 +2,36 @@
 
 ## Current Work Focus
 
+**GPS cold first fix in duty cycle (2026-07-31, V1.58), HARDWARE-VERIFIED (outdoor cold start).** A unit commissioned into duty cycle *before* its first-ever GPS fix could stay fix-less
+indefinitely. Every wake it did get ~30 s of blocking `waitForTimeSync` plus the awake window, and it
+never stopped retrying (`lastGpsSyncS` stays 0, so `gpsClockFresh` is never true) — but no window was
+ever long enough to finish a true COLD start (no ephemeris/almanac in VBAT-backed RAM ⇒ tens of seconds
+of 50 bps nav-message decode, far more under canopy). The patient `GPS_FIRST_FIX_TIMEOUT_S` (180 s) path
+existed for exactly this, but was gated on **`clockUnset`** (RTC still at firmware build time) — and the
+app's `setTime` at commissioning advances the clock, so the gate went false the moment a field tech
+connected, capping every burst at the 30 s trim ceiling. Fix: new `gpsFirstFixOutstanding()` helper
+(`rtc_duty_cycle.magic` invalid **or** `lastGpsSyncS == 0`) replaces the `clockUnset` proxy in
+`manageGpsWhileAwake`, and the boot-path blocking wake wait now uses `GPS_FIRST_FIX_TIMEOUT_S` while the
+first fix is outstanding. Bounded by new `GPS_FIRST_FIX_PATIENT_WAKES` (10, counted via
+`rtc_duty_cycle.bootCount`) so a no-sky install (bench indoors) can't hold itself awake +180 s every
+cycle forever — after the cap it falls back to the 30 s ceiling and keeps retrying cheaply. No RTC struct
+change, no magic bump. **Side effect to watch:** 24/7 (non-duty-cycle) units with no fix yet now burst
+180 s/h instead of 30 s/h until the first fix lands.
+**Verified on hardware (2026-07-31, timer wake, testELOC168):** patient path fired
+(`waiting up to 180 s ... [cold first fix, patient]`) and the fix landed at **145.7 s** — over the old
+30 s ceiling, so the pre-V1.58 build could not have acquired it (30 s boot wait + ~30 s burst ≈ 60 s of
+GPS-on, then power-down and repeat forever). RTC epoch at wait start `1785471504` vs GPS `1785471650` =
+exactly the 146 s elapsed, i.e. **the clock was already accurate** — the precise case where the old
+`clockUnset` gate was false and disarmed the patient path. `boot took 148271 ms` confirms the wait sits
+before the awake-timer reset (inference window intact); burst adoption then powered GPS down ~1 s into
+the main loop (`gpsUp=0` at the first DSP-pre) before the first inference. Note during acquisition
+`sats=0, sentences=0` the whole time (GGA/fix-gated counters) — only `chars` climbing shows progress.
+**Owed (bench):** indoors/no-sky → confirm it stops being patient at wake 11
+(`GPS_FIRST_FIX_PATIENT_WAKES`) and the cycle returns to `awakeDurationS + sleepDurationS`; confirm the
+next wake after a fix logs "GPS time still fresh — skipping GPS".
+
+---
+
 **Duty-cycle bench session (2026-07-25, on V1.55): I2S clock + light sleep — full writeup in
 [`README-I2S-Clock-And-LightSleep-Issues.md`](../README-I2S-Clock-And-LightSleep-Issues.md).**
 Three independent bugs. (1) **I2S ran at exactly 8× the configured rate after every duty-cycle

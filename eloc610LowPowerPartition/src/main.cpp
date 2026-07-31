@@ -577,6 +577,15 @@ void ei_callback_func() {
         signal.get_data = &microphone_audio_signal_get_data;
         ei_impulse_result_t result = {};
 
+        // TEMP DIAG (V1.54 DSP 600->900ms hunt): does EI's internal-heap headroom collapse when the
+        // GPS burst is powered? If internal_largest dips below the EI hot-buffer size while gpsUp=1 and
+        // DSP reads ~900ms, the +1KB GPS_TASK_STACK bump is spilling the FFT buffers to PSRAM. Remove
+        // once the cause is confirmed.
+        ESP_LOGI(TAG, "DSP-pre: gpsUp=%d internal_free=%u internal_largest=%u",
+                 ElocGPS::GetInstance().isInitialized(),
+                 heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+
         #ifdef AI_CONTINUOUS_INFERENCE
             EI_IMPULSE_ERROR r = edgeImpulse.run_classifier_continuous(&signal, &result);
         #else
@@ -868,6 +877,22 @@ void handleSleepCycleStateMachine() {
 
 #ifdef USE_GPS
 /**
+ * @brief True while this deployment has never had a GPS position fix, i.e. the next acquisition is a
+ *        true COLD start (no ephemeris/almanac in the module's VBAT-backed RAM to warm-start from).
+ *
+ * lastGpsSyncS is only written once syncTimeFromGps() has accepted a real position solution, so 0
+ * means "first fix still outstanding". An invalid RTC block counts as outstanding too — that is a
+ * power-on with nothing persisted, which is exactly the cold case.
+ *
+ * This deliberately replaces the older "is the clock still at firmware build-time?" proxy: the app's
+ * setTime at commissioning advances the clock, so that proxy went false the instant a field tech
+ * connected — masking the one situation the patient cold-start timeout exists for.
+ */
+static bool gpsFirstFixOutstanding() {
+    return (rtc_duty_cycle.magic != DUTY_CYCLE_RTC_MAGIC) || (rtc_duty_cycle.lastGpsSyncS == 0);
+}
+
+/**
  * @brief Derive the local-display timezone from the current GPS longitude and apply it, unless the
  *        user has already set one from the app.
  *
@@ -1027,12 +1052,14 @@ static void manageGpsWhileAwake(bool& gpsTzApplied) {
         if (powerOnUs == 0) {
             powerOnUs = nowUs;
         }
-        // Be patient on the FIRST fix only while the device still has no real clock (the RTC is at
-        // firmware build-time). Once the app's setTime or any GPS fix has advanced the clock past
-        // build-time, revert to the short trim ceiling. The +1 h margin covers the uptime that accrues
-        // during a patient burst (the clock ticks up from build-time until it is actually set).
-        const bool clockUnset = timeObject.getEpoch() < (timeObject.getBuildTimeSecs() + 3600);
-        const int effectiveTimeoutS = clockUnset ? GPS_FIRST_FIX_TIMEOUT_S : GPS_TIME_SYNC_TIMEOUT_S;
+        // Be patient on the FIRST fix of the deployment — that acquisition is a cold start with no
+        // ephemeris to warm-start from and cannot finish inside the short trim ceiling. Once any fix
+        // has landed, revert to GPS_TIME_SYNC_TIMEOUT_S: from then on every burst is a warm start off
+        // the module's VBAT-backed RAM and a few seconds is plenty. In duty-cycle mode the awake
+        // window (20..120 s) ends the burst before a patient ceiling is reached anyway — the long
+        // window there comes from the blocking wake wait in app_main, not from here.
+        const int effectiveTimeoutS =
+            gpsFirstFixOutstanding() ? GPS_FIRST_FIX_TIMEOUT_S : GPS_TIME_SYNC_TIMEOUT_S;
         // End the burst on a live POSITION fix, not merely a time sync. UTC time is decoded a few
         // seconds before a full position solution, and the local timezone is derived from the fix
         // LONGITUDE — powering off on time alone leaves the TZ at its compile-time default. A fix
@@ -1331,9 +1358,11 @@ void app_main(void) {
     // sync. The ESP32 RTC keeps time through deep sleep and the GPS module's VBAT-backed clock stays
     // alive, so re-acquiring every short cycle is wasted energy; we skip powering the GPS until the
     // last sync is older than GPS_RESYNC_INTERVAL_S. When we do run it on a timer wake, we additionally
-    // block briefly for the first fix so this cycle's detection / LoRa / CSV timestamps are accurate.
-    // The wait sits before the awake-duration timer is reset (below), so it does not shorten the
-    // inference window — but it does keep the device awake longer; see GPS_TIME_SYNC_TIMEOUT_S.
+    // block for a fix so this cycle's detection / LoRa / CSV timestamps are accurate — briefly once the
+    // deployment has a fix to warm-start from, patiently (GPS_FIRST_FIX_TIMEOUT_S) while the first one
+    // is still outstanding. The wait sits before the awake-duration timer is reset (below), so it does
+    // not shorten the inference window — but it does keep the device awake longer; see
+    // GPS_TIME_SYNC_TIMEOUT_S / GPS_FIRST_FIX_PATIENT_WAKES.
     bool gpsTzApplied = false;
 
     // Is the RTC clock still fresh enough that this wake can skip GPS entirely?
@@ -1353,10 +1382,24 @@ void app_main(void) {
         ESP_LOGI(TAG, "Setting up GPS...");
         ElocGPS::GetInstance().init();
 
-        if (gIsTimerWake && GPS_TIME_SYNC_TIMEOUT_S > 0) {
-            ESP_LOGI(TAG, "Timer wake: waiting up to %d s for GPS time sync (RTC epoch=%ld)...",
-                     GPS_TIME_SYNC_TIMEOUT_S, timeObject.getEpoch());
-            esp_err_t tsync = ElocGPS::GetInstance().waitForTimeSync(GPS_TIME_SYNC_TIMEOUT_S * 1000);
+        // How long this wake may block for the clock to be corrected from GPS UTC. While the first
+        // fix of the deployment is still outstanding the acquisition is a COLD start, which cannot
+        // complete inside GPS_TIME_SYNC_TIMEOUT_S — and the awake window is far too short to finish
+        // it either, so without this a unit commissioned into duty cycle before its first fix keeps
+        // restarting a cold start it never lands. This wait sits before the awake timer is reset
+        // below, so it costs no inference time; it does hold the device awake longer, which is why
+        // it is capped at GPS_FIRST_FIX_PATIENT_WAKES wakes — an install with no sky view at all must
+        // not pay it every cycle forever. After the cap (or after the first fix) it falls back to the
+        // short trim ceiling and simply keeps retrying at that cost.
+        const bool patientFirstFix = gpsFirstFixOutstanding() &&
+            rtc_duty_cycle.bootCount <= static_cast<uint32_t>(GPS_FIRST_FIX_PATIENT_WAKES);
+        const int syncTimeoutS = patientFirstFix ? GPS_FIRST_FIX_TIMEOUT_S : GPS_TIME_SYNC_TIMEOUT_S;
+
+        if (gIsTimerWake && syncTimeoutS > 0) {
+            ESP_LOGI(TAG, "Timer wake: waiting up to %d s for GPS time sync%s (RTC epoch=%ld)...",
+                     syncTimeoutS, patientFirstFix ? " [cold first fix, patient]" : "",
+                     timeObject.getEpoch());
+            esp_err_t tsync = ElocGPS::GetInstance().waitForTimeSync(syncTimeoutS * 1000);
             if (tsync == ESP_OK) {
                 ESP_LOGI(TAG, "Timer wake: GPS time acquired, RTC corrected (epoch=%ld)",
                          timeObject.getEpoch());

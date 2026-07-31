@@ -24,7 +24,7 @@
 
         #define BLUETOOTH_CLASSIC
 
-        #define VERSION "ELOC-P_V1.57"
+        #define VERSION "ELOC-P_V1.58"
 
         #define STATUS_LED          GPIO_NUM_4
         #define BATTERY_LED         GPIO_NUM_4
@@ -91,6 +91,8 @@
         // device awake (and burning power) longer each cycle. The value below is a generous ceiling
         // for a poor-sky-view fix, not the expected wait. Set to 0 to start GPS on wake without
         // blocking (time is then corrected opportunistically if a fix lands within the awake window).
+        // NOTE: this trim ceiling assumes there is something to warm-start FROM. Until the deployment
+        // has had its first fix, GPS_FIRST_FIX_TIMEOUT_S is used instead (see below).
         #define GPS_TIME_SYNC_TIMEOUT_S  30
         // How often the GPS time is re-acquired. The ESP32 RTC keeps accurate time through deep sleep
         // and while awake (and VBAT keeps the GPS module's clock + almanac alive continuously), so the
@@ -103,13 +105,25 @@
         //     16 kHz, so leaving it on would roughly double idle current.
         // Set to 0 to disable both optimisations (re-sync every wake / keep GPS powered continuously).
         #define GPS_RESYNC_INTERVAL_S    3600    // re-acquire every 1 h (warm-start cadence in the field)
-        // Acquisition ceiling for the FIRST burst of a session that still has no valid clock (the RTC
-        // is at firmware build-time — e.g. a cold boot after total power loss with no app present, so
-        // the GPS does a slow COLD start with no almanac). A normal warm-start trim gives up after
-        // GPS_TIME_SYNC_TIMEOUT_S, but here we are patient so the device can self-recover real time
-        // from GPS alone. Once the clock has been set (by the app's setTime or any GPS fix) bursts
-        // revert to the short GPS_TIME_SYNC_TIMEOUT_S ceiling. See manageGpsWhileAwake in main.cpp.
+        // Acquisition ceiling while the deployment has never had a GPS fix (rtc_duty_cycle
+        // .lastGpsSyncS == 0). With no previous fix there is no ephemeris and no almanac in the
+        // module's VBAT-backed RAM, so every attempt is a true COLD start — the receiver has to
+        // decode the 50 bps nav message, which needs tens of seconds of continuous tracking and far
+        // longer under canopy. The short GPS_TIME_SYNC_TIMEOUT_S trim ceiling can never complete
+        // that, so a unit commissioned into duty cycle before its first fix would keep restarting a
+        // cold start it never finishes. Applies to BOTH the blocking wake wait (app_main) and the
+        // awake-window burst (manageGpsWhileAwake); both revert to GPS_TIME_SYNC_TIMEOUT_S the moment
+        // the first fix lands.
+        // NOT keyed on "the clock is unset": the app's setTime at commissioning advances the clock,
+        // which used to mask exactly the case this exists for.
         #define GPS_FIRST_FIX_TIMEOUT_S  180     // up to 3 min for a cold first fix
+        // Cap on how many duty-cycle wakes may pay the patient blocking wait above. Without a bound,
+        // a unit with no sky view at all (indoors on the bench, or a bad install) would hold itself
+        // awake GPS_FIRST_FIX_TIMEOUT_S longer on EVERY cycle forever, wrecking the duty cycle it was
+        // configured for. ~10 wakes ≈ 30 min of cumulative cold-start search; if that fails, more of
+        // the same will not help, so fall back to the cheap trim cadence and keep retrying there.
+        // Counted with rtc_duty_cycle.bootCount (timer wakes only). 0 disables the patient wake wait.
+        #define GPS_FIRST_FIX_PATIENT_WAKES  10
 
 #endif  // BOARD
 

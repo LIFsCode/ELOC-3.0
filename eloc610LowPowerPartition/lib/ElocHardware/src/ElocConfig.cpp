@@ -110,8 +110,25 @@ static const elocConfig_T C_ElocConfig_Default {
     .secondsPerFile = 6000,
     // Power management
     .cpuMaxFrequencyMHZ = 80,    // minimum 80
-    .cpuMinFrequencyMHZ = 10,
-    .cpuEnableLightSleep = true,
+    // min = max, i.e. DFS OFF by default. Dynamic frequency scaling on this chip corrupts both
+    // software time bases — esp_timer (TG0 LACT, divided from APB) ran ~41 % fast and the FreeRTOS
+    // tick behind every ESP_LOGx timestamp ~23 % fast, measured on a 10/80 MHz profile. Audio is
+    // unaffected (I2S runs off the APLL), but anything scheduled off esp_timer fires early: the
+    // duty-cycle GPS acquisition window is the one that hurts, since CONFIG_DEFAULT is the profile
+    // in force during the timer-wake GPS wait. It also garbles the console despite REF_TICK.
+    // The idle dip from 80 down to 10 MHz is the only thing given up.
+    .cpuMinFrequencyMHZ = 80,
+    // Automatic light sleep is DISABLED by default on purpose — do not flip this back to true
+    // as an "optimization". The device hangs inside the light-sleep entry/exit sequence and is
+    // reset by the safety-net RTC watchdog esp_light_sleep_start() arms (reset reason 0x10,
+    // RTCWDT_RTC_RESET, no panic and no backtrace). Worse than a plain reboot: an RTC WDT reset
+    // is not a deep-sleep wake, so the duty-cycle RTC block is memset and the unit comes back
+    // NOT recording and NOT duty cycling — a silently dead node in the field.
+    // It can only engage when nothing holds a PM lock, i.e. idle after the Bluetooth timeout and
+    // during the duty-cycle GPS wait; recording is safe because I2S holds a lock throughout.
+    // The underlying hang is unexplained (VDD_SDIO powers both PSRAM and the SD card on this
+    // board and light sleep power-cycles that rail — prime suspect, not investigated).
+    .cpuEnableLightSleep = false,
     .bluetoothEnableAtStart = true,
     .bluetoothEnableOnTapping = true,
     .bluetoothEnableDuringRecord = true,
@@ -240,11 +257,42 @@ void loadDevideInfo(const JsonObject& device) {
     gElocDeviceInfo.locationAccuracy = device["locationAccuracy"] | C_ElocDeviceInfo_Default.locationAccuracy;
     gElocDeviceInfo.nodeName         = device["nodeName"]         | C_ElocDeviceInfo_Default.nodeName;
 }
+/**
+ * @brief Gate the cpuEnableLightSleep config field on ALLOW_AUTOMATIC_LIGHT_SLEEP.
+ *
+ * Changing the compiled default to false is not enough on its own: the config cascade is
+ * SD -> SPIFFS -> compile-time default, and a key that is PRESENT always wins over the default.
+ * Every unit provisioned before the default changed still carries "cpuEnableLightSleep": true
+ * in /sdcard/elocConfig.config, so an upgraded device would keep enabling light sleep and keep
+ * the RTC-watchdog reset risk with it. Clamping here neutralises those stored values.
+ *
+ * Call from EVERY path that writes gElocConfig.cpuEnableLightSleep. Today that is loadConfig()
+ * — which the app's setConfig also funnels through, see updateConfig() — and
+ * setCpuFrequencyConfig(), which the app calls directly and which would otherwise bypass it.
+ *
+ * No eager migration write is needed: the clamped value is what gets serialised by
+ * buildConfigFile(), so the first writeConfig() from any config change rewrites the stale
+ * true as false on its own. Until then the file value is simply inert, because nothing reads
+ * it without going through here.
+ */
+static bool clampLightSleep(bool requested) {
+#if ALLOW_AUTOMATIC_LIGHT_SLEEP
+    return requested;
+#else
+    if (requested) {
+        ESP_LOGW(TAG, "cpuEnableLightSleep=true from stored config is IGNORED: automatic light "
+                      "sleep hangs this board and is reset by the RTC watchdog "
+                      "(see ALLOW_AUTOMATIC_LIGHT_SLEEP). Forcing false.");
+    }
+    return false;
+#endif
+}
+
 void loadConfig(const JsonObject& config) {
     gElocConfig.secondsPerFile                = config["secondsPerFile"]              | C_ElocConfig_Default.secondsPerFile;
     gElocConfig.cpuMaxFrequencyMHZ            = config["cpuMaxFrequencyMHZ"]          | C_ElocConfig_Default.cpuMaxFrequencyMHZ;
     gElocConfig.cpuMinFrequencyMHZ            = config["cpuMinFrequencyMHZ"]          | C_ElocConfig_Default.cpuMinFrequencyMHZ;
-    gElocConfig.cpuEnableLightSleep           = config["cpuEnableLightSleep"]         | C_ElocConfig_Default.cpuEnableLightSleep;
+    gElocConfig.cpuEnableLightSleep           = clampLightSleep(config["cpuEnableLightSleep"] | C_ElocConfig_Default.cpuEnableLightSleep);
     gElocConfig.bluetoothEnableAtStart        = config["bluetoothEnableAtStart"]      | C_ElocConfig_Default.bluetoothEnableAtStart;
     gElocConfig.bluetoothEnableOnTapping      = config["bluetoothEnableOnTapping"]    | C_ElocConfig_Default.bluetoothEnableOnTapping;
     gElocConfig.bluetoothEnableDuringRecord   = config["bluetoothEnableDuringRecord"] | C_ElocConfig_Default.bluetoothEnableDuringRecord;
@@ -525,7 +573,7 @@ bool isValidCpuMinFrequency(int mhz) {
 esp_err_t setCpuFrequencyConfig(int maxFrequencyMHZ, int minFrequencyMHZ, bool enableLightSleep) {
     gElocConfig.cpuMaxFrequencyMHZ  = maxFrequencyMHZ;
     gElocConfig.cpuMinFrequencyMHZ  = minFrequencyMHZ;
-    gElocConfig.cpuEnableLightSleep = enableLightSleep;
+    gElocConfig.cpuEnableLightSleep = clampLightSleep(enableLightSleep);
     if (!writeConfig()) {
         return ESP_ERR_FLASH_BASE;
     }

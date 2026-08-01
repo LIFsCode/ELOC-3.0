@@ -209,8 +209,11 @@ void WAVFileWriter::start_write_thread() {
   ESP_LOGV(TAG, "Func: %s", __func__);
 
   static auto old_secs_written = 0;
-  static uint32_t slowestWriteSpeed  = std::numeric_limits<uint32_t>::max();  // set to max
-  static int64_t longestWriteMs  = std::numeric_limits<uint32_t>::max();      // set to max
+  static uint32_t slowestWriteSpeed  = std::numeric_limits<uint32_t>::max();  // min-tracker: seed high
+  // Max-tracker, so it must seed LOW. It used to seed at UINT32_MAX, which made the
+  // `writeDurationMs > longestWriteMs` test below permanently false — the "WorstCase" field
+  // printed a constant 4294967295 ms for the lifetime of the build and never measured anything.
+  static int64_t longestWriteMs  = 0;
 
   if (m_fp != nullptr) {
     ESP_LOGE(TAG, "File pointer is not NULL");
@@ -236,7 +239,14 @@ void WAVFileWriter::start_write_thread() {
         int64_t end_time = esp_timer_get_time();
         int64_t writeDurationMs =  (end_time - start_time)/1000;
         // gives the speed in KByte/s (size in Byte, time in ms)
-        uint32_t speed = sizeof(int16_t) * buffer_size_in_samples / writeDurationMs;
+        // writeDurationMs is 0 for any sub-millisecond write (a small write absorbed by the
+        // FAT cache with no flush). Xtensa traps on integer division by zero, so dividing here
+        // unguarded would panic the wav_writer task. Report the buffer size as KB/s in that
+        // case — a >= 1 ms floor understates the true speed, which is the safe direction for a
+        // slowest-speed tracker.
+        uint32_t speed = (writeDurationMs > 0)
+                           ? (sizeof(int16_t) * buffer_size_in_samples / writeDurationMs)
+                           : (sizeof(int16_t) * buffer_size_in_samples);
         if (speed < slowestWriteSpeed) slowestWriteSpeed = speed;
         if ( writeDurationMs > longestWriteMs) longestWriteMs = writeDurationMs;
 

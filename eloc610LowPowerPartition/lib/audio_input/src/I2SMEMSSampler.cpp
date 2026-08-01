@@ -11,6 +11,10 @@
 
 #include "I2SMEMSSampler.h"
 #include "soc/i2s_reg.h"
+// esp_rtc_get_time_us() — DFS-immune time base for the rate meter. Declared in esp_hw_support's
+// include/soc/esp32/rtc.h, which is on the include path as "esp32/rtc.h" (NOT "soc/rtc.h", which
+// is the unrelated soc-component rtc_clk API). Target-specific, but so is the rest of this build.
+#include "esp32/rtc.h"
 #include "esp_err.h"
 #include "esp_log.h"
 
@@ -73,6 +77,29 @@ esp_err_t I2SMEMSSampler::install_and_start() {
         ESP_LOGE(TAG, "Func: %s, configureI2S", __func__);
         return ret;
     }
+
+    /**
+     * Re-apply the clock configuration explicitly.
+     *
+     * After a duty-cycle deep-sleep wake the peripheral has been observed running with
+     * the clock dividers computed by i2s_driver_install() not in effect: BCK then runs
+     * straight off the APLL, so the real sample rate is mclk_div * bclk_div too high
+     * (2 * 4 = 8x for 16 kHz / 32 bit / 2 slots — measured 128 kHz). Nothing reports an
+     * error; it only shows up as permanent sample clipping plus wav/inference buffer
+     * overruns, because the mic is then clocked far outside its spec.
+     *
+     * i2s_set_clk() stops the peripheral, recalculates sclk/mclk_div/bclk_div and writes
+     * the divider registers again, which restores the intended rate. Called with exactly
+     * the values the driver was installed with, so it is a no-op on a healthy boot.
+     */
+    i2s_channel_t ch = (i2s_config.channel_format == I2S_CHANNEL_FMT_RIGHT_LEFT) ?
+                       I2S_CHANNEL_STEREO : I2S_CHANNEL_MONO;
+    esp_err_t clkRet = i2s_set_clk(i2s_port, i2s_config.sample_rate, i2s_config.bits_per_sample, ch);
+    if (clkRet != ESP_OK) {
+        ESP_LOGE(TAG, "i2s_set_clk failed with %s", esp_err_to_name(clkRet));
+    }
+    ESP_LOGI(TAG, "I2S clock configured: %.0f Hz (requested %d Hz)",
+             i2s_get_clk(i2s_port), i2s_config.sample_rate);
 
     i2s_installed_and_started = true;
 
@@ -397,8 +424,24 @@ int I2SMEMSSampler::read()
 
     #endif  // EDGE_IMPULSE_ENABLED
 
+    // Throttled to one warning per second: with a broken I2S clock every read clips and
+    // the unthrottled warning floods the SD card log at >100 lines/s.
+    clip_accum += sound_clip_count;
     if (sound_clip_count > 0) {
-        ESP_LOGW(TAG, "Audio sample clips occurred %d times", sound_clip_count);
+        clip_reads++;
+    }
+    if (clip_accum > 0) {
+        // Same RTC time base as the rate meter in start_read_thread(), which seeds
+        // clip_log_last_us — mixing it with esp_timer here would compare two clocks that
+        // drift apart under DFS. Called once per buffer (~64 ms), so the cost is irrelevant.
+        int64_t now_us = static_cast<int64_t>(esp_rtc_get_time_us());
+        if ((now_us - clip_log_last_us) >= 1000000) {
+            ESP_LOGW(TAG, "Audio sample clips occurred %u times in %u reads (last %lld ms)",
+                     clip_accum, clip_reads, (now_us - clip_log_last_us) / 1000);
+            clip_accum = 0;
+            clip_reads = 0;
+            clip_log_last_us = now_us;
+        }
     }
 
     // Automatic gain adjustment
@@ -448,11 +491,69 @@ int I2SMEMSSampler::read()
 
 void I2SMEMSSampler::start_read_thread()
 {
+    /**
+     * Rolling sample-rate meter. A mis-divided I2S clock (see install_and_start()) is
+     * invisible in the driver's own logs — it only shows up as clipping and buffer
+     * overruns. Measuring how fast samples actually arrive makes it unambiguous, and
+     * costs one clock read per buffer.
+     *
+     * The reference MUST be esp_rtc_get_time_us(), not esp_timer_get_time(). esp_timer is the
+     * TG0 LACT counter divided down from APB, so dynamic frequency scaling rescales it on every
+     * switch; measured ~41 % fast under the old 10/80 MHz recording profile, which made this
+     * meter scream "audio is unusable" at ~11.3 kHz over a 2-day run whose audio was in fact
+     * real-time to 0.03 %. The FreeRTOS tick behind ESP_LOGx timestamps is no better (~23 %
+     * fast, CCOUNT-derived). esp_rtc_get_time_us() runs off the RTC slow clock, which DFS and
+     * light sleep cannot touch — and unlike gettimeofday() it is monotonic, so an app or GPS
+     * time-set cannot inject a false rate error. RECORDING_LOW_POWER is fixed 80 MHz now, but
+     * keep this on the RTC clock so the meter stays honest if DFS is ever re-enabled.
+     *
+     * The RTC clock is the internal RC oscillator (CONFIG_ESP32_RTC_CLK_SRC_INT_8MD256),
+     * calibrated once at boot, so it drifts ~0.1 % with temperature. That is far inside the
+     * 5 % tolerance below and irrelevant for catching an 8x divider fault.
+     */
+    const int64_t RATE_WINDOW_US = 5000000;
+    int64_t window_start_us = static_cast<int64_t>(esp_rtc_get_time_us());
+    uint32_t window_samples = 0;
+
+    /**
+     * The peripheral starts filling DMA buffers the moment the driver is installed, which
+     * is ~300 ms before this task starts draining them (the delay() in the main loop). Those
+     * samples arrived before the first window opened, so measuring them makes the first
+     * result read ~1 kHz high. Discard window 1 instead of reporting a false rate error.
+     */
+    bool first_window = true;
+
+    clip_log_last_us = window_start_us;
+
     while (enable_read) {
         auto samples_read = this->read();
 
         if (samples_read != i2s_samples_to_read) {
             ESP_LOGW(TAG, "samples_read = %d, i2s_samples_to_read = %d", samples_read, i2s_samples_to_read);
+        }
+
+        window_samples += samples_read;
+        int64_t elapsed_us = static_cast<int64_t>(esp_rtc_get_time_us()) - window_start_us;
+
+        if (elapsed_us >= RATE_WINDOW_US) {
+            if (first_window) {
+                first_window = false;
+            } else {
+                uint32_t measured = static_cast<uint32_t>((static_cast<int64_t>(window_samples) * 1000000LL) / elapsed_us);
+                // Tolerate 5 %: the window boundaries are not sample-aligned
+                uint32_t tolerance = i2s_sampling_rate / 20;
+
+                if ((measured > (i2s_sampling_rate + tolerance)) || (measured < (i2s_sampling_rate - tolerance))) {
+                    ESP_LOGE(TAG, "I2S sample rate wrong: measured %u Hz, configured %u Hz (%.2fx) - audio is unusable",
+                             measured, i2s_sampling_rate,
+                             static_cast<float>(measured) / static_cast<float>(i2s_sampling_rate));
+                } else {
+                    ESP_LOGI(TAG, "I2S measured sample rate: %u Hz (configured %u Hz)", measured, i2s_sampling_rate);
+                }
+            }
+
+            window_start_us += elapsed_us;
+            window_samples = 0;
         }
     }
 

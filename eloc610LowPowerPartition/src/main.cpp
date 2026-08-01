@@ -264,8 +264,10 @@ static void IRAM_ATTR buttonISR(void *args)
  *        readable while DFS is active.
  * @note  The console UART's baud divisor is derived from its clock source. With power
  *        management enabled the APB clock scales down to the configured CPU min frequency
- *        whenever no peripheral holds an APB lock (e.g. the recording-only profile drops it
- *        to ~10 MHz), which turns 115200-baud output into garbage. REF_TICK is a fixed 1 MHz
+ *        whenever no peripheral holds an APB lock, which turns 115200-baud output into garbage.
+ *        The recording-only profile no longer does this (it is fixed 80 MHz since the DFS
+ *        timer-corruption finding), but a configured cpuMinFrequencyMHZ below the max still
+ *        can, so this stays. REF_TICK is a fixed 1 MHz
  *        reference that DFS does not touch — the same fix already used for the GPS UART
  *        (see ElocGPS::init()). Purely cosmetic (no serial console in the field) but keeps
  *        the logs usable for bench debugging in the low-power modes.
@@ -294,7 +296,7 @@ static void configureConsoleUartRefTick()
 /**
  * @brief Keep the CPU frequency profile in sync with the active recording mode:
  *        any AI detection mode (recordOn_detectOn, recordOff_detectOn, recordOnEvent)
- *        runs at a fixed 240 MHz, recording-only (no AI, no LoRa) at min 10 / max 80 MHz,
+ *        runs at a fixed 240 MHz, recording-only (no AI, no LoRa) at a fixed 80 MHz,
  *        otherwise the configured frequencies apply.
  * @note  ElocSystem defers the actual switch while Bluetooth is up (the PLL relock would
  *        crash the BT radio), so this is re-called every main loop iteration — the request
@@ -991,6 +993,18 @@ static void manageGpsWhileAwake(bool& gpsTzApplied) {
     ElocLora::GetInstance().setGpsInfo(gps.hasFix(), gps.getLat(), gps.getLng(),
                                        gps.getFixAgeMs() / 1000);
 
+    // No module on the UART (see gpsModuleAbsent below): stop all GPS power management for the rest
+    // of this boot. Placed after the setGpsInfo push above so ElocLora keeps getting its (empty)
+    // update, and before the intruder / BT-connected blocks so those cannot re-power a rail that
+    // has nothing on it either.
+    static bool gpsModuleAbsent = false;
+    if (gpsModuleAbsent) {
+        if (gps.isInitialized()) {
+            gps.deinit();
+        }
+        return;
+    }
+
     // Intruder alarm active: hold the GPS powered continuously so the LoRa alarm uplinks carry a
     // live, refreshing position while the device is being moved/carried away. Overrides the burst
     // power management below; when the alarm clears, the normal burst cadence resumes (a still-
@@ -1027,6 +1041,7 @@ static void manageGpsWhileAwake(bool& gpsTzApplied) {
     static int64_t powerOnUs    = 0;  // esp_timer time the current burst powered on (0 = GPS off/idle)
     static int64_t nextAttemptUs = 0; // esp_timer time the next burst may begin (0 = ASAP)
     static bool    seeded       = false;
+    static int     silentBursts = 0;  // consecutive bursts that received 0 NMEA bytes
     const int64_t nowUs      = esp_timer_get_time();
     const int64_t intervalUs = static_cast<int64_t>(GPS_RESYNC_INTERVAL_S) * 1000000LL;
 
@@ -1077,6 +1092,23 @@ static void manageGpsWhileAwake(bool& gpsTzApplied) {
             } else {
                 ESP_LOGW(TAG, "GPS burst: no position fix within %d s, keeping clock; retry in ~%d s",
                          effectiveTimeoutS, GPS_RESYNC_INTERVAL_S);
+            }
+            // Distinguish "no fix" from "no module". charsProcessed() is cumulative over the life of
+            // the parser, so a single non-zero reading proves a module is present and this can never
+            // fire afterwards — no per-burst delta needed.
+            if (GPS_ABSENT_AFTER_SILENT_BURSTS > 0 && gps.charsProcessed() == 0) {
+                silentBursts++;
+                ESP_LOGW(TAG, "GPS burst: 0 NMEA bytes received (%d/%d silent bursts) — module not "
+                              "responding, not merely unable to fix",
+                         silentBursts, GPS_ABSENT_AFTER_SILENT_BURSTS);
+                if (silentBursts >= GPS_ABSENT_AFTER_SILENT_BURSTS) {
+                    gpsModuleAbsent = true;
+                    ESP_LOGE(TAG, "GPS module declared ABSENT after %d silent bursts — disabling GPS "
+                                  "for this boot. Check that a module is fitted, that VCC reaches it "
+                                  "(IO expander IO5) and that GPIO%d is connected to its TX. "
+                                  "The system clock will now drift uncorrected.",
+                             silentBursts, PIN_GPS_RX);
+                }
             }
             gps.deinit();
             powerOnUs = 0;
@@ -1213,7 +1245,7 @@ void app_main(void) {
     validateDutyCycleConfig();
 
     // Move the console UART onto REF_TICK before any DFS frequency drop can garble it
-    // (the low-power recording profile scales the APB clock down to ~10 MHz).
+    // (a configured cpuMinFrequencyMHZ below the max scales the APB clock down with it).
     configureConsoleUartRefTick();
 
     /** Setup Power Management.
@@ -1225,7 +1257,13 @@ void app_main(void) {
      *  On a duty-cycle timer wake the recording mode from before deep sleep is restored
      *  further down (wav mode + AI enable from RTC memory). Select the matching CPU
      *  frequency profile already here so it is applied while the radios are still down:
-     *  AI modes run at a fixed 240 MHz, recording-only at min 10 / max 80 MHz. */
+     *  AI modes run at a fixed 240 MHz, recording-only at a fixed 80 MHz.
+     *
+     *  Note this runs BEFORE the GPS time-sync wait further down, so whatever is selected here
+     *  governs the clock during that wait. That is why RECORDING_LOW_POWER must not use DFS: the
+     *  wait's deadline is measured with esp_timer, which ran ~41 % fast under the old 10/80 MHz
+     *  profile, silently cutting a nominal 30 s acquisition window to ~21 s of real time (and the
+     *  patient 180 s cold-start window to ~128 s) — below what a cold GNSS fix needs. */
     bool pmProfileApplied = false;
     if (gIsTimerWake && getDutyCycleConfig().enable && rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC) {
         if (rtc_duty_cycle.aiEnabled) {
@@ -1627,7 +1665,7 @@ void app_main(void) {
         }
 
         // Keep the CPU frequency in sync with the recording mode (AI = 240 MHz,
-        // recording-only = 10/80 MHz). Deferred internally while Bluetooth is up.
+        // recording-only = 80 MHz). Deferred internally while Bluetooth is up.
         updatePmProfileFromRecordingMode();
 
         // Need to start I2S?

@@ -345,10 +345,32 @@ esp_err_t ElocSystem::pm_configure() {
             cfg.min_freq_mhz = 240;
             break;
         case PmProfile::RECORDING_LOW_POWER:
+            // min = max, i.e. DFS OFF. This used to be min 10 (min 20 at >= 30 kHz, see
+            // https://github.com/LIFsCode/ELOC-3.0/issues/30), but scaling APB between 10 and
+            // 80 MHz corrupts BOTH software time bases on this chip, by different amounts:
+            //
+            //   esp_timer  (TG0 LACT, divided from APB)  ran ~41 % fast
+            //   FreeRTOS tick (CCOUNT -> every ESP_LOGx timestamp)  ran ~23 % fast
+            //
+            // Both are rescaled on every frequency switch by esp_pm's on_freq_update(), via
+            // different correction paths, which is how they end up disagreeing with each other.
+            // Measured over a 2-day recordOn_detectOff run and cross-checked against the WAV
+            // filename timestamps, which come from the DFS-immune RTC slow clock: the audio
+            // itself was real-time to 0.03 %, so only the timers were wrong.
+            //
+            // The audio is unaffected either way (I2S runs off the APLL, which DFS never
+            // touches), but the skew is not cosmetic:
+            //   - anything scheduled off esp_timer fires ~41 % early. The GPS acquisition
+            //     window is the one that hurts: on a duty-cycle timer wake this profile is
+            //     applied in setup (main.cpp), BEFORE the GPS time-sync wait and long before
+            //     I2S installs, so a nominal 30 s becomes ~21 s real and the patient 180 s
+            //     cold-start window becomes ~128 s — below the ~30-35 s a cold GNSS fix needs.
+            //   - every log timestamp is wrong, so the SD log can't be used for timing analysis.
+            //
+            // Cost of min = max is only the idle dip from 80 down to 10 MHz; the large win
+            // (80 instead of 240 MHz) is kept. Revisit only with a DFS-immune time base.
             cfg.max_freq_mhz = 80;
-            // sample rates >= 30 kHz require a higher APB bus speed, which is bound to the
-            // min CPU clock: see https://github.com/LIFsCode/ELOC-3.0/issues/30
-            cfg.min_freq_mhz = (getMicInfo().MicSampleRate >= 30000) ? 20 : 10;
+            cfg.min_freq_mhz = 80;
             break;
         case PmProfile::CONFIG_DEFAULT:
         default:
@@ -358,8 +380,6 @@ esp_err_t ElocSystem::pm_configure() {
             }
             break;
     }
-    ESP_LOGI(TAG, "Applying PM profile %s: CPU max %d MHz, min %d MHz, light sleep %s",
-        toString(profile), cfg.max_freq_mhz, cfg.min_freq_mhz, cfg.light_sleep_enable ? "on" : "off");
     if (getConfig().loraConfig.loraEnable) {
         cfg.min_freq_mhz = cfg.max_freq_mhz;
         cfg.light_sleep_enable = false;
@@ -367,6 +387,12 @@ esp_err_t ElocSystem::pm_configure() {
                     "Overwrite Settings: min CPU freq = max CPU freq (%d MHz) and light sleep to %s",
             cfg.min_freq_mhz, cfg.light_sleep_enable ? "on" : "off");
     }
+    // Logged AFTER the LoRa override above, so this line always reports what is actually being
+    // applied. It used to sit before it, printing the requested values — with LoRa enabled that
+    // meant a "light sleep on" line followed by the override warning, which is exactly the
+    // ambiguity you do not want in the one line used to verify the PM profile on the bench.
+    ESP_LOGI(TAG, "Applying PM profile %s: CPU max %d MHz, min %d MHz, light sleep %s",
+        toString(profile), cfg.max_freq_mhz, cfg.min_freq_mhz, cfg.light_sleep_enable ? "on" : "off");
     if (esp_err_t err = this->pm_configure(&cfg) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set PM config with %s", esp_err_to_name(err));
         return err;

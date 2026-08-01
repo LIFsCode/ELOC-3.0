@@ -215,6 +215,32 @@ reapply from there to resurrect it. See `activeContext.md` for the removal detai
 ## What's Left to Build / Fix
 
 ### Recently Fixed
+- [x] **DFS corrupts `esp_timer` and the FreeRTOS tick (V1.59, 2026-08-01; hardware verification
+  pending)** — under the old 10/80 MHz `RECORDING_LOW_POWER` profile, `esp_timer` (TG0 LACT ÷ APB) ran
+  **+41 %** fast and the FreeRTOS tick behind every `ESP_LOGx` timestamp (CCOUNT) **+23 %** fast; both
+  are rescaled on each DFS transition by `on_freq_update()` through different paths. The audio was
+  always correct — proven against WAV filename timestamps, which come from `gettimeofday()` →
+  `esp_rtc_get_time_us()` (RTC slow clock, DFS-immune): 21 files × 3600 s of audio in 75,622 s of wall
+  clock, 0.03 % off. So `I2S sample rate wrong ... audio is unusable` was a **false alarm** from a
+  meter reading a broken clock. Real damage was elsewhere: anything scheduled off `esp_timer` fired
+  ~41 % early, cutting the duty-cycle GPS acquisition window from 30 s to ~21 s real (and the patient
+  cold-start window from 180 s to ~128 s), below what a cold GNSS fix needs. Fixed by removing DFS from
+  both low-power paths (`RECORDING_LOW_POWER` → fixed 80 MHz; default `cpuMinFrequencyMHZ` → 80) and
+  moving the rate meter onto `esp_rtc_get_time_us()`. **Closes issue #77** (closed 2024-04 without a
+  root cause; its stopwatch ratios 1.40/1.20/1.27 are these same skews). Full analysis in
+  `README-I2S-Clock-And-LightSleep-Issues.md`.
+- [x] **Automatic light sleep RTCWDT resets (V1.59, 2026-08-01)** — `esp_light_sleep_start()` arms a
+  1 s RTC watchdog as a safety net; the device hangs inside the sleep sequence and is reset by it
+  (reason 0x10, no panic, no backtrace), which wipes the duty-cycle RTC block and returns the unit not
+  recording and not duty cycling. Default is now `false` **and** clamped via
+  `ALLOW_AUTOMATIC_LIGHT_SLEEP` + `clampLightSleep()` — the clamp is required because a present config
+  key always beats the compiled default, so already-provisioned units would otherwise have kept
+  `"cpuEnableLightSleep": true`. Underlying hang still unexplained (VDD_SDIO/PSRAM/SDIO suspect);
+  blocks open issue #118.
+- [x] **`WAVFileWriter` divide-by-zero + dead max-tracker (V1.59, 2026-08-01)** — `speed` divided by
+  `writeDurationMs` unguarded (Xtensa traps on integer divide-by-zero, so a sub-millisecond cached
+  write would have panicked the `wav_writer` task), and `longestWriteMs` was seeded with `UINT32_MAX`
+  so the `WorstCase` field printed a constant `4294967295 ms` for the lifetime of the build.
 - [x] **Spontaneous panic-reboot during 24/7 recording (V1.53, 2026-07-14; hardware soak pending)** —
   `ElocGPS::deinit()`'s `vTaskDelete()` of the gps reader task eventually landed while the task held
   the global esp_log mutex inside an `ESP_LOGx`, orphaning the mutex; later log-lock takes timed out
@@ -228,7 +254,18 @@ reapply from there to resurrect it. See `activeContext.md` for the removal detai
 
 ### Known Issues
 - [ ] **Automatic gain adjustment** causes audio distortion — disabled
-- [ ] **Light sleep during recording** may not actually occur due to I2S APB_FREQ_MAX lock
+- [ ] **Automatic light sleep is disabled and clamped** (V1.59) — it hangs this board and the
+  safety-net RTC watchdog resets it. The hang itself is unexplained; VDD_SDIO carries both the PSRAM
+  and the SDIO card and light sleep power-cycles that rail. Must be root-caused before open issue #118
+  ("light sleep between inference runs") can proceed.
+- [ ] **Wall-clock drift without GPS** — the RTC source is the internal RC (`INT_8MD256`), calibrated
+  once at boot: −2 s/h hot, +4 s/h cold, ~25 s/day net (measured over 21 h). There is no 32.768 kHz
+  crystal on ELOC 3.0, so `EXT_CRYS` is not an option. Units built without a GPS module have no drift
+  correction at all beyond an app `setTime` per visit. Drift is smallest near the boot temperature.
+- [ ] **`cpuMinFrequencyMHZ` is not clamped** — unlike light sleep, the default change to 80 (V1.59)
+  does *not* reach already-provisioned units, whose stored config keeps `10` and therefore keeps DFS
+  and its timebase skew in the pre-recording window. Deliberate (it is a validated, app-exposed
+  setting), but it means each existing device must be changed from the app.
 - [ ] **APLL unreliable** at sample rates below 16 kHz (falls back to PLL_D2)
 - [ ] **Thread safety** — shared variables between tasks lack mutex guards (noted TODO)
 - [ ] **SD card hot-swap** — removing and replacing SD card requires reboot ("spi bus already initialized")

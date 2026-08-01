@@ -86,7 +86,7 @@ public:
     enum class PmProfile {
         CONFIG_DEFAULT,       ///< no mode active: frequencies from the stored config
         AI_MAX_PERF,          ///< any AI detection mode: fixed 240 MHz
-        RECORDING_LOW_POWER,  ///< recording only, no AI: min 10 / max 80 MHz (ignored if LoRa is enabled)
+        RECORDING_LOW_POWER,  ///< recording only, no AI: fixed 80 MHz, DFS off (ignored if LoRa is enabled)
     };
 private:
     /* data */

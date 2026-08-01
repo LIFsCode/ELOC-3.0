@@ -76,6 +76,12 @@ public:
     inline double getLng() { return mGps.location.lng(); }
     inline uint32_t getSatellites() { return mGps.satellites.value(); }
     inline int64_t lastUtcEpoch() const { return mLastUtcEpoch; }
+    /// @brief Total NMEA bytes ever fed to the parser. This distinguishes "no fix" from "no module":
+    ///        a powered GNSS receiver streams NMEA from power-up whether or not it can see a
+    ///        satellite (RMC with status 'V', GGA with fix quality 0), so no-sky-view gives a large
+    ///        count with sentencesWithFix() == 0. A count that stays at 0 means nothing is talking on
+    ///        the UART at all — no module fitted, VCC not reaching it, or a dead RX path.
+    inline uint32_t charsProcessed() { return mGps.charsProcessed(); }
     /// @brief Milliseconds since the position fix was last updated. A fix lingers as "valid" in the
     ///        parser after a power-down, so use this to tell a live fix from a stale one.
     inline uint32_t getFixAgeMs() { return mGps.location.age(); }

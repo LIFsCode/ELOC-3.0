@@ -2,6 +2,28 @@
 
 ## Current Work Focus
 
+**DFS timebase corruption — "audio is unusable" was a false alarm (2026-08-01, V1.59), BUILD-VERIFIED,
+hardware verification owed.** A 2-day `recordOn_detectOff` run logged
+`I2S sample rate wrong: measured ~11300 Hz ... audio is unusable` continuously while the audio was
+in fact real-time to 0.03 %. The meter was measuring a broken clock. Root cause: `esp_timer`
+(TG0 LACT ÷ APB) and the FreeRTOS tick behind every `ESP_LOGx` stamp (CCOUNT) are **different** clocks,
+both rescaled on every DFS transition by `on_freq_update()` through different paths — so under the
+10/80 MHz `RECORDING_LOW_POWER` profile they ran **+41 %** and **+23 %** fast respectively and
+disagreed with each other by a constant 0.876 (measured two independent ways). Proven against a third,
+DFS-immune base: WAV filenames come from `gettimeofday()` → `esp_rtc_get_time_us()`, and 21 files ×
+3600 s of audio landed in 75,622 s of wall clock. Audio is APLL-clocked, which `esp_pm` never touches.
+**Fixes:** `RECORDING_LOW_POWER` → fixed 80 MHz; `C_ElocConfig_Default.cpuMinFrequencyMHZ` → 80 (so
+`CONFIG_DEFAULT`, the profile in force during the duty-cycle GPS wait, is DFS-free too); rate meter +
+clip throttle moved to `esp_rtc_get_time_us()`. Also: light sleep off by default **and** clamped
+(`ALLOW_AUTOMATIC_LIGHT_SLEEP` + `clampLightSleep()`, required because a present config key beats the
+compiled default on every already-provisioned unit); GPS-absent detection; two `WAVFileWriter` bugs.
+**This closes issue #77**, whose 2024 stopwatch ratios (1.40 / 1.20 / 1.27) are these same skews and
+whose closing summary recorded the opposite conclusion.
+**Owed (bench):** flash V1.59 and confirm `CPU max 80 MHz, min 80 MHz, light sleep off`, steady
+`I2S measured sample rate: ~16000 Hz` with no rate errors, a real `WorstCase` value, and no console
+garbling. Note `cpuMinFrequencyMHZ` is **not** clamped, so existing units keep their stored `10` until
+changed from the app. Full analysis: `README-I2S-Clock-And-LightSleep-Issues.md`.
+
 **GPS cold first fix in duty cycle (2026-07-31, V1.58), HARDWARE-VERIFIED (outdoor cold start).** A unit commissioned into duty cycle *before* its first-ever GPS fix could stay fix-less
 indefinitely. Every wake it did get ~30 s of blocking `waitForTimeSync` plus the awake window, and it
 never stopped retrying (`lastGpsSyncS` stays 0, so `gpsClockFresh` is never true) — but no window was

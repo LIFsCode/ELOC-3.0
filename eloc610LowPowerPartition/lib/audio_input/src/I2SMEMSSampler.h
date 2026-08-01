@@ -15,6 +15,7 @@
 #include "../../../include/ei_inference.h"
 #include "../../../include/project_config.h"
 #include <driver/i2s.h>
+#include <esp_timer.h>
 
 extern TaskHandle_t i2s_TaskHandler;
 extern TaskHandle_t ei_TaskHandler;
@@ -57,6 +58,15 @@ class I2SMEMSSampler {
     * Stop read thread by setting to false
     */
    bool enable_read = true;
+
+   /**
+    * Clip-warning throttling. At a wrong I2S clock every single read clips, which
+    * floods the SD card log (and the log writes then starve the wav writer). Collect
+    * the clip count and emit at most one warning per second.
+    */
+   int64_t clip_log_last_us = 0;
+   uint32_t clip_accum = 0;
+   uint32_t clip_reads = 0;
 
    /**
     * DC offset removal filter for DMM-4026-B-I2S-R microphone

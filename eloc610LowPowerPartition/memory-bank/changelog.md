@@ -4,6 +4,55 @@ Dated history of completed work, newest first. Entries are moved here verbatim f
 `activeContext.md` → 'Recent Changes' once a work stream is finished, so activeContext stays
 focused on current work. The two newest/in-flight entries always stay in activeContext.
 
+- **V1.59 — DFS corrupts both software timebases; "audio is unusable" was a false alarm** (2026-08-01,
+  build-verified, hardware verification pending). A 2-day `recordOn_detectOff` run on ELOC_00150 logged
+  `I2S sample rate wrong: measured ~11300 Hz, configured 16000 Hz (0.71x) - audio is unusable` every
+  few seconds, while the audio sounded fine. It was fine. The rate meter was measuring a broken clock.
+  The V1.55 investigation had assumed the meter and the `ESP_LOGx` timestamps shared one time base;
+  they do not (`CONFIG_ESP_TIMER_IMPL_TG0_LAC` vs `CONFIG_LOG_TIMESTAMP_SOURCE_RTOS` +
+  `CONFIG_FREERTOS_SYSTICK_USES_CCOUNT`), and that wrong assumption is what made the problem look
+  unsolvable. Both are rescaled on every DFS transition by `esp_pm`'s `on_freq_update()` through
+  different correction paths, so under the 10/80 MHz `RECORDING_LOW_POWER` profile they disagreed with
+  each other by a constant 0.876 — measured two independent ways (rate-meter window cadence and the GPS
+  burst timeout), which is what made them separable. Decisive evidence came from a third, DFS-immune
+  base: WAV filenames use `gettimeofday()`, which in this build resolves to `esp_rtc_get_time_us()`
+  (only `CONFIG_ESP_TIME_FUNCS_USE_RTC_TIMER` is set), and each file closes at exactly 3600 s of audio
+  — **21 files × 3600 s = 75,600 s of audio in 75,622 s of wall clock, 0.03 % off.** Verdict: audio
+  correct; `esp_timer` **+41 % fast**; FreeRTOS tick **+23 % fast**. DFS cannot touch the audio (I2S is
+  APLL/PLL_D2-clocked; `esp_pm` only moves CPU_CLK/APB_CLK). Not cosmetic: anything scheduled off
+  `esp_timer` fired ~41 % early, and on a duty-cycle wake the profile is applied *before* the GPS
+  time-sync wait and long before I2S installs, so a nominal 30 s acquisition window was really ~21 s
+  and the patient 180 s cold-start window ~128 s — below the ~30–35 s a cold GNSS fix needs.
+  **Fixes:** `RECORDING_LOW_POWER` → fixed 80 MHz (min = max, DFS off; the `>=30 kHz ⇒ min 20`
+  conditional removed); `C_ElocConfig_Default.cpuMinFrequencyMHZ` → 80 so `CONFIG_DEFAULT` is DFS-free
+  during the GPS wait (deliberately **not** clamped — it is a validated, app-exposed setting and
+  clamping would make the app's picker lie, so deployed units must be changed per device); the rate
+  meter and the clip-warning throttle now measure against `esp_rtc_get_time_us()` (header `esp32/rtc.h`,
+  not `soc/rtc.h`). Cost is only the 80→10 MHz idle dip. **This closes issue #77** ("Recording time
+  value is off", closed 2024-04 without a root cause): its stopwatch ratios 1.40 / 1.20 / 1.27 are the
+  same two skews, and its unexplained `esp_timer/gettimeofday = 1.416` vs `1.006` samples are DFS on
+  vs off. The apparent randomness that defeated that investigation is load dependence — the skew scales
+  with time spent at the minimum frequency. Its closing summary point 2 ("DFS did not have a major
+  impact on timing accuracy") is wrong and point 5 is now answered.
+  **Also in V1.59:** automatic light sleep disabled by default *and clamped* via new
+  `ALLOW_AUTOMATIC_LIGHT_SLEEP` (0) + `clampLightSleep()` — the clamp is required, not belt-and-braces,
+  because a present config key always beats the compiled default, so every already-provisioned unit
+  would otherwise have kept `"cpuEnableLightSleep": true` and the RTCWDT reset risk with it; called from
+  `loadConfig()` (which `setConfig` funnels through) and `setCpuFrequencyConfig()`, self-healing on the
+  next `writeConfig()` with no eager migration. GPS-absent detection
+  (`GPS_ABSENT_AFTER_SILENT_BURSTS` = 3) distinguishes `chars=0` ("no module on the UART") from "no fix"
+  — a powered receiver streams NMEA regardless of sky view, verified on ELOC_00168 (7773 → 16119 →
+  25761 indoors with `sentences=0`) against ELOC_00150's two days at exactly 0, where no module was
+  fitted; flag is per-boot, so duty-cycle wakes restart the count. Two `WAVFileWriter` bugs:
+  `longestWriteMs` was a max-tracker seeded with `UINT32_MAX` so `WorstCase` printed a constant
+  `4294967295 ms`, and the `speed` calculation divided by `writeDurationMs` unguarded (Xtensa traps on
+  integer divide-by-zero, so a sub-millisecond cached write would panic the `wav_writer` task).
+  `Applying PM profile …` now logs after the LoRa override so it reports what was applied.
+  Residual, unrelated to DFS: the wall clock is the internal RC (`INT_8MD256`), calibrated once at boot,
+  drifting −2 s/h hot to +4 s/h cold, ~25 s/day net; there is no 32.768 kHz crystal on ELOC 3.0, so
+  without a GPS module an app `setTime` per visit is the only correction. Full analysis in
+  `README-I2S-Clock-And-LightSleep-Issues.md`.
+
 - **V1.56 — automatic Edge Impulse FFT-cache patch reapplication** (2026-07-25, build-verified). New
   project-local pre-build script `tools/patch_ei_fft_cache.py` protects the V1.55 reusable-KissFFT
   optimization when a model refresh replaces `edge-impulse-sdk/dsp/numpy.hpp`. It runs from

@@ -24,7 +24,7 @@
 
         #define BLUETOOTH_CLASSIC
 
-        #define VERSION "ELOC-P_V1.58"
+        #define VERSION "ELOC-P_V1.59"
 
         #define STATUS_LED          GPIO_NUM_4
         #define BATTERY_LED         GPIO_NUM_4
@@ -124,6 +124,18 @@
         // the same will not help, so fall back to the cheap trim cadence and keep retrying there.
         // Counted with rtc_duty_cycle.bootCount (timer wakes only). 0 disables the patient wake wait.
         #define GPS_FIRST_FIX_PATIENT_WAKES  10
+        // Consecutive bursts that may end having received ZERO NMEA bytes before the module is
+        // declared absent and the burst cadence stops re-powering it for the rest of this boot.
+        // This is a different failure from "no fix": a powered GNSS receiver streams NMEA from
+        // power-up regardless of sky view (RMC status 'V', GGA fix quality 0), so a no-signal
+        // install still yields tens of thousands of parsed chars. A byte count stuck at 0 means
+        // nothing is on the UART at all — no module fitted (units are built both ways), VCC not
+        // reaching it, or a dead RX path. Retrying that on the hour forever just burns the GPS
+        // rail for 30 s an hour and buries the log in warnings that will never come true.
+        // Conservative at 3: a module needing more than one whole burst to start emitting would
+        // be extraordinary, and the flag is per-boot, so fitting a module and power-cycling
+        // recovers it. Set to 0 to disable the detection and always keep retrying.
+        #define GPS_ABSENT_AFTER_SILENT_BURSTS  3
 
 #endif  // BOARD
 
@@ -266,6 +278,25 @@
  */
 
 #define AI_INCREASE_CPU_FREQ
+
+/**
+ * @brief Master switch for AUTOMATIC light sleep (the cpuEnableLightSleep config field).
+ *
+ * 0 = the config field is ignored and light sleep is always off (see clampLightSleep() in
+ *     ElocConfig.cpp). 1 = the stored config decides, i.e. the old behaviour.
+ *
+ * Kept at 0 because automatic light sleep hangs this board: the device wedges inside the
+ * light-sleep entry/exit sequence and is reset by the safety-net RTC watchdog that
+ * esp_light_sleep_start() arms (reset reason 0x10 RTCWDT_RTC_RESET, no panic, no backtrace).
+ * That reset is not a deep-sleep wake, so the duty-cycle RTC block is wiped and the unit
+ * returns NOT recording and NOT duty cycling — a silently dead node in the field.
+ *
+ * This is a compile-time flag rather than a hard-coded false so the behaviour stays testable:
+ * the underlying hang is still unexplained (VDD_SDIO powers both the PSRAM and the SD card on
+ * this board and light sleep power-cycles that rail — prime suspect, never investigated).
+ * Whoever root-causes it flips this to 1 to re-test, instead of having to unpick the clamp.
+ */
+#define ALLOW_AUTOMATIC_LIGHT_SLEEP 0
 
 /////////////////////////////////// Bluetooth Related configurations ///////////////////////////////////
 

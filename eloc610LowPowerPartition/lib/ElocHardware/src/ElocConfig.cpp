@@ -40,15 +40,16 @@ static const char* TAG = "CONFIG";
 static const uint32_t JSON_DOC_SIZE = 3072;
 static const char* CFG_FILE = "/spiffs/eloc.config";
 static const char* CFG_FILE_SD = "/sdcard/eloctest.txt";
+static const char* LEGACY_NODE_NAME = "ELOC_NONAME";
 
 extern SDCardSDIO sd_card;
 
 //BUGME: encapsulate these in a struct & implement a getter
 static const micInfo_t C_MicInfo_Default {
-    .MicType="ns",
+    .MicType="ICS-43434",
     .MicVolume2_pwr = I2S_DEFAULT_VOLUME,
     .MicSampleRate = I2S_DEFAULT_SAMPLE_RATE,
-    .MicUseAPLL = true,
+    .MicUseAPLL = false,
     .MicChannel =
 #ifdef I2S_DEFAULT_CHANNEL_FORMAT_LEFT
         MicChannel_t::Left
@@ -107,7 +108,7 @@ void updateI2sConfig() {
 
 
 static const elocConfig_T C_ElocConfig_Default {
-    .secondsPerFile = 6000,
+    .secondsPerFile = 3600,
     // Power management
     .cpuMaxFrequencyMHZ = 80,    // minimum 80
     // min = max, i.e. DFS OFF by default. Dynamic frequency scaling on this chip corrupts both
@@ -179,9 +180,87 @@ static const elocDeviceInfo_T C_ElocDeviceInfo_Default {
     .fileHeader = "not_set",
     .locationCode = "unknown",
     .locationAccuracy = 99,
-    .nodeName = "ELOC_NONAME",
+    // Filled from the factory NVS serial after ElocSystem has initialized.
+    .nodeName = "",
 };
 elocDeviceInfo_T gElocDeviceInfo = C_ElocDeviceInfo_Default;
+static bool gNodeNameMigrationPending = false;
+static uint32_t gFactorySerialNumber = 0;
+
+String formatDefaultNodeName(uint32_t serialNumber) {
+    char name[24];
+    snprintf(name, sizeof(name), "ELOC_%05lu",
+             static_cast<unsigned long>(serialNumber % 100000UL));
+    return String(name);
+}
+
+void setFactorySerialNumber(uint32_t serialNumber) {
+    gFactorySerialNumber = serialNumber;
+}
+
+static String factoryDefaultNodeName() {
+    return formatDefaultNodeName(gFactorySerialNumber);
+}
+
+static bool isV163FullSerialNodeName(const String& nodeName) {
+    if (gFactorySerialNumber < 100000UL) {
+        return false;
+    }
+
+    char legacyName[24];
+    snprintf(legacyName, sizeof(legacyName), "ELOC_%lu",
+             static_cast<unsigned long>(gFactorySerialNumber));
+    return nodeName == legacyName;
+}
+
+static bool isValidUtf8NodeName(const String& nodeName) {
+    const auto* bytes = reinterpret_cast<const uint8_t*>(nodeName.c_str());
+    const size_t length = nodeName.length();
+    size_t i = 0;
+
+    while (i < length) {
+        const uint8_t first = bytes[i++];
+        if (first < 0x20 || first == 0x7F) {
+            return false;
+        }
+        if (first < 0x80) {
+            continue;
+        }
+
+        size_t continuationCount = 0;
+        uint8_t secondMin = 0x80;
+        uint8_t secondMax = 0xBF;
+        if (first >= 0xC2 && first <= 0xDF) {
+            continuationCount = 1;
+        } else if (first >= 0xE0 && first <= 0xEF) {
+            continuationCount = 2;
+            if (first == 0xE0) secondMin = 0xA0;  // reject overlong encoding
+            if (first == 0xED) secondMax = 0x9F;  // reject UTF-16 surrogates
+        } else if (first >= 0xF0 && first <= 0xF4) {
+            continuationCount = 3;
+            if (first == 0xF0) secondMin = 0x90;  // reject overlong encoding
+            if (first == 0xF4) secondMax = 0x8F;  // maximum U+10FFFF
+        } else {
+            return false;
+        }
+
+        if (i + continuationCount > length || bytes[i] < secondMin || bytes[i] > secondMax) {
+            return false;
+        }
+        ++i;
+        for (size_t remaining = 1; remaining < continuationCount; ++remaining, ++i) {
+            if (bytes[i] < 0x80 || bytes[i] > 0xBF) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static bool isUnprovisionedNodeName(const String& nodeName) {
+    return nodeName.length() == 0 || nodeName == LEGACY_NODE_NAME
+            || isV163FullSerialNodeName(nodeName) || !isValidUtf8NodeName(nodeName);
+}
 const elocDeviceInfo_T& getDeviceInfo() {
     return gElocDeviceInfo;
 }
@@ -251,11 +330,19 @@ void validateDutyCycleConfig() {
 
 /*************************** Global settings via config file **************************************/
 
-void loadDevideInfo(const JsonObject& device) {
+void loadDeviceInfo(const JsonObject& device) {
     gElocDeviceInfo.fileHeader       = device["fileHeader"]       | C_ElocDeviceInfo_Default.fileHeader;
     gElocDeviceInfo.locationCode     = device["locationCode"]     | C_ElocDeviceInfo_Default.locationCode;
     gElocDeviceInfo.locationAccuracy = device["locationAccuracy"] | C_ElocDeviceInfo_Default.locationAccuracy;
     gElocDeviceInfo.nodeName         = device["nodeName"]         | C_ElocDeviceInfo_Default.nodeName;
+
+    // Preserve names deliberately assigned through the app. Only a missing/empty name, the
+    // historical placeholder, or the exact full-serial name produced by V1.63 is replaced.
+    if (isUnprovisionedNodeName(gElocDeviceInfo.nodeName)) {
+        gElocDeviceInfo.nodeName = factoryDefaultNodeName();
+        gNodeNameMigrationPending = true;
+        ESP_LOGI(TAG, "Using factory-derived node name: %s", gElocDeviceInfo.nodeName.c_str());
+    }
 }
 /**
  * @brief Gate the cpuEnableLightSleep config field on ALLOW_AUTOMATIC_LIGHT_SLEEP.
@@ -386,7 +473,7 @@ bool readConfigFile(const char* filename) {
             ESP_LOGE(TAG, "Parsing %s failed with %s!", filename, error.c_str());
         }
         JsonObject device = doc["device"];
-        loadDevideInfo(device);
+        loadDeviceInfo(device);
 
         JsonObject config = doc["config"];
         loadConfig(config);
@@ -401,6 +488,11 @@ bool readConfigFile(const char* filename) {
 }
 
 void readConfig() {
+    // setup() supplies the serial loaded from factory NVS before reading config. A fresh SPIFFS
+    // config is therefore correct on first boot without coupling this module to ElocSystem.
+    gElocDeviceInfo.nodeName = factoryDefaultNodeName();
+    gNodeNameMigrationPending = false;
+
     if (sd_card.isMounted() && ffsutil::fileExist(CFG_FILE_SD)) {
         ESP_LOGI(TAG, "Using test config from sd-card: %s", CFG_FILE_SD);
         readConfigFile(CFG_FILE_SD);
@@ -408,6 +500,12 @@ void readConfig() {
         if (ffsutil::fileExist(CFG_FILE)) {
             ESP_LOGI(TAG, "Using config from SPIFFS: %s", CFG_FILE);
             readConfigFile(CFG_FILE);
+            if (gNodeNameMigrationPending) {
+                ESP_LOGI(TAG, "Persisting factory-derived node name to SPIFFS");
+                if (writeConfig()) {
+                    gNodeNameMigrationPending = false;
+                }
+            }
         } else {
             ESP_LOGW(TAG, "No config file found, creating default config!");
             writeConfig();
@@ -434,7 +532,12 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     device["fileHeader"]                  = ElocDeviceInfo.fileHeader.c_str();
     device["locationCode"]                = ElocDeviceInfo.locationCode.c_str();
     device["locationAccuracy"]            = ElocDeviceInfo.locationAccuracy;
-    device["nodeName"]                    = ElocDeviceInfo.nodeName.c_str();
+    const String nodeName = isUnprovisionedNodeName(ElocDeviceInfo.nodeName)
+            ? factoryDefaultNodeName()
+            : ElocDeviceInfo.nodeName;
+    // Assign the String itself so ArduinoJson copies it into the document. Passing c_str() here
+    // would retain a pointer to this local String and corrupt the serialized value after return.
+    device["nodeName"]                    = nodeName;
 
     JsonObject config = doc.createNestedObject("config");
     config["secondsPerFile"]              = ElocConfig.secondsPerFile;
@@ -545,7 +648,7 @@ esp_err_t updateConfig(const char* buf, configChangeFlags_t* changeFlags) {
     jsonutils::merge(doc, newCfg);
 
     JsonObject device = doc["device"];
-    loadDevideInfo(device);
+    loadDeviceInfo(device);
 
     JsonObject config = doc["config"];
     loadConfig(config);
@@ -556,6 +659,8 @@ esp_err_t updateConfig(const char* buf, configChangeFlags_t* changeFlags) {
     if (!writeConfig()) {
         return ESP_ERR_FLASH_BASE;
     }
+
+    gNodeNameMigrationPending = false;
 
     return ESP_OK;
 }

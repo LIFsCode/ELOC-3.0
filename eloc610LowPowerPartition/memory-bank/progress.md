@@ -142,6 +142,12 @@
 ### Configuration — ✅ Operational
 - **JSON-based config** on SD card and SPIFFS
 - **NVS factory provisioning** (HW gen/rev, serial, LoRa keys)
+- **Serial-derived factory names and production defaults** (V1.65, 2026-08-03, build-verified):
+  AutoFlasher uses the last five serial digits (`250700250` becomes `ELOC_00250`); firmware migrates
+  missing/empty/legacy `ELOC_NONAME` values and the exact full-serial name produced by V1.63 while
+  preserving commissioned names. V1.65 also repairs the freed-memory garbage V1.64 could persist
+  while serializing the derived name. Defaults: 1 h files, CPU 80/80 MHz,
+  light sleep off, APLL off, ICS-43434. Optional `--factory-reset-config` erases stale SPIFFS.
 - **Per-session config snapshot** saved with recordings
 
 ### GPS (ATGM336H) — ✅ Operational (time sync + auto-timezone validated on HW 2026-06-05)

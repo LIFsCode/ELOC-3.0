@@ -1339,6 +1339,7 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "Setting up HW System...");
     ElocSystem::GetInstance();
+    setFactorySerialNumber(ElocSystem::GetInstance().getSerialNumber());
 
     if (!SPIFFS.begin(true, "/spiffs")) {
         ESP_LOGI(TAG, "An Error has occurred while mounting SPIFFS");

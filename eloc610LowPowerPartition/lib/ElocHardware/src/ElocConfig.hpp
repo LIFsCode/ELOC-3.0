@@ -119,6 +119,13 @@ typedef struct {
 }elocDeviceInfo_T;
 const elocDeviceInfo_T& getDeviceInfo();
 
+/// @brief Build the factory-default Bluetooth/config name from an NVS serial number.
+///        Uses the last five serial digits and pads them with leading zeroes when needed.
+String formatDefaultNodeName(uint32_t serialNumber);
+
+/// @brief Supply the factory NVS serial used when creating or migrating a default node name.
+void setFactorySerialNumber(uint32_t serialNumber);
+
 const loraConfig_T& getLoraConfig();
 
 const inferenceConfig_t& getInferenceConfig();

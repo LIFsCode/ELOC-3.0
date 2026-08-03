@@ -3,13 +3,13 @@
     "fileHeader": "not_set",
     "locationCode": "unknown",
     "locationAccuracy": 99,
-    "nodeName": "ELOC_NONAME"
+    "nodeName": "ELOC_00123"
   },
   "config": {
-    "secondsPerFile": 60,
+    "secondsPerFile": 3600,
     "cpuMaxFrequencyMHZ": 80,
-    "cpuMinFrequencyMHZ": 10,
-    "cpuEnableLightSleep": true,
+    "cpuMinFrequencyMHZ": 80,
+    "cpuEnableLightSleep": false,
     "bluetoothEnableAtStart": true,
     "bluetoothEnableOnTapping": true,
     "bluetoothEnableDuringRecord": true,
@@ -38,10 +38,10 @@
     }
   },
   "mic": {
-    "MicType": "ns",
+    "MicType": "ICS-43434",
     "MicBitShift": 11,
     "MicSampleRate": 16000,
-    "MicUseAPLL": true,
+    "MicUseAPLL": false,
     "MicUseTimingFix": true,
     "MicChannel": "Left"
   }

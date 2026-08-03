@@ -181,6 +181,12 @@ public:
     inline bool hasLIS3DH() const {
         return mLis3DH != NULL;
     }
+
+    /// @brief Factory-provisioned serial number loaded from the NVS factory namespace.
+    inline uint32_t getSerialNumber() const {
+        return mFactoryInfo.serialNumber;
+    }
+
     uint16_t getTemperaure();
 
     /// @brief Checks and adjusts the power management options if it is necessary based on the required I2S sample rate

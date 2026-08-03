@@ -26,7 +26,12 @@ To program the initial NVS information in a fabric new ELOC device use the flash
 python -m esptool write_flash 0x9000 .\.pio\build\esp32dev\nvs.bin
 ```
 
-A script to partly automate this process is in the root folder called Autoflasher.py. More info about that can be found in the Wiki:
+A script to automate production provisioning is in the root folder as `AutoFlasher.py`. It increments
+the NVS serial and derives the device name from its last five digits (`250700250` becomes
+`ELOC_00250`), generates fresh LoRaWAN keys,
+builds and flashes the images, and records successful flashes in `keyfile.csv`. Existing SPIFFS config
+is preserved by default; pass `--factory-reset-config` when a production reflash must erase it and
+recreate the requested compiled defaults. More information can be found in the Wiki:
 https://github.com/LIFsCode/ELOC-3.0/wiki/Firmware-Update-&-Initial-Flashing-with-NVS#initial-flashing-including-nvs
 
 ## Limitations

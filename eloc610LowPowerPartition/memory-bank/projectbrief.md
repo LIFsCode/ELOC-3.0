@@ -42,7 +42,7 @@ The ELOC firmware uses a **dual-partition OTA scheme** on ESP32 with 16MB flash:
 - Record audio from I2S MEMS microphones to SD card as WAV files
 - Supported microphones: **TDK InvenSense ICS-43434** (primary), **PUI DMM-4026-B-I2S-R**, SPH0645
 - Configurable sample rates (4 kHz – 51.6 kHz, default 16 kHz), 24-bit resolution
-- Configurable recording duration per file (default 60 seconds)
+- Configurable recording duration per file (default 1 hour / 3600 seconds)
 - Double-buffered WAV writing with FreeRTOS task-based architecture
 - Three recording modes: **disabled**, **single** (triggered), **continuous**
 

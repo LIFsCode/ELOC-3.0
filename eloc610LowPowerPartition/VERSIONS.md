@@ -14,6 +14,9 @@ bench-tested, `partial` = some paths tested (see the detail doc).
 
 | Version | Date | Status | Change |
 |---|---|---|---|
+| V1.65 | 2026-08-03 | build | Fix dangling `nodeName.c_str()` serialization that wrote freed-memory garbage to SPIFFS; invalid UTF-8/control-character names are recovered automatically from the factory serial. |
+| V1.64 | 2026-08-03 | build | Correct serial-derived node names to use exactly the last five serial digits (`250700250` → `ELOC_00250`) and automatically migrate the incorrect full-serial name persisted by V1.63. |
+| V1.63 | 2026-08-03 | build | Factory flashing derives `device.nodeName` from the NVS serial (`123` → `ELOC_00123`), migrates only missing/empty/`ELOC_NONAME` values while preserving commissioned names, and sets production defaults to 1 h files, 80/80 MHz, light sleep off, APLL off, ICS-43434. |
 | V1.62 | 2026-08-02 | build | `setRecordMode` refuses record-ON modes with no SD card mounted (was silently accepted, so the app showed a session that wrote nothing); invalid-mode requests no longer fall through to a success response. Pairs with app-side alert. |
 | V1.61 | 2026-08-01 | HW | Hot-swap teardown no longer starves Bluetooth: poll moved from the BT/status task to the main loop, non-blocking SD log abandon (`Logging::abandonSdCard()`), mount-retry backoff 2→10 s, sticky rejection of a card-detect line that lies. |
 | V1.60 | 2026-08-01 | partial | SD card hot-swap: removal detected (card-detect on IO expander IO4, with filesystem-probe fallback), recording + SD logging stopped before unmount, re-insertion re-mounts and resumes without a reboot. Removal path tested; superseded by V1.61 for the BT starvation it exposed. |

@@ -7,8 +7,9 @@ Only one download mode entry needed.
 
 Additionally:
 - Increments the serial number in nvs.csv
+- Derives the Bluetooth/config name from that serial (e.g. 123 -> ELOC_00123)
 - Generates new devEUI, appKey, and nwkKey each time
-- Logs the final values from nvs.csv to keyfile.csv for record-keeping
+- Logs successfully flashed values to keyfile.csv for record-keeping
 - Prints them out at the end
 """
 
@@ -17,12 +18,18 @@ import sys
 import csv
 import time
 import argparse
-import serial.tools.list_ports
-from tqdm import tqdm
 import subprocess
 from typing import Tuple
 import secrets  # for secure random hex generation
 from datetime import datetime  # for timestamp logging
+
+
+def format_device_name(serial_num: str) -> str:
+    """Format an NVS serial as ELOC_<last-five-digits>."""
+    serial_value = int(serial_num)
+    if serial_value < 0:
+        raise ValueError("Serial number cannot be negative")
+    return f"ELOC_{serial_value % 100000:05d}"
 
 
 class AutoFlasher:
@@ -31,7 +38,9 @@ class AutoFlasher:
         self.port = args.port
         self.env = args.env
         self.baud_rate = args.baud_rate
+        self.factory_reset_config = args.factory_reset_config
         self.csv_file = os.path.join(self.project_dir, 'nvs.csv')
+        self.partition_table_csv = os.path.join(self.project_dir, 'elocPartitions.csv')
 
         # Where to log updated values
         self.keyfile_csv = os.path.join(self.project_dir, 'keyfile.csv')
@@ -46,6 +55,7 @@ class AutoFlasher:
     @staticmethod
     def detect_com_ports() -> list:
         """Auto-detect available COM ports."""
+        import serial.tools.list_ports
         return [port.device for port in serial.tools.list_ports.comports()]
 
     @staticmethod
@@ -68,13 +78,13 @@ class AutoFlasher:
                 pass
             print("Invalid selection. Please try again.")
 
-    def increment_serial_number(self) -> Tuple[str, str, str, str, str, str]:
+    def increment_serial_number(self) -> Tuple[str, str, str, str, str, str, str]:
         """
         Increments serial number in NVS CSV, generates new devEUI/appKey/nwkKey,
         and also reads hw_gen and hw_rev from the CSV.
 
-        Returns 6 values:
-          (serial_num, hw_gen, hw_rev, devEUI, appKey, nwkKey)
+        Returns 7 values:
+          (serial_num, device_name, hw_gen, hw_rev, devEUI, appKey, nwkKey)
         """
         print("\nProcessing serial number and generating LoRa credentials...")
         rows = []
@@ -128,6 +138,8 @@ class AutoFlasher:
             if not serial_num:
                 raise ValueError("Serial number key not found in CSV")
 
+            device_name = format_device_name(serial_num)
+
             # If devEUI, appKey, or nwkKey were missing entirely, generate & append them
             if devEUI is None:
                 devEUI = secrets.token_hex(8).upper()
@@ -163,13 +175,14 @@ class AutoFlasher:
                 writer.writerows(rows)
 
             print(f"Serial number incremented to: {serial_num}")
+            print(f"Device name: {device_name}")
             print(f"hw_gen: {hw_gen if hw_gen else '(none)'}")
             print(f"hw_rev: {hw_rev if hw_rev else '(none)'}")
             print(f"New devEUI: {devEUI}")
             print(f"New appKey: {appKey}")
             print(f"New nwkKey: {nwkKey}")
 
-            return serial_num, hw_gen, hw_rev, devEUI, appKey, nwkKey
+            return serial_num, device_name, hw_gen, hw_rev, devEUI, appKey, nwkKey
 
         except Exception as e:
             raise RuntimeError(f"Failed to process serial number (or LoRa keys): {e}")
@@ -177,6 +190,7 @@ class AutoFlasher:
     def log_keys_to_keyfile(
         self,
         serial_num: str,
+        device_name: str,
         hw_gen: str,
         hw_rev: str,
         devEUI: str,
@@ -186,7 +200,7 @@ class AutoFlasher:
         """
         Logs all updated values to 'keyfile.csv' for record-keeping.
 
-        Required header: Serial,devEUI,appKey,nwkKey,hw_gen,hw_rev,timestamp
+        Existing keyfiles are migrated in place to add the DeviceName column.
         """
         # Make sure each is a string
         hw_gen = hw_gen or ""
@@ -195,6 +209,7 @@ class AutoFlasher:
         # Define columns for keyfile.csv in the required order
         fieldnames = [
             'Serial',
+            'DeviceName',
             'devEUI',
             'appKey',
             'nwkKey',
@@ -204,9 +219,9 @@ class AutoFlasher:
         ]
 
         # Create row data
-        from datetime import datetime
         row_dict = {
             'Serial': serial_num,
+            'DeviceName': device_name,
             'devEUI': devEUI,
             'appKey': appKey,
             'nwkKey': nwkKey,
@@ -215,7 +230,27 @@ class AutoFlasher:
             'timestamp': datetime.now().isoformat(sep=' ', timespec='seconds')
         }
 
-        file_exists = os.path.isfile(self.keyfile_csv)
+        file_exists = os.path.isfile(self.keyfile_csv) and os.path.getsize(self.keyfile_csv) > 0
+        if file_exists:
+            with open(self.keyfile_csv, 'r', newline='') as f:
+                reader = csv.DictReader(f)
+                existing_fieldnames = reader.fieldnames or []
+                existing_rows = list(reader)
+
+            # Preserve any extra columns while inserting DeviceName into older keyfiles. Rewriting
+            # is done through a sibling temporary file so interruption cannot corrupt the log.
+            merged_fieldnames = fieldnames + [
+                name for name in existing_fieldnames if name not in fieldnames
+            ]
+            if existing_fieldnames != merged_fieldnames:
+                temp_keyfile = self.keyfile_csv + '.tmp'
+                with open(temp_keyfile, 'w', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=merged_fieldnames)
+                    writer.writeheader()
+                    writer.writerows(existing_rows)
+                os.replace(temp_keyfile, self.keyfile_csv)
+            fieldnames = merged_fieldnames
+
         with open(self.keyfile_csv, 'a', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             # Write header if file is new
@@ -242,10 +277,56 @@ class AutoFlasher:
             raise RuntimeError(f"Build failed with return code: {return_code}")
         print("Build successful!")
 
+    def wait_for_download_mode(self):
+        """Prompt once before any optional erase and the final all-in-one flash."""
+        from tqdm import tqdm
+        print("\nPreparing to flash... Please put ESP32 into download mode!")
+        for _ in tqdm(range(10), desc="Waiting"):
+            time.sleep(0.5)
+
+    def get_partition_region(self, partition_name: str) -> Tuple[int, int]:
+        """Read a partition offset and size from the project's active partition CSV."""
+        with open(self.partition_table_csv, 'r', newline='') as file:
+            for row in csv.reader(file):
+                if not row or row[0].strip().startswith('#'):
+                    continue
+                if row[0].strip() == partition_name:
+                    if len(row) < 5:
+                        raise ValueError(f"Malformed partition row for {partition_name}")
+                    return int(row[3].strip(), 0), int(row[4].strip(), 0)
+        raise ValueError(
+            f"Partition '{partition_name}' not found in {self.partition_table_csv}"
+        )
+
+    def erase_config_partition(self):
+        """Erase SPIFFS so the next boot creates a config from the compiled defaults."""
+        offset, size = self.get_partition_region('spiffs')
+        erase_command = [
+            sys.executable,
+            '-m', 'esptool',
+            '--chip', 'esp32',
+            '--port', self.port,
+            '--baud', str(self.baud_rate),
+            '--after', 'no_reset',
+            'erase_region', hex(offset), hex(size)
+        ]
+
+        print(f"\nFactory reset requested: erasing SPIFFS at {hex(offset)} ({hex(size)} bytes)...")
+        process = subprocess.Popen(
+            erase_command,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            text=True
+        )
+        return_code = process.wait()
+        if return_code != 0:
+            raise RuntimeError(f"Config partition erase failed with return code: {return_code}")
+        print("Configuration partition erased; compiled defaults will be created on first boot.")
+
     def flash_all_in_one(self):
         """
         Flash bootloader, partition table, NVS, and firmware in one esptool command.
-        This means only one prompt to enter download mode is required.
+        The caller has already prompted for download mode, allowing an optional SPIFFS erase first.
         """
         # Validate that all files exist
         for path in [
@@ -256,11 +337,6 @@ class AutoFlasher:
         ]:
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Required binary not found: {path}")
-
-        # Prompt user to put device into download mode (only once)
-        print("\nPreparing to flash everything in one go... Please put ESP32 into download mode!")
-        for _ in tqdm(range(10), desc="Waiting"):
-            time.sleep(0.5)
 
         # Single esptool command with all offsets and files
         flash_command = [
@@ -301,20 +377,33 @@ class AutoFlasher:
                 print(f"\nUsing COM port: {self.port}")
 
             # Increment serial & generate new devEUI/appKey/nwkKey
-            serial_num, hw_gen, hw_rev, devEUI, appKey, nwkKey = self.increment_serial_number()
-
-            # Log all updated numbers to keyfile.csv
-            self.log_keys_to_keyfile(serial_num, hw_gen, hw_rev, devEUI, appKey, nwkKey)
+            serial_num, device_name, hw_gen, hw_rev, devEUI, appKey, nwkKey = \
+                self.increment_serial_number()
 
             # Build the project
             self.build_project()
 
-            # Flash all binaries at once
+            # Only one manual download-mode entry is required, including an optional config reset.
+            self.wait_for_download_mode()
+            if self.factory_reset_config:
+                self.erase_config_partition()
+
+            # Flash all binaries at once.
             self.flash_all_in_one()
+
+            # Only successful flashes are recorded as provisioned devices. A logging problem must
+            # not misreport the already-completed device flash as a flash failure.
+            try:
+                self.log_keys_to_keyfile(
+                    serial_num, device_name, hw_gen, hw_rev, devEUI, appKey, nwkKey
+                )
+            except Exception as log_error:
+                print(f"\nWARNING: Flash succeeded, but keyfile logging failed: {log_error}")
 
             # Print summary
             print("\n=== Flash Complete ===")
             print(f"Serial Number:     {serial_num}")
+            print(f"Device Name:       {device_name}")
             print(f"Hardware Gen:      {hw_gen}")
             print(f"Hardware Rev:      {hw_rev}")
             print(f"devEUI:            {devEUI}")
@@ -332,6 +421,11 @@ def main():
     parser.add_argument("--project-dir", help="Project directory (default: current directory)")
     parser.add_argument("--env", default="esp32dev-ei", help="PlatformIO environment (default: esp32dev-ei)")
     parser.add_argument("--baud-rate", type=int, default=921600, help="Baud rate (default: 921600)")
+    parser.add_argument(
+        "--factory-reset-config",
+        action="store_true",
+        help="Erase SPIFFS before flashing so the requested compiled defaults replace stored config"
+    )
 
     args = parser.parse_args()
 

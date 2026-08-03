@@ -2,6 +2,21 @@
 
 ## Current Work Focus
 
+**Factory provisioning identity/defaults (2026-08-03, V1.65), build-verified.**
+`AutoFlasher.py` now reports and records a device name derived from the exact serial placed in NVS
+using its last five digits (`250700250` → `ELOC_00250`). Firmware uses that same factory serial at
+boot whenever `device.nodeName` is missing, empty or the legacy `ELOC_NONAME`, persists a migrated
+SPIFFS name, also repairs the exact full-serial name produced by V1.63, and preserves names deliberately
+assigned through the app. Compiled defaults are now
+1 h WAV files, CPU 80/80 MHz, automatic light sleep off, APLL off and ICS-43434. The flasher records
+keys only after a successful flash and offers explicit `--factory-reset-config` to erase SPIFFS;
+ordinary reflashes retain commissioned settings. Focused AutoFlasher and target config coverage was
+added for the five-digit suffix rule. V1.65 fixes a dangling `String::c_str()` pointer in JSON
+serialization and treats invalid UTF-8/control-character SPIFFS names as recoverable corruption.
+The `esp32dev-ei` environment builds successfully with this repair.
+
+---
+
 **SD card hot-swap (2026-08-01, V1.60 → V1.61), first hardware test done (removal path), re-test
 owed — including whether IO4 is really the card-detect line.** Pulling the SD card left the device permanently broken until a reboot: a
 re-inserted card was never recognised, and the log filled with `sdmmc_req: sdmmc_host_wait_for_event

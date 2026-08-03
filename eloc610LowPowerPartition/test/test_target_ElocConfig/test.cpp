@@ -26,6 +26,7 @@
  */
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <unity.h>
 #include "ElocConfig.hpp"
 
@@ -42,12 +43,36 @@ void tearDown(void) {
 }
 
 void test_init() {
+  setFactorySerialNumber(123);
   readConfig();
+}
+
+void test_default_node_name_format() {
+  TEST_ASSERT_EQUAL_STRING("ELOC_00000", formatDefaultNodeName(0).c_str());
+  TEST_ASSERT_EQUAL_STRING("ELOC_00123", formatDefaultNodeName(123).c_str());
+  TEST_ASSERT_EQUAL_STRING("ELOC_00250", formatDefaultNodeName(250700250).c_str());
+  TEST_ASSERT_EQUAL_STRING("ELOC_23456", formatDefaultNodeName(123456).c_str());
+}
+
+void test_compiled_defaults() {
+  String configJson;
+  TEST_ASSERT_TRUE(printConfig(configJson, CfgType::DEFAULT_CFG));
+
+  DynamicJsonDocument doc(3072);
+  TEST_ASSERT_FALSE(deserializeJson(doc, configJson));
+  TEST_ASSERT_EQUAL_INT(3600, doc["config"]["secondsPerFile"].as<int>());
+  TEST_ASSERT_EQUAL_INT(80, doc["config"]["cpuMaxFrequencyMHZ"].as<int>());
+  TEST_ASSERT_EQUAL_INT(80, doc["config"]["cpuMinFrequencyMHZ"].as<int>());
+  TEST_ASSERT_FALSE(doc["config"]["cpuEnableLightSleep"].as<bool>());
+  TEST_ASSERT_EQUAL_STRING("ICS-43434", doc["mic"]["MicType"].as<const char*>());
+  TEST_ASSERT_FALSE(doc["mic"]["MicUseAPLL"].as<bool>());
 }
 
 int runUnityTests(void) {
   UNITY_BEGIN();
   RUN_TEST(test_init);
+  RUN_TEST(test_default_node_name_format);
+  RUN_TEST(test_compiled_defaults);
   return UNITY_END();
 }
 

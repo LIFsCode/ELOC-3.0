@@ -493,6 +493,9 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
     RecState new_mode = RecState::recInvalid;
     auto new_ai_mode = true;
     auto ai_mode_change = false;
+    // Resolved first, applied only after the SD card check below - a rejected request must
+    // leave the recorder exactly as it was.
+    auto new_wav_mode = WAVFileWriter::Mode::disabled;
 
     if (!req_mode) {
         ESP_LOGI(TAG, "setRecordMode requested <none>");
@@ -504,10 +507,10 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
          */
         if (wav_write_mode == WAVFileWriter::Mode::disabled) {
             new_mode = ai_run_enable ? RecState::recordOn_detectOn : RecState::recordOn_detectOff;
-            wav_writer.set_mode(WAVFileWriter::Mode::continuous);
+            new_wav_mode = WAVFileWriter::Mode::continuous;
         } else {
             new_mode = ai_run_enable ? RecState::recordOff_detectOn : RecState::recordOff_detectOff;
-            wav_writer.set_mode(WAVFileWriter::Mode::disabled);
+            new_wav_mode = WAVFileWriter::Mode::disabled;
         }
     } else {
         ESP_LOGI(TAG, "setRecordMode requested %s", req_mode);
@@ -518,30 +521,45 @@ void cmd_SetRecordMode(CmdParser* cmdParser) {
         if (!strcasecmp(req_mode, "recordOn_detectOff")) {
             new_mode = RecState::recordOn_detectOff;
             new_ai_mode = false;
-            wav_writer.set_mode(WAVFileWriter::Mode::continuous);
+            new_wav_mode = WAVFileWriter::Mode::continuous;
         } else if (!strcasecmp(req_mode, "recordOn_detectOn")) {
             new_mode = RecState::recordOn_detectOn;
             new_ai_mode = true;
-            wav_writer.set_mode(WAVFileWriter::Mode::continuous);
+            new_wav_mode = WAVFileWriter::Mode::continuous;
         } else if (!strcasecmp(req_mode, "recordOff_detectOn")) {
             new_mode = RecState::recordOff_detectOn;
             new_ai_mode = true;
-            wav_writer.set_mode(WAVFileWriter::Mode::disabled);
+            new_wav_mode = WAVFileWriter::Mode::disabled;
         } else if (!strcasecmp(req_mode, "recordOff_detectOff")) {
             new_mode = RecState::recordOff_detectOff;
             new_ai_mode = false;
-            wav_writer.set_mode(WAVFileWriter::Mode::disabled);
+            new_wav_mode = WAVFileWriter::Mode::disabled;
         } else if (!strcasecmp(req_mode, "recordOnEvent")) {
             new_mode = RecState::recordOnEvent;
             new_ai_mode = true;
-            wav_writer.set_mode(WAVFileWriter::Mode::single);
+            new_wav_mode = WAVFileWriter::Mode::single;
         } else {
             char errMsg[64];
             snprintf(errMsg, sizeof(errMsg), "Invalid mode %s", req_mode);
             ESP_LOGE(TAG, "%s", errMsg);
             resp.setError(ESP_ERR_INVALID_ARG, errMsg);
+            // Must not fall through: the success result at the end would overwrite this error,
+            // and the AI block below would enable detection for a mode that was never accepted.
+            return;
         }
     }
+
+    // No card, no recording. Without this the device happily reports "recording" while the wav
+    // writer silently refuses every file, so the app shows a running session that writes nothing.
+    // Detection-only modes stay allowed: they still raise LoRa alerts without a card.
+    if ((new_wav_mode != WAVFileWriter::Mode::disabled) && !sd_card.isMounted()) {
+        const char* errMsg = "No SD card - cannot start recording. Insert a card and try again.";
+        ESP_LOGE(TAG, "%s", errMsg);
+        resp.setError(ESP_ERR_NOT_FOUND, errMsg);
+        return;
+    }
+
+    wav_writer.set_mode(new_wav_mode);
 
     if (ai_mode_change) {
         // Set ai_run_enable IMMEDIATELY so that calcRecordingState() and getStatus

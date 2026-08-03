@@ -31,6 +31,15 @@ esp_err_t init(bool logToSdCard, const String& filename, uint32_t maxFiles, uint
 
 esp_err_t esp_log_to_scard(bool enable);
 
+/// @brief Stop SD logging for a card that has already been removed
+/// @note Use instead of esp_log_to_scard(false) on the hot-swap path: that one takes the file
+///       lock with portMAX_DELAY and fsync()s, which on a removed card blocks the calling task
+///       for many seconds (long enough to drop a Bluetooth connection).
+/// @param lockTimeoutMs how long to wait for a writer still inside the log file
+/// @return true when the log file was released and the card is safe to unmount; false means
+///         a writer is still in there - call again next cycle
+bool abandonSdCard(uint32_t lockTimeoutMs = 200);
+
 esp_err_t printLogConfig(String& buf);
 esp_err_t updateConfig(const String& buf);
 

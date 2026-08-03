@@ -1,22 +1,72 @@
 ED
 
 To Do:
- -- Turn off LEDS after wakup from deep sleep during duty cycle(?)
- -- Show LoRa signal strength in app with red and green circle
  -- Add detecting/recording scheduler 
- -- Restart button
  -- After removing SD card. ELOC must be restarted otherwise SD card is not recognized
       ALSO: SD card shows green in the app
  -- Format SD card from App
- -- Patrol mode: After 12 hours -> 30 sec time drift due to RTC clock
-   - Solution: Add external crystal / GPS module / from LoRa
+ -- Add log to ESP32 memory, so a reboot reason can be captured
+ -- Hardware: ground the TF-115 SD card-detect switch common directly
+      The socket closes CD pin 9 to GND(SHELL) when a card is inserted, but the adapter currently
+      connects the shell to GND through R21=1MOhm (with C10=10uF). Together with the R39=10kOhm
+      pull-up, IO-expander IO4 settles at about 3.27V and therefore always reads HIGH.
+      Fix: replace/bridge R21 with 0Ohm; C10 then becomes redundant. Verify SD_Detect is about
+      3.3V with no card and about 0V with a fully inserted card.
 
 
 To Test:
-  -- Check if LoRa can wake up from stored memory
-  -- test the LoRa hearbeat in patrol mode 
+ -- NOT TESTED ON HARDWARE YET: V1.57 battery avgIntervalMs fix
+      Bug was: loadConfig read the key as "avgIntervalMrs", so the value always fell back to 0
+      AND writeConfig then saved that 0 over it. Setting was dead since forever.
+      Test: setConfig#cfg={"config":{"battery":{"avgIntervalMs":200}}}
+            -> getConfig must show 200   (on V1.56 this came back 0 - this is the whole test)
+            -> reboot -> boot log "Running with this Configuration:" must still show 200
+      WATCH OUT: if /sdcard/eloctest.txt exists it is read INSTEAD of SPIFFS on every boot,
+                 and setConfig never writes that file -> value looks lost even though fix works.
+                 Boot log says which one was used.
+      Effect check: getBattery#mode=raw takes 150ms + avgSamples * avgIntervalMs (needs battery
+                 connected - it disables the charger, can power off a USB-only unit)
+      Decision: leaving avgIntervalMs at 0 for now. getStatus forces a fresh battery read every
+                 time and the app auto-refreshes every 15s, so a big interval would block the
+                 BT link. At 0 it behaves exactly like before.
 
+ -- NOT TESTED ON HARDWARE YET: V1.57 setRecordMode naming cleanup
+      Literals + getHelp now match the RecState enum (lowercase "detect"). strcasecmp kept.
+      Test: both recordOn_DetectOFF and recordOn_detectOff must still be accepted,
+            both must report state "recordOn_detectOff". getHelp lists all 5 modes.
+      Cosmetic only - PASS = no behaviour change vs V1.56.
 
+ -- UNPUSHED (I2SMEMSSampler.cpp/.h): i2s_set_clk() re-apply - SOAK still owed
+      Verified once, but the 8x post-wake clock bug was INTERMITTENT, so one good wake proves
+      nothing. Point of the soak: run with APLL back ON (MicUseAPLL:false is the workaround,
+      it MASKS the bug - do not soak with it).
+      Setup: setConfig#cfg={"config":{"mic":{"MicUseAPLL":true,"MicSampleRate":16000},
+                            "dutyCycle":{"enable":true,"awakeDurationS":30,"sleepDurationS":60}}}
+             -> start recordOn_detectOn, disconnect BT, leave >2h  (90s/cycle = ~40 wakes/h)
+      Check /sdcard/log/eloc.log, EVERY wake:
+             "I2S clock configured: 16000 Hz (requested 16000 Hz)"   <- never 128000
+             "I2S measured sample rate: 16000 Hz"                    <- never the ERROR line
+             no burst of "Audio sample clips occurred"
+      PASS: >=50 wakes, zero rate errors. Cross-check one WAV: duration_s * 16000 ~= sample
+            count, and it must not sound sped up.
+      NOTE: early wakes may also carry the V1.58 GPS 180s patient wait - unrelated, ignore.
+
+ -- UNPUSHED (I2SMEMSSampler.cpp/.h): sample-rate meter + clip throttle - NOT SEEN WORKING YET
+      New 5s rolling meter in start_read_thread(); first window is discarded on purpose (DMA
+      pre-fill would read ~1kHz high), so the FIRST report lands ~10-15s after recording starts.
+      a) True negative: awakeDurationS=120 so a wake gives ~20 reports. Expect every 5s
+             "I2S measured sample rate: 16000 Hz (configured 16000 Hz)"
+         Confirm the first report appears at ~10s not ~5s (= the discard works) and is not
+         ~17000. Tolerance is +-5% -> anything 15200..16800 passes, so a small error will NOT
+         be flagged; that is intended, it only catches gross mis-division.
+      b) True positive (else the meter is untested): comment out the i2s_set_clk() call in
+         install_and_start(), MicUseAPLL:true, duty cycle, wait for a bad wake. Expect
+             "I2S sample rate wrong: measured ~128000 Hz, configured 16000 Hz (8.00x)"
+         Then uncomment. Without (b) all we know is that it does not false-alarm.
+      c) Clip throttle: needs clipping to actually occur - easiest is the broken clock from
+         (b), or raise MicVolume2_pwr and shout at the mic. Expect at most ONE
+             "Audio sample clips occurred N times in M reads"
+         per second, not the old per-read flood.
 
 
 

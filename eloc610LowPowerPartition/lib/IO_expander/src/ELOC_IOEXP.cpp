@@ -33,7 +33,7 @@ esp_err_t ELOC_IOEXP::init() {
         mErrorCode = ESP_ERR_NOT_FOUND;
         return mErrorCode;
     }
-    if ((mErrorCode = portConfig_I(LiION_DETECT))) return mErrorCode;
+    if ((mErrorCode = portConfig_I(LiION_DETECT | SD_DETECT))) return mErrorCode;
     if ((mErrorCode = portConfig_O (LED_STATUS | LED_BATTERY | CHARGE_EN_N | GPS_VCC_EN))) return mErrorCode;
     // set outputs to default values (GPS powered off; ElocGPS::init() enables it explicitly).
     // GPS_VCC_EN drives a P-channel high-side switch (AO3401A) gate -> HIGH = OFF, so it is set high here.
@@ -76,6 +76,10 @@ esp_err_t ELOC_IOEXP::chargeBattery(bool enable) {
 }
 bool ELOC_IOEXP::hasLiIonBattery() {
     return this->readInput() & LiION_DETECT;
+}
+
+bool ELOC_IOEXP::getSdDetectLevel() {
+    return this->readInput() & SD_DETECT;
 }
 
 esp_err_t ELOC_IOEXP::setGpsPower(bool enable) {

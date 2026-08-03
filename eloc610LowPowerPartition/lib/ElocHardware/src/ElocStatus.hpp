@@ -62,7 +62,10 @@ extern int64_t g_ai_deferred_start_time;
  * Duty-Cycle Deep Sleep State Machine
  ******************************************************************************/
 
-/// @brief Magic number to validate RTC duty cycle state (0xE10CDC5E = "ELOC DC IE")
+/// @brief Magic number to validate RTC duty cycle state (0xE10CDC6E = "ELOC DC IE")
+///        Bumped 0xE10CDC5E -> 0xE10CDC6E when gpsModuleAbsent was appended: read under the old
+///        layout that byte is whatever happened to be there, and a stray 1 would be taken as a
+///        standing verdict to keep the GPS switched off — a silent loss of time sync.
 ///        Bumped 0xE10CDC1E -> 0xE10CDC5E when clockSource + firstBootEpochS were appended for the
 ///        GPS/clock-source + deployment-uptime work, so stale RTC content after an OTA re-inits
 ///        cleanly instead of being (mis)read as valid. (5E rather than a lower value: some bench
@@ -71,7 +74,7 @@ extern int64_t g_ai_deferred_start_time;
 ///        Consequence of a bump: one-time RTC wipe on the first boot of the new firmware — the
 ///        persisted TZ is lost until the next app connect / GPS fix (falls back to TIMEZONE_OFFSET),
 ///        and the deployment-uptime clock (firstBootEpochS) restarts.
-#define DUTY_CYCLE_RTC_MAGIC 0xE10CDC5E
+#define DUTY_CYCLE_RTC_MAGIC 0xE10CDC6E
 
 /// @brief Source that last set the device wall clock. Persisted in RTC so the app can label the ELOC
 ///        Time row. The zero value (CLOCK_SRC_BUILD) is the fresh-boot / re-init default for free.
@@ -113,6 +116,11 @@ typedef struct {
     uint8_t  clockSource;            // clock_source_t: who last set the wall clock (0=build/default)
     int64_t  firstBootEpochS;        // wall-clock epoch when this deployment first got a valid time
                                      // (0=not yet). Survives deep sleep; used for deployment uptime.
+    bool     gpsModuleAbsent;        // true once a boot found nothing talking on the GPS UART, so
+                                     // later wakes skip GPS entirely instead of re-powering the rail
+                                     // and blocking every wake (lastGpsSyncS stays 0 forever without
+                                     // a module, so no other gate can ever close). Cleared by the
+                                     // memset on re-init, i.e. by a power cycle.
 } rtc_duty_cycle_t;
 
 /// @brief Global sleep cycle state (non-persistent, reset each boot)

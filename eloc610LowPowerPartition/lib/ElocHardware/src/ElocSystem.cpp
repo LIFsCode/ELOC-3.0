@@ -41,11 +41,29 @@
 #include "ElocLora.hpp"
 #include "Battery.hpp"
 #include "strutils.h"
+#include "logging.hpp"
 
 //TODO move sd card into ELOC system
 extern SDCardSDIO sd_card;
 
 static const char *TAG = "ElocSystem";
+
+/// IO expander used by readSdCardDetect(). A plain pointer rather than ElocSystem::GetInstance()
+/// because the hook is installed from the ElocSystem constructor, where the singleton does not
+/// exist yet.
+static ELOC_IOEXP* gSdDetectIoExp = nullptr;
+
+/**
+ * @brief Card-detect hook handed to SDCardSDIO (see SDCardSDIO::CardDetectFn).
+ *        Reads IO4 and applies the board polarity.
+ * @return true when a card is inserted
+ */
+static bool readSdCardDetect() {
+    if (gSdDetectIoExp == nullptr) {
+        return true;  // no expander: presence unknown, assume a card is there
+    }
+    return gSdDetectIoExp->getSdDetectLevel() == (SDCARD_DETECT_PRESENT_LEVEL != 0);
+}
 
 class StatusLED
 {
@@ -136,7 +154,9 @@ ElocSystem::ElocSystem():
     mLastBuzzerStopMs(0), mRefreshStatus(false), mIntruderDetected(false),
     mFwUpdateProcessing(false), mFactoryInfo(),
     mTargetPmProfile(PmProfile::CONFIG_DEFAULT), mAppliedPmProfile(PmProfile::CONFIG_DEFAULT),
-    mBtActive(false)
+    mBtActive(false),
+    mSdState(SdState::BOOT), mSdStopRequestedMs(0), mSdLogAbandoned(true),
+    mSdRecModeBeforeRemoval(WAVFileWriter::Mode::disabled), mSdRemountEvent(false)
 {
     ESP_LOGI(TAG, "Reading Factory Info from NVS");
 
@@ -224,6 +244,14 @@ ElocSystem::ElocSystem():
             // turn on status LED on ELOC board; the StatusLED blinkers created
             // below take over boot feedback (old 5 s LED animation removed)
             ioExp.setOutputBit(ELOC_IOEXP::LED_STATUS, true);
+
+            // Hand the SD driver the card-detect line (IO4). Must happen before the first
+            // mountSDCard() so init() can validate the polarity against a known-present card.
+            gSdDetectIoExp = &ioExp;
+            ESP_LOGI(TAG, "SD card-detect (IO4) reads %d, '%s' by SDCARD_DETECT_PRESENT_LEVEL=%d",
+                     ioExp.getSdDetectLevel(), readSdCardDetect() ? "inserted" : "removed",
+                     SDCARD_DETECT_PRESENT_LEVEL);
+            sd_card.setCardDetect(&readSdCardDetect);
         }
         ESP_LOGI(TAG, "\t: LIS3DH Accelerometer");
         static LIS3DH lis3dh(I2Cinstance, LIS3DH_I2C_ADDRESS_2);
@@ -441,8 +469,82 @@ void ElocSystem::setBluetoothActive(bool active) {
     }
 }
 
+void ElocSystem::handleSdCardHotSwap() {
+    esp_err_t sdStatus = sd_card.update();
+
+    switch (mSdState) {
+        case SdState::BOOT:
+            // First cycle: adopt whatever setup() achieved, without reporting it as a hot-swap.
+            mSdState = (sdStatus == ESP_OK) ? SdState::MOUNTED : SdState::ABSENT;
+            break;
+
+        case SdState::MOUNTED:
+            if (sdStatus == ESP_OK) {
+                break;
+            }
+            // Card gone (pulled out, or it stopped answering). sd_card has already cleared its
+            // mounted flag, so nothing opens a new file from here on. The volume itself must not
+            // be released yet: the wav writer may still be inside fwrite() on it.
+            ESP_LOGW(TAG, "SD card lost (%s) - stopping recording before unmounting",
+                     esp_err_to_name(sdStatus));
+            mSdRecModeBeforeRemoval = wav_writer.get_mode();
+            if (mSdRecModeBeforeRemoval != WAVFileWriter::Mode::disabled) {
+                // Makes the writer task close its file and exit; the WAV keeps whatever was
+                // already flushed, its header stays at the pre-recording values.
+                wav_writer.set_mode(WAVFileWriter::Mode::disabled);
+            }
+            mSdLogAbandoned = Logging::abandonSdCard();
+            mSdStopRequestedMs = millis();
+            mSdState = SdState::STOPPING;
+            break;
+
+        case SdState::STOPPING:
+            if (!mSdLogAbandoned) {
+                // A task was still inside the log file. The hook is already detached, so it
+                // drains within an SDMMC timeout - retry until the handle is released, because
+                // unmounting under it would free the FATFS it is writing to.
+                mSdLogAbandoned = Logging::abandonSdCard();
+            }
+            if (wav_writer.wav_recording_in_progress || !mSdLogAbandoned) {
+                // Unsigned elapsed-time compare, so a millis() wrap cannot stall the teardown
+                if ((millis() - mSdStopRequestedMs) < SD_WRITER_STOP_TIMEOUT_MS) {
+                    break;  // still finishing up, check again next cycle
+                }
+                // Somebody is wedged in a blocking SDMMC operation. Unmounting now would pull the
+                // FATFS object out from under them, so keep waiting rather than crash - the card
+                // is unusable either way and re-inserting it just re-arms this timeout.
+                ESP_LOGE(TAG, "SD card still held after %d ms (recording=%d, log=%d), delaying unmount",
+                         SD_WRITER_STOP_TIMEOUT_MS, wav_writer.wav_recording_in_progress,
+                         !mSdLogAbandoned);
+                mSdStopRequestedMs = millis();
+                break;
+            }
+            sd_card.unmount();
+            mSdState = SdState::ABSENT;
+            ESP_LOGW(TAG, "SD card unmounted - insert a card to resume");
+            break;
+
+        case SdState::ABSENT:
+            if (sdStatus != ESP_OK) {
+                break;  // no card yet (update() throttles the retries)
+            }
+            ESP_LOGI(TAG, "SD card re-mounted, %.2f GB free", sd_card.freeSpaceGB());
+            mSdRemountEvent = true;  // main loop re-creates the session folder and resumes
+            mSdState = SdState::MOUNTED;
+            break;
+    }
+}
+
+bool ElocSystem::consumeSdRemountEvent() {
+    bool event = mSdRemountEvent;
+    mSdRemountEvent = false;
+    return event;
+}
+
 esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
-    sd_card.update();
+    // NOTE: the SD hot-swap poll deliberately does NOT run here. It is driven from the main loop
+    // (handleSdCardHotSwap()), because a missing card makes mount attempts and log teardown block
+    // for seconds at a time - long enough for this task to stop serving SPP and drop the app.
 
     // notifyStatusRefresh() only runs on a knock event, so an active alarm would otherwise
     // stay latched forever after detection is disabled via setConfig — clear it here.

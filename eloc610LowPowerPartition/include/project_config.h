@@ -24,7 +24,7 @@
 
         #define BLUETOOTH_CLASSIC
 
-        #define VERSION "ELOC-P_V1.59"
+        #define VERSION "ELOC-P_V1.62"
 
         #define STATUS_LED          GPIO_NUM_4
         #define BATTERY_LED         GPIO_NUM_4
@@ -46,6 +46,19 @@
         #define PIN_NUM_CLK     GPIO_NUM_14
         #define PIN_NUM_MOSI    GPIO_NUM_15
         #define PIN_NUM_CS      GPIO_NUM_14
+
+        /* SD card detect (CD) — the socket's mechanical detect switch is wired to IO expander IO4,
+         * not to an ESP32 GPIO, so it is read over I2C (see ELOC_IOEXP::SD_DETECT).
+         *
+         * SDCARD_DETECT_PRESENT_LEVEL is the IO4 level that means "card inserted". The usual wiring
+         * (switch shorts CD to GND on insert, external pull-up to +3V3 — the PCA9557 has NO internal
+         * pull-ups) gives 0. If the board pulls the other way, set this to 1.
+         *
+         * The polarity is self-checking at boot: SDCardSDIO compares the IO4 level against the result
+         * of the initial mount and logs a warning + falls back to failure-polling if they disagree,
+         * so a wrong value here degrades hot-swap detection but never breaks the SD card.
+         */
+        #define SDCARD_DETECT_PRESENT_LEVEL 0
 
         // Lora
         #define PIN_LORA_MISO GPIO_NUM_32
@@ -124,18 +137,30 @@
         // the same will not help, so fall back to the cheap trim cadence and keep retrying there.
         // Counted with rtc_duty_cycle.bootCount (timer wakes only). 0 disables the patient wake wait.
         #define GPS_FIRST_FIX_PATIENT_WAKES  10
-        // Consecutive bursts that may end having received ZERO NMEA bytes before the module is
-        // declared absent and the burst cadence stops re-powering it for the rest of this boot.
-        // This is a different failure from "no fix": a powered GNSS receiver streams NMEA from
-        // power-up regardless of sky view (RMC status 'V', GGA fix quality 0), so a no-signal
-        // install still yields tens of thousands of parsed chars. A byte count stuck at 0 means
+        // --- GPS module-absent detection ------------------------------------------------------
+        // "No module" is a different failure from "no fix": a powered GNSS receiver streams NMEA
+        // from power-up regardless of sky view (RMC status 'V', GGA fix quality 0), so even a
+        // no-signal install yields tens of thousands of parsed chars. A byte count stuck at 0 means
         // nothing is on the UART at all — no module fitted (units are built both ways), VCC not
-        // reaching it, or a dead RX path. Retrying that on the hour forever just burns the GPS
-        // rail for 30 s an hour and buries the log in warnings that will never come true.
-        // Conservative at 3: a module needing more than one whole burst to start emitting would
-        // be extraordinary, and the flag is per-boot, so fitting a module and power-cycling
-        // recovers it. Set to 0 to disable the detection and always keep retrying.
+        // reaching it, or a dead RX path. Retrying that forever just burns the GPS rail and buries
+        // the log in warnings that can never come true.
+        //
+        // Milliseconds the module may stay silent after power-up before it is declared absent. The
+        // ATGM336H starts emitting within ~1 s, so 5 s is already generous; keeping it short is the
+        // point — the verdict then costs ~5 s instead of a whole acquisition ceiling (30 s, or the
+        // 180 s patient cold-start path). Applied on both power paths: the duty-cycle boot wait in
+        // app_main and the awake-window burst in manageGpsWhileAwake. 0 disables it, leaving only
+        // the per-burst fallback below.
+        #define GPS_ABSENT_SILENT_MS  5000
+        // Fallback for GPS_ABSENT_SILENT_MS == 0: consecutive bursts that may END having received
+        // zero NMEA bytes before the module is declared absent. Only reachable with the fast probe
+        // disabled — bursts are GPS_RESYNC_INTERVAL_S apart, so three of them is hours of uptime,
+        // and a duty-cycle awake window is far too short to complete even one.
         #define GPS_ABSENT_AFTER_SILENT_BURSTS  3
+        // Either way the verdict is mirrored into rtc_duty_cycle.gpsModuleAbsent, so duty-cycle
+        // wakes inherit it instead of re-probing every wake. Without a module lastGpsSyncS stays 0
+        // forever, so nothing else would ever stop the per-wake retry. RTC memory survives deep
+        // sleep and is cleared by a power cycle: fitting a module and pulling the battery recovers.
 
 #endif  // BOARD
 

@@ -107,7 +107,17 @@ public:
 
     /// @brief closes the current file
     void close();
-    
+
+    /// @brief Drop the file handle of a storage medium that is already gone (SD card removed)
+    /// @note Unlike close() this never waits indefinitely for the lock and never fsync()s: on a
+    ///       removed card every operation blocks ~1 s in the SDMMC driver and cannot succeed
+    ///       anyway. The caller MUST have detached the log hook first, otherwise a writer can
+    ///       re-enter while this runs.
+    /// @param lockTimeoutMs how long to wait for a writer that is still inside the file
+    /// @return true when the handle was released; false means a writer is still in there and the
+    ///         filesystem must not be unmounted yet - call again
+    bool abandon(uint32_t lockTimeoutMs);
+
     /// @brief write a string to RotateFile file
     /// @param data string to write
     /// @return True if successfuly, false if not

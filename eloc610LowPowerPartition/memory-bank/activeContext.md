@@ -2,6 +2,91 @@
 
 ## Current Work Focus
 
+**SD card hot-swap (2026-08-01, V1.60 → V1.61), first hardware test done (removal path), re-test
+owed — including whether IO4 is really the card-detect line.** Pulling the SD card left the device permanently broken until a reboot: a
+re-inserted card was never recognised, and the log filled with `sdmmc_req: sdmmc_host_wait_for_event
+returned 0x107` / `diskio_sdmmc: Check status failed (0x107)` roughly once a second. Root cause:
+`SDCardSDIO::m_mounted` was set true in `init()` and **never cleared at runtime**, so `isMounted()`
+kept reporting success, the FATFS volume stayed registered around a dead `sdmmc_card_t`, and the
+driver never re-ran the card init sequence — a re-inserted card powers up unaddressed and cannot
+answer against the stale RCA. The existing remount branch in `update()` was unreachable, could not
+have worked anyway (`esp_vfs_fat_sdmmc_mount()` returns `ESP_ERR_INVALID_STATE` while the path is
+still registered) and gave up permanently after `m_MAX_FAILED_MOUNTS = 4`. Each failed probe also
+blocked the Bluetooth/status task ~1 s, and `checkSDCard()` returned OK off stale cached free space,
+so the main loop respawned a doomed `wav_writer` task every second.
+
+**Hardware:** the micro-SD socket's card-detect switch is on **PCA9557 IO expander IO4** (previously
+documented as spare `NC_IO4`), so presence is a ~1 ms I2C read, not a 1 s SDMMC timeout.
+
+**Implementation:** `ELOC_IOEXP::SD_DETECT` (IO4, configured as input, `getSdDetectLevel()`);
+polarity via `SDCARD_DETECT_PRESENT_LEVEL` in `project_config.h` (default 0 = LOW means inserted).
+`SDCardSDIO` takes the detect line as an injected `CardDetectFn` hook rather than including
+ELOC_IOEXP — `lib/ElocHardware` already depends on `lib/sd_card`, so the reverse include would make
+the PlatformIO LDF graph cyclic. The hook is installed from the `ElocSystem` constructor, which runs
+before the first `mountSDCard()`, and **the polarity self-checks**: a successful mount is ground truth
+for "card present", so if IO4 disagrees at that moment the line is declared unusable (warning logged)
+and the code falls back to throttled filesystem probing. Detect readings are debounced (300 ms insert
+settle, 100 ms removal). `m_mounted` (logical usability) is now split from `m_vfsRegistered` (teardown
+still owed) so removal stops new file opens instantly while the volume is released only when safe.
+Sequencing lives in `ElocSystem::handleSdCardHotSwap()` (BOOT → MOUNTED → STOPPING → ABSENT): on
+removal it stops the wav writer, switches SD logging off, waits for `wav_recording_in_progress` to
+clear (5 s deadline, re-armed rather than forced — unmounting under a task inside `fwrite()` is a
+use-after-free), then unmounts; on insertion it re-mounts and raises a one-shot event that the main
+loop turns into `handleSdCardRemounted()` (folder layout, session folder, EI results CSV, SD logging,
+`prepareWavWriter()`, resume the interrupted recording mode). The inference thread's CSV writer is the
+one asynchronous writer left, so it takes the new `SDCardSDIO::claimFs()/releaseFs()` mutex, which
+`unmount()` also waits on (2 s, then proceeds — never unmounting would recreate the original bug).
+`checkSDCard()` now fails when unmounted, which kills the doomed-task respawn loop.
+
+**V1.61 (2026-08-01) — first hardware test found the teardown starved Bluetooth; fixed.** Pulling the
+card while the app was connected dropped the SPP link (`BT_RFCOMM: port_rfc_closed ... res: 19`) and
+the app could not reconnect. Two multi-second blockers, both running on the **BT Server task**:
+(1) `Logging::esp_log_to_scard(false)` → `RotateFile::close()` takes the file lock with
+**`portMAX_DELAY`** while another task sits in `vprintf()` → `rotate()` doing `getFileSize()`/
+`rename()`/`remove()` on the dead card — measured **12 s** between "Redirecting log output BACK" and
+"this should not be on sd card", and the RFCOMM close lands at the end of it; (2) every
+`esp_vfs_fat_sdmmc_mount()` retry blocks **~4 s** in `sdmmc_init_ocr`/`send_op_cond`, repeatedly.
+**Fixes:** the hot-swap poll moved out of `handleSystemStatus()` (BT task) into the **main loop**,
+which can absorb seconds of blocking — while there is no card there is nothing to record — and which
+also runs on duty-cycle timer wakes where the BT task never starts (this removes the limitation noted
+below). New `Logging::abandonSdCard()` + `RotateFile::abandon(timeout)` detach the log hook **first**
+(so no task can re-enter the dead file and any writer inside it drains within one SDMMC timeout), then
+release the handle with a bounded lock wait and no `fsync()`/rotate; the STOPPING state retries it and
+refuses to unmount until it succeeds. Mount retries now back off 2→4→8→10 s (measured from the end of
+the blocking attempt), reset by a successful mount or a detect-line insert edge. `update()` holds the
+(now recursive) fs mutex across mount/unmount so the BT task's `FwUpdateTransfer` call cannot race it.
+
+**The IO4 detect line does not track presence on the test unit.** The 1 s retry cadence in the log
+proves it validated at boot and still read "inserted" with the card physically out (a blind-mode
+retry would have been 5 s apart) — so IO4 is either not the CD switch on this build, floating (the
+PCA9557 has no internal pull-ups), or stuck low. The firmware now self-heals: if the filesystem says
+the card is gone while the detect line says "inserted", the line is rejected **stickily for the boot**
+(`m_cdRejected`) with an explicit error, and everything falls back to throttled polling.
+
+**V1.62 (2026-08-02) — no card, no recording.** With an empty socket the app could still start
+`recordOn_detectOff`: the firmware accepted it, set the mode, spun up I2S and reported "recording",
+while `WAVFileWriter::open_file()` silently refused every file — a field tech would walk away from a
+device that records nothing. `cmd_SetRecordMode` now resolves the requested wav mode first and rejects
+any record-ON mode (`recordOn_detectOff`, `recordOn_detectOn`, `recordOnEvent`) with
+`ESP_ERR_NOT_FOUND` + "No SD card - cannot start recording" **before touching any state**.
+Detection-only modes stay allowed — they still raise LoRa alerts without a card. Also fixed in passing:
+an invalid mode string used to `setError()` and then fall through to `setResultSuccess()`, reporting
+success *and* enabling AI for a mode that was never accepted; it now returns immediately.
+App side (5.41 working copy, not released): `SetCommandCompletedCallback` carries the device's `error`
+string, and `DeviceActivity` shows it in a modal alert when a mode change is refused (previously the
+screen just snapped back to "not recording" with no explanation).
+
+**Owed (bench):** boot once with the card in and once with the socket empty and compare the
+`SD card-detect (IO4) reads N` line — if N is identical, IO4 is not wired to the switch (check the
+schematic for the pull-up); if it differs but is inverted, flip `SDCARD_DETECT_PRESENT_LEVEL`. Then:
+pull the card while the app is connected and confirm the app **stays connected**; confirm the 0x107
+spam stops, the LED shows not-mounted and `sdCardMounted=false`; re-insert and confirm a new session
+folder plus resumed recording without a reboot. Known and accepted: the WAV being written at removal
+is truncated with an unfixed header, and `VDD_SDIO` feeds both the card and PSRAM, so a rough insert
+can still glitch PSRAM — no software remount covers that.
+
+---
+
 **DFS timebase corruption — "audio is unusable" was a false alarm (2026-08-01, V1.59), BUILD-VERIFIED,
 hardware verification owed.** A 2-day `recordOn_detectOff` run logged
 `I2S sample rate wrong: measured ~11300 Hz ... audio is unusable` continuously while the audio was

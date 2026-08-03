@@ -92,6 +92,21 @@ esp_err_t esp_log_to_scard(bool enable) {
 
 }
 
+bool abandonSdCard(uint32_t lockTimeoutMs) {
+    // Detach the hook FIRST: from here on no task can enter the (dead) log file, so any writer
+    // still inside it drains within one SDMMC timeout instead of feeding an endless stream of
+    // rotate()/rename() attempts on a card that is no longer there.
+    esp_log_set_vprintf(&vprintf);
+    log_to_scard_enabled = false;
+    static_fatal_error = false;
+
+    if (!logFile.abandon(lockTimeoutMs)) {
+        return false;
+    }
+    ESP_LOGW(TAG, "SD card gone - log output back to UART0 only");
+    return true;
+}
+
 esp_err_t init(bool logToSdCard, const String& filename, uint32_t maxFiles, uint32_t maxFileSize) {
     if (!logFile.setFilename(filename.c_str())) {
         return ESP_FAIL;

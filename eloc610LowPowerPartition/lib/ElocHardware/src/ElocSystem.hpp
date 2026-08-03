@@ -117,6 +117,23 @@ private:
     PmProfile mAppliedPmProfile;  // profile last applied successfully via pm_configure()
     bool mBtActive;               // BT controller running: CPU frequency must not be switched (PLL relock)
 
+    /// SD card hot-swap handling, see handleSdCardHotSwap()
+    enum class SdState {
+        BOOT,      ///< before the first poll: adopt the state setup() left behind
+        MOUNTED,   ///< card present and usable
+        STOPPING,  ///< removal seen, waiting for the wav writer to release its file handle
+        ABSENT,    ///< unmounted, polling for a card
+    };
+    SdState mSdState;
+    uint32_t mSdStopRequestedMs;                   ///< millis() when the writer was told to stop
+    bool mSdLogAbandoned;                          ///< SD log handle released, safe to unmount
+    WAVFileWriter::Mode mSdRecModeBeforeRemoval;   ///< mode to restore once a card is back
+    bool mSdRemountEvent;                          ///< one-shot flag consumed by the main loop
+
+    /// How long the wav writer gets to close its file before the volume is released. It has to
+    /// walk a few failing SDMMC operations (~1 s each) on its way out.
+    static const uint32_t SD_WRITER_STOP_TIMEOUT_MS = 5000;
+
     /**
      * @brief Set implementation-specific power management configuration. This is a wrapper for esp_pm_configure
      *        but takes certain IDF bugs into account for handling GPIOs and RTC IOs.
@@ -198,6 +215,28 @@ public:
 
     void notifyStatusRefresh();
     esp_err_t handleSystemStatus(bool btEnabled, bool btConnected);
+
+    /// @brief Detect SD removal/insertion and sequence unmount -> re-mount around the tasks that
+    ///        hold open files on the card.
+    /// @note MUST be called from the main loop, not from the Bluetooth/status task: with no card
+    ///       in the socket a mount attempt blocks ~4 s inside the SDMMC driver, and the log
+    ///       teardown can block on a wedged writer. Doing that on the BT task starves SPP and
+    ///       drops the app connection. The main loop can absorb it - while there is no card
+    ///       there is nothing to record anyway. It also keeps working on duty-cycle timer wakes,
+    ///       where the Bluetooth task is never started.
+    void handleSdCardHotSwap();
+
+    /// @brief Consume the one-shot "a fresh SD card was mounted" event.
+    /// @note Set when a card is inserted after boot (hot-swap, or booted with an empty socket).
+    ///       The main loop owns the re-arm: session folder, EI results file, SD logging and
+    ///       resuming the recording mode returned by getRecModeBeforeSdRemoval().
+    /// @return true exactly once per re-mount
+    bool consumeSdRemountEvent();
+
+    /// @brief Recording mode that was active when the card was pulled (disabled if none)
+    inline WAVFileWriter::Mode getRecModeBeforeSdRemoval() const {
+        return mSdRecModeBeforeRemoval;
+    }
 
     /// @brief Whether the knock-based intruder alarm is currently active
     inline bool isIntruderDetected() const {

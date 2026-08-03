@@ -403,14 +403,12 @@ void doDeepSleep()
     esp_restart();
 }
 
-bool mountSDCard() {
-    ESP_LOGI(TAG, "Trying to mount SDCard (SDIO)");
-    sd_card.init("/sdcard");
-
-    if (!sd_card.isMounted())
-        return false;
-
-    ESP_LOGI(TAG, "SD card mounted ");
+/**
+ * @brief Prepare a freshly mounted card: folder layout + free space cache
+ * @note Shared by the boot mount and by the hot-swap re-mount path, which sees a card that has
+ *       never been touched by this device.
+ */
+void prepareMountedSDCard() {
     const char* ELOC_FOLDER = "/sdcard/eloc";
 
     if (!ffsutil::folderExists(ELOC_FOLDER)) {
@@ -429,6 +427,42 @@ bool mountSDCard() {
     float freeSpace = sd_card.freeSpaceGB();
     float totalSpace = sd_card.getCapacityMB()/1024;
     ESP_LOGV(TAG, "SD card %f / %f GB free", freeSpace, totalSpace);
+}
+
+bool mountSDCard() {
+    ESP_LOGI(TAG, "Trying to mount SDCard (SDIO)");
+    sd_card.init("/sdcard");
+
+    if (!sd_card.isMounted())
+        return false;
+
+    ESP_LOGI(TAG, "SD card mounted ");
+    prepareMountedSDCard();
+    return true;
+}
+
+/**
+ * @brief Set up the WAVFileWriter against the mounted card
+ * @note Idempotent: the buffer allocation and the I2S registration happen once, so this can be
+ *       called again when a card is hot-swapped in after a card-less boot.
+ * @return true when the writer is ready to record
+ */
+bool prepareWavWriter() {
+    static bool wavWriterReady = false;
+
+    if (wavWriterReady) {
+        return true;
+    }
+    if (wav_writer.initialize(i2s_mic_Config.sample_rate, 2, NUMBER_OF_MIC_CHANNELS) != true) {
+        ESP_LOGE(TAG, "Failed to initialize WAVFileWriter");
+        return false;
+    }
+    // Block until properly registered otherwise will get error later
+    while (input.register_wavFileWriter(&wav_writer) == false) {
+        ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
+        delay(5);
+    }
+    wavWriterReady = true;
     return true;
 }
 
@@ -523,15 +557,29 @@ int create_inference_result_file_SD() {
  * @return 0 on success, -1 on fail
  */
 int save_inference_result_SD(String results_string) {
-    if (inference_result_file_SD_available == false) {
-        if (create_inference_result_file_SD() != 0)
-            return -1;
+    // Runs on the inference thread, so it must hold the card against a hot-swap unmount
+    // happening on the status task (see SDCardSDIO::claimFs()).
+    if (!sd_card.claimFs()) {
+        ESP_LOGW(TAG, "SD card busy, dropping inference result");
+        return -1;
+    }
+    if (!sd_card.isMounted()) {
+        sd_card.releaseFs();
+        return -1;
     }
 
-    FILE *fp_result = fopen(ei_results_filename.c_str(), FILE_APPEND);
+    int ret = 0;
+    if (inference_result_file_SD_available == false) {
+        ret = create_inference_result_file_SD();
+    }
+
+    FILE *fp_result = (ret == 0) ? fopen(ei_results_filename.c_str(), FILE_APPEND) : nullptr;
 
     if (!fp_result) {
-        ESP_LOGE(TAG, "Failed to open file for writing");
+        if (ret == 0) {
+            ESP_LOGE(TAG, "Failed to open file for writing");
+        }
+        sd_card.releaseFs();
         return -1;
     }
 
@@ -540,6 +588,7 @@ int save_inference_result_SD(String results_string) {
     fputs(file_string.c_str(), fp_result);
     fclose(fp_result);
 
+    sd_card.releaseFs();
     return 0;
 }
 
@@ -694,6 +743,45 @@ void ei_callback_func() {
 }
 
 #endif
+
+/**
+ * @brief Re-arm everything that lives on the SD card after a card was inserted at runtime
+ *
+ * Driven by ElocSystem's hot-swap state machine (card swapped while running, or a card put into
+ * a socket that was empty at boot). The card is a blank slate as far as this device is
+ * concerned: session folder, EI results file and the log file all have to be created again.
+ */
+void handleSdCardRemounted() {
+    ESP_LOGI(TAG, "Fresh SD card mounted, re-arming SD backed subsystems");
+
+    prepareMountedSDCard();
+
+    // Nothing from the previous card exists here
+    session_folder_created = false;
+    #ifdef EDGE_IMPULSE_ENABLED
+        inference_result_file_SD_available = false;
+        save_ai_results_to_sd = true;
+    #endif
+
+    const logConfig_t& logCfg = getConfig().logConfig;
+    if (logCfg.logToSdCard) {
+        // SD logging was switched off when the card went away
+        if (esp_err_t err = Logging::init(true, logCfg.filename, logCfg.maxFiles, logCfg.maxFileSize)) {
+            ESP_LOGE(TAG, "Failed to restart SD card logging with %s", esp_err_to_name(err));
+        }
+    }
+
+    if (!prepareWavWriter()) {
+        return;
+    }
+
+    // Pick recording back up where the card swap interrupted it
+    WAVFileWriter::Mode mode = ElocSystem::GetInstance().getRecModeBeforeSdRemoval();
+    if (mode != WAVFileWriter::Mode::disabled) {
+        wav_writer.set_mode(mode);
+        ESP_LOGI(TAG, "Resuming recording (mode %s) after SD card swap", wav_writer.get_mode_str());
+    }
+}
 
 /*******************************************************************************
  * Duty-Cycle Deep Sleep Functions
@@ -894,6 +982,29 @@ static bool gpsFirstFixOutstanding() {
     return (rtc_duty_cycle.magic != DUTY_CYCLE_RTC_MAGIC) || (rtc_duty_cycle.lastGpsSyncS == 0);
 }
 
+/// @brief Set once this boot has concluded that nothing is talking on the GPS UART. File-scope
+///        rather than a manageGpsWhileAwake local so the boot path can set and read it too.
+static bool gGpsModuleAbsent = false;
+
+/**
+ * @brief Record that no module answered on the GPS UART: stop powering the rail for the rest of this
+ *        boot, and mirror the verdict into RTC so later duty-cycle wakes skip GPS instead of
+ *        re-probing. Callers own the deinit() — this only records the decision.
+ * @note  Recovery is a power cycle (RTC memory does not survive one), so fitting a module and pulling
+ *        the battery re-enables GPS. A reset that preserves RTC memory keeps the verdict.
+ * @param reason short phrase for the log, describing which probe reached the verdict
+ */
+static void declareGpsModuleAbsent(const char* reason) {
+    gGpsModuleAbsent = true;
+    if (rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC) {
+        rtc_duty_cycle.gpsModuleAbsent = true;
+    }
+    ESP_LOGE(TAG, "GPS module declared ABSENT (%s) — disabling GPS until the next power cycle. "
+                  "Check that a module is fitted, that VCC reaches it (IO expander IO5) and that "
+                  "GPIO%d is connected to its TX. The system clock will now drift uncorrected.",
+             reason, PIN_GPS_RX);
+}
+
 /**
  * @brief Derive the local-display timezone from the current GPS longitude and apply it, unless the
  *        user has already set one from the app.
@@ -993,12 +1104,12 @@ static void manageGpsWhileAwake(bool& gpsTzApplied) {
     ElocLora::GetInstance().setGpsInfo(gps.hasFix(), gps.getLat(), gps.getLng(),
                                        gps.getFixAgeMs() / 1000);
 
-    // No module on the UART (see gpsModuleAbsent below): stop all GPS power management for the rest
+    // No module on the UART (see declareGpsModuleAbsent): stop all GPS power management for the rest
     // of this boot. Placed after the setGpsInfo push above so ElocLora keeps getting its (empty)
     // update, and before the intruder / BT-connected blocks so those cannot re-power a rail that
-    // has nothing on it either.
-    static bool gpsModuleAbsent = false;
-    if (gpsModuleAbsent) {
+    // has nothing on it either. Also true straight out of boot when an earlier wake reached the
+    // verdict and app_main restored it from RTC.
+    if (gGpsModuleAbsent) {
         if (gps.isInitialized()) {
             gps.deinit();
         }
@@ -1075,6 +1186,20 @@ static void manageGpsWhileAwake(bool& gpsTzApplied) {
         // window there comes from the blocking wake wait in app_main, not from here.
         const int effectiveTimeoutS =
             gpsFirstFixOutstanding() ? GPS_FIRST_FIX_TIMEOUT_S : GPS_TIME_SYNC_TIMEOUT_S;
+        // Fast absence verdict, checked DURING the burst rather than at its end: a powered receiver
+        // streams NMEA within ~1 s whether or not it can see a satellite, so zero bytes after
+        // GPS_ABSENT_SILENT_MS means nothing is on the UART and no amount of further waiting will
+        // change that. Ending the burst here costs ~5 s instead of a full effectiveTimeoutS ceiling
+        // (up to 180 s), and reaches the verdict on the first burst instead of after
+        // GPS_ABSENT_AFTER_SILENT_BURSTS whole GPS_RESYNC_INTERVAL_S apart. charsProcessed() is
+        // cumulative over the parser's life, so one non-zero reading disarms this permanently.
+        if (GPS_ABSENT_SILENT_MS > 0 && gps.charsProcessed() == 0 &&
+            (nowUs - powerOnUs) > static_cast<int64_t>(GPS_ABSENT_SILENT_MS) * 1000LL) {
+            declareGpsModuleAbsent("silent on the UART since power-up");
+            gps.deinit();
+            powerOnUs = 0;
+            return;
+        }
         // End the burst on a live POSITION fix, not merely a time sync. UTC time is decoded a few
         // seconds before a full position solution, and the local timezone is derived from the fix
         // LONGITUDE — powering off on time alone leaves the TZ at its compile-time default. A fix
@@ -1093,21 +1218,17 @@ static void manageGpsWhileAwake(bool& gpsTzApplied) {
                 ESP_LOGW(TAG, "GPS burst: no position fix within %d s, keeping clock; retry in ~%d s",
                          effectiveTimeoutS, GPS_RESYNC_INTERVAL_S);
             }
-            // Distinguish "no fix" from "no module". charsProcessed() is cumulative over the life of
-            // the parser, so a single non-zero reading proves a module is present and this can never
-            // fire afterwards — no per-burst delta needed.
+            // Slow fallback for GPS_ABSENT_SILENT_MS == 0 — with the fast probe enabled the burst
+            // above already returned, so this cannot be reached with a zero byte count. Distinguishes
+            // "no fix" from "no module"; charsProcessed() is cumulative over the life of the parser,
+            // so a single non-zero reading proves a module is present and disarms it permanently.
             if (GPS_ABSENT_AFTER_SILENT_BURSTS > 0 && gps.charsProcessed() == 0) {
                 silentBursts++;
                 ESP_LOGW(TAG, "GPS burst: 0 NMEA bytes received (%d/%d silent bursts) — module not "
                               "responding, not merely unable to fix",
                          silentBursts, GPS_ABSENT_AFTER_SILENT_BURSTS);
                 if (silentBursts >= GPS_ABSENT_AFTER_SILENT_BURSTS) {
-                    gpsModuleAbsent = true;
-                    ESP_LOGE(TAG, "GPS module declared ABSENT after %d silent bursts — disabling GPS "
-                                  "for this boot. Check that a module is fitted, that VCC reaches it "
-                                  "(IO expander IO5) and that GPIO%d is connected to its TX. "
-                                  "The system clock will now drift uncorrected.",
-                             silentBursts, PIN_GPS_RX);
+                    declareGpsModuleAbsent("no NMEA bytes across consecutive bursts");
                 }
             }
             gps.deinit();
@@ -1416,7 +1537,21 @@ void app_main(void) {
         }
     }
 
-    if (!gpsClockFresh) {
+    // An earlier boot found nothing talking on the GPS UART. Honour that verdict instead of powering
+    // the rail and blocking again: without a module lastGpsSyncS stays 0 forever, so gpsClockFresh
+    // above can never become true and gpsFirstFixOutstanding() stays true — this path would otherwise
+    // repeat, at the patient GPS_FIRST_FIX_TIMEOUT_S for the first GPS_FIRST_FIX_PATIENT_WAKES wakes
+    // and GPS_TIME_SYNC_TIMEOUT_S every wake after that, for the life of the deployment.
+    bool gpsKnownAbsent = false;
+    if (rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC && rtc_duty_cycle.gpsModuleAbsent) {
+        gGpsModuleAbsent = true;  // also stops manageGpsWhileAwake re-powering it in the main loop
+        gpsKnownAbsent   = true;
+        gpsTzApplied     = true;  // nothing will ever supply a GPS longitude to derive a TZ from
+        ESP_LOGW(TAG, "GPS module was declared absent on an earlier boot — skipping GPS "
+                      "(power-cycle the device to re-probe)");
+    }
+
+    if (!gpsClockFresh && !gpsKnownAbsent) {
         ESP_LOGI(TAG, "Setting up GPS...");
         ElocGPS::GetInstance().init();
 
@@ -1437,7 +1572,25 @@ void app_main(void) {
             ESP_LOGI(TAG, "Timer wake: waiting up to %d s for GPS time sync%s (RTC epoch=%ld)...",
                      syncTimeoutS, patientFirstFix ? " [cold first fix, patient]" : "",
                      timeObject.getEpoch());
-            esp_err_t tsync = ElocGPS::GetInstance().waitForTimeSync(syncTimeoutS * 1000);
+            // Split into a short probe leg and the remainder. A powered receiver streams NMEA within
+            // ~1 s of power-up, fix or no fix, so if not one byte has arrived after
+            // GPS_ABSENT_SILENT_MS there is nothing on the UART and blocking out the rest of the
+            // 30 s / 180 s window cannot change that. The split keeps the no-module verdict at ~5 s
+            // while leaving a real acquisition exactly as long as before (the two legs sum to
+            // syncTimeoutS, and a fix landing inside the probe leg returns from it directly).
+            const uint32_t totalMs = static_cast<uint32_t>(syncTimeoutS) * 1000u;
+            const uint32_t probeMs = (GPS_ABSENT_SILENT_MS > 0 && GPS_ABSENT_SILENT_MS < totalMs)
+                                         ? GPS_ABSENT_SILENT_MS : totalMs;
+
+            esp_err_t tsync = ElocGPS::GetInstance().waitForTimeSync(probeMs);
+            if (tsync == ESP_ERR_TIMEOUT && GPS_ABSENT_SILENT_MS > 0 &&
+                ElocGPS::GetInstance().charsProcessed() == 0) {
+                declareGpsModuleAbsent("silent on the UART since power-up");
+                ElocGPS::GetInstance().deinit();
+            } else if (tsync == ESP_ERR_TIMEOUT && totalMs > probeMs) {
+                tsync = ElocGPS::GetInstance().waitForTimeSync(totalMs - probeMs);
+            }
+
             if (tsync == ESP_OK) {
                 ESP_LOGI(TAG, "Timer wake: GPS time acquired, RTC corrected (epoch=%ld)",
                          timeObject.getEpoch());
@@ -1445,7 +1598,7 @@ void app_main(void) {
                 if (rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC) {
                     rtc_duty_cycle.lastGpsSyncS = ElocGPS::GetInstance().lastUtcEpoch();
                 }
-            } else {
+            } else if (!gGpsModuleAbsent) {  // absence already logged at ERROR level above
                 ESP_LOGW(TAG, "Timer wake: GPS time sync did not complete (%s), keeping RTC time (epoch=%ld)",
                          esp_err_to_name(tsync), timeObject.getEpoch());
             }
@@ -1550,15 +1703,7 @@ void app_main(void) {
 
     if (sd_card.checkSDCard() == ESP_OK) {
         // create a new wave file wav_writer & make sure sample rate is up to date
-        if (wav_writer.initialize(i2s_mic_Config.sample_rate, 2, NUMBER_OF_MIC_CHANNELS) != true) {
-            ESP_LOGE(TAG, "Failed to initialize WAVFileWriter");
-        }
-
-        // Block until properly registered otherwise will get error later
-        while (input.register_wavFileWriter(&wav_writer) == false) {
-            ESP_LOGW(TAG, "Waiting for WAVFileWriter to register");
-            delay(5);
-        }
+        prepareWavWriter();
 
         // On a duty-cycle timer wake, restore the recording mode that was active before sleep.
         // wav_writer.mode is plain RAM and defaults to disabled on every boot, so without this
@@ -1568,6 +1713,8 @@ void app_main(void) {
             ESP_LOGI(TAG, "Timer wake: restored wav mode = %s", wav_writer.get_mode_str());
         }
     } else {
+        // Not fatal: inserting a card later triggers handleSdCardRemounted(), which sets the
+        // writer up then.
         ESP_LOGE(TAG, "SD card not mounted, cannot create WAVFileWriter");
             wav_writer.set_mode(WAVFileWriter::Mode::disabled);  // Default is disabled anyway
         #ifdef EDGE_IMPULSE_ENABLED
@@ -1612,6 +1759,14 @@ void app_main(void) {
     auto new_mode =  WAVFileWriter::Mode::disabled;
 
     while (true) {
+        // SD card removal/insertion. Runs here and not on the Bluetooth/status task because with
+        // no card in the socket both the mount retry and the log teardown block for seconds, which
+        // on the BT task starves SPP and drops the app.
+        ElocSystem::GetInstance().handleSdCardHotSwap();
+        if (ElocSystem::GetInstance().consumeSdRemountEvent()) {
+            handleSdCardRemounted();
+        }
+
         if (xQueueReceive(rec_req_evt_queue, &new_mode, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG, "Received new wav writer mode");
 

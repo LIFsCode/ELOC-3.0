@@ -211,7 +211,22 @@ void  RotateFile::close() {
         _fp = NULL;
     }
 }
-bool RotateFile::write(const char *data) { 
+bool RotateFile::abandon(uint32_t lockTimeoutMs) {
+    if( xSemaphoreTake( mSemaphore, pdMS_TO_TICKS(lockTimeoutMs) ) != pdTRUE ) {
+        printf("%s() a writer still holds the log file\n", __FUNCTION__);
+        return false;
+    }
+    ON_SCOPE_EXIT(SemaphoreGive, mSemaphore);
+    if (_fp) {
+        // No fsync() and no rotate(): the medium is gone. fclose() still has to run to release
+        // the FILE object, and its failing flush costs one SDMMC timeout at most.
+        fclose(_fp);
+        _fp = NULL;
+    }
+    return true;
+}
+
+bool RotateFile::write(const char *data) {
     if( xSemaphoreTake( mSemaphore, pdMS_TO_TICKS(LOCK_TIMEOUT_MS) ) == pdTRUE ) {
         ON_SCOPE_EXIT(SemaphoreGive, mSemaphore);
         if (_fp == NULL) {

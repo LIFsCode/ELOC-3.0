@@ -37,11 +37,15 @@ public:
 	static const uint32_t LED_BATTERY	= 0x02;
 	static const uint32_t CHARGE_EN_N	= 0x04;
 	static const uint32_t LiION_DETECT	= 0x08;
-	// Bit 4-7 is unconnected (spare)
+	// Bit 6-7 is unconnected (spare)
 	static const uint32_t NC_IO4 		= 0x10;
 	static const uint32_t NC_IO5		= 0x20;
 	static const uint32_t NC_IO6		= 0x40;
 	static const uint32_t NC_IO7		= 0x80;
+	// IO4 is the micro-SD socket's mechanical card-detect switch (input).
+	// Read it with getSdDetectLevel(); the level that means "inserted" is board wiring, see
+	// SDCARD_DETECT_PRESENT_LEVEL in project_config.h.
+	static const uint32_t SD_DETECT		= NC_IO4;
 	// IO5 drives a P-channel high-side MOSFET (AO3401A) gating the ATGM336H GPS module VCC.
 	// The gate is pulled to +3V3 by R12, so it is ACTIVE-LOW: gate LOW = GPS ON, gate HIGH = GPS OFF.
 	// Use setGpsPower(bool) rather than setOutputBit() directly so the inversion is handled for you.
@@ -70,6 +74,12 @@ public:
 	/// @brief Enable/disable the ATGM336H GPS module VCC via the IO5 MOSFET gate
 	/// @param enable true = power GPS on, false = power off
 	esp_err_t setGpsPower(bool enable);
+
+	/// @brief Raw level of the SD card-detect switch on IO4
+	/// @note Polarity is board wiring, not a property of the expander — the caller applies
+	///       SDCARD_DETECT_PRESENT_LEVEL. Returns the last read level; an I2C failure reads as 0.
+	/// @return true = IO4 high, false = IO4 low
+	bool getSdDetectLevel();
 
 };
 

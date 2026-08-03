@@ -8,6 +8,15 @@
 - **Double-buffered writing** pipeline with FreeRTOS tasks on separate cores
 - **Three recording modes:** disabled, single (triggered), continuous
 - **SD card** mounting via SDIO with free space checking and session folder creation
+- **Recording refused without an SD card** (V1.62, 2026-08-02, build-verified): `setRecordMode` rejects
+  record-ON modes when no card is mounted instead of reporting a session that writes nothing; the app
+  shows the device's reason in an alert. Detection-only modes stay allowed (LoRa alerts still work).
+- **SD card hot-swap** (V1.61, 2026-08-01, removal path tested on hardware, re-test pending): removal is
+  detected from the card-detect switch on IO expander IO4 (polarity `SDCARD_DETECT_PRESENT_LEVEL`,
+  self-checked against the boot mount, falls back to throttled filesystem probing if it disagrees);
+  recording and SD logging are stopped before the volume is released, and inserting a card re-mounts
+  it, rebuilds the session folder / EI CSV / log file and resumes the interrupted recording mode —
+  no reboot. See `ElocSystem::handleSdCardHotSwap()` and `handleSdCardRemounted()` in `main.cpp`.
 - **FAT32 + exFAT SD cards** (2026-07-06, build-verified, hardware verification pending): exFAT
   enabled by patching `FF_FS_EXFAT` in the packaged IDF 4.4.7 FatFs via pre-build script
   `tools/patch_fatfs_exfat.py`; filesystem type logged at mount; free-space 32-bit overflow fixed

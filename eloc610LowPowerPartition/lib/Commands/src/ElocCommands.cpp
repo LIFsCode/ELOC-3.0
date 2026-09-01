@@ -36,6 +36,7 @@
 #include "CmdResponse.hpp"
 #include "ElocConfig.hpp"
 #include "ElocStatus.hpp"
+#include "ElocSystem.hpp"
 #include "Battery.hpp"
 #include "BluetoothServer.hpp"
 #include "FwUpdateTransfer.hpp"
@@ -234,6 +235,26 @@ void printStatus(String& buf) {
     gps["present"]                       = false;
 #endif
 
+    // Intruder section - lets the app show whether the knock alarm is armed and whether it is
+    // firing right now. "armed" is the effective state: detection is a 24/7-only feature, so a
+    // device in duty-cycle mode reports armed=false even with intruderCfg.enable set (see
+    // ElocSystem::notifyStatusRefresh). "sirenActive" goes false 5 min after the trigger while
+    // "alarmActive" stays true - the LoRa alarm uplinks and GPS tracking keep running.
+    JsonObject intruder = doc.createNestedObject("intruder");
+    const intruderConfig_t& intruderCfg = getConfig().IntruderConfig;
+    ElocSystem& elocSys = ElocSystem::GetInstance();
+    intruder["enabled"]                  = intruderCfg.detectEnable;
+    intruder["armed"]                    = intruderCfg.detectEnable && !getDutyCycleConfig().enable;
+    intruder["alarmActive"]              = elocSys.isIntruderDetected();
+    intruder["sirenActive"]              = elocSys.isSirenActive();
+    intruder["alarmAge[s]"]              = static_cast<long>(elocSys.getIntruderAlarmAgeS());
+    intruder["alarmInterval[s]"]         = static_cast<long>(intruderCfg.alarmIntervalS);
+
+    // The status document grows with every section added to it; a silent overflow would ship a
+    // truncated status to the app, so say so in the log instead.
+    if (doc.overflowed()) {
+        ESP_LOGE(TAG, "Status JSON exceeded its %u byte document - fields are missing!", doc.capacity());
+    }
     if (serializeJsonPretty(doc, buf) == 0) {
         ESP_LOGE(TAG, "Failed serialize JSON config!");
     }

@@ -152,6 +152,7 @@ private:
 ElocSystem::ElocSystem():
     mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true),
     mLastBuzzerStopMs(0), mRefreshStatus(false), mIntruderDetected(false),
+    mIntruderAlarmStartMs(0), mSirenActive(false),
     mFwUpdateProcessing(false), mFactoryInfo(),
     mTargetPmProfile(PmProfile::CONFIG_DEFAULT), mAppliedPmProfile(PmProfile::CONFIG_DEFAULT),
     mBtActive(false),
@@ -555,6 +556,10 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
         mIntruderDetected = false;
     }
 
+    // Ahead of the status/LED/buzzer chain below, so the same cycle that clears the alarm also
+    // silences the siren first and leaves the buzzer free for whatever feedback the chain wants.
+    updateIntruderSiren();
+
     Status_t status;
     status.batteryLow = Battery::GetInstance().isLow();
     status.btEnabled = btEnabled;
@@ -570,17 +575,18 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
         if (esp_err_t err = mBatteryLed->update()) {
             ESP_LOGE(TAG, "mBatteryLed->update() failed with %s", esp_err_to_name(err));
         }
-        if (!mBuzzerIdle) {
+        // Not while the siren runs: updateIntruderSiren() drives EasyBuzzer itself, and an
+        // update() landing in one of its silence gaps would re-attach the pin and restart the tone.
+        if (!mBuzzerIdle && !mSirenActive) {
             EasyBuzzer.update();
         }
     }
     else {
-        if (mStatus.intruderDetected && !mIntruderDetected) {
-            // release intruder alarm buzzer beeping
-            setBuzzerIdle();
-        }
         if (mIntruderDetected) {
-            setBuzzerBeep(494, 50);
+            // The buzzer is driven by updateIntruderSiren() (swept siren + auto-off), not by a
+            // one-shot beep here. This branch still comes first so the battery/SD/BT feedback
+            // below cannot cut into an active alarm; releasing the buzzer once the alarm clears
+            // is handled in updateIntruderSiren() too.
         }
         else if (status.batteryLow) {
             mStatusLed->setBlinkingPeriodic(50, 100, 5*1000, 3);
@@ -678,6 +684,66 @@ void ElocSystem::setBuzzerIdle() {
     mBuzzerIdle = true;
     mLastBuzzerStopMs = millis();
     EasyBuzzer.stopBeep();
+}
+
+// Intruder siren timing. The audible alarm is deliberately short-lived: it startles whoever picked
+// the device up and helps someone nearby locate it, but a unit that has been carried off must not
+// keep beeping for hours - that only drains the battery and keeps telling the thief where it is.
+// The alarm itself (LoRa alarm uplinks + GPS tracking) keeps running after the siren falls silent.
+static const uint32_t C_INTRUDER_SIREN_DURATION_MS = 5 * 60 * 1000;  // buzzer off 5 min after the trigger
+static const uint32_t C_SIREN_SWEEP_MS     = 1000;  // length of one rising sweep
+static const uint32_t C_SIREN_GAP_MS       = 200;   // silence between sweeps
+static const uint32_t C_SIREN_FREQ_LOW_HZ  = 600;   // sweep start
+static const uint32_t C_SIREN_FREQ_HIGH_HZ = 1800;  // sweep end
+
+uint32_t ElocSystem::getIntruderAlarmAgeS() const {
+    if (mIntruderAlarmStartMs == 0) {
+        return 0;
+    }
+    return (millis() - mIntruderAlarmStartMs) / 1000;
+}
+
+void ElocSystem::updateIntruderSiren() {
+    if (!mIntruderDetected) {
+        if (mSirenActive) {
+            mSirenActive = false;
+            setBuzzerIdle();
+        }
+        mIntruderAlarmStartMs = 0;
+        return;
+    }
+
+    if (mIntruderAlarmStartMs == 0) {
+        uint32_t nowMs = millis();
+        mIntruderAlarmStartMs = nowMs ? nowMs : 1;  // 0 doubles as the "no alarm" marker
+        ESP_LOGI(TAG, "Intruder siren started, auto-off in %u s", C_INTRUDER_SIREN_DURATION_MS / 1000);
+    }
+
+    uint32_t elapsedMs = millis() - mIntruderAlarmStartMs;
+    if (elapsedMs >= C_INTRUDER_SIREN_DURATION_MS) {
+        if (mSirenActive) {
+            ESP_LOGI(TAG, "Intruder siren timeout after %u s - alarm stays active (LoRa/GPS keep running)",
+                elapsedMs / 1000);
+            mSirenActive = false;
+            setBuzzerIdle();
+        }
+        return;
+    }
+
+    // Siren pattern: a rising sweep of C_SIREN_SWEEP_MS, then C_SIREN_GAP_MS of silence, repeated.
+    // EasyBuzzer.beep(freq) plays a continuous tone, so re-issuing it with a new frequency on every
+    // status cycle (every 30..100 ms) is what makes the pitch climb.
+    mSirenActive = true;
+    mBuzzerIdle = false;  // keeps the knock guard engaged: the siren must not count as knocks
+    uint32_t phaseMs = elapsedMs % (C_SIREN_SWEEP_MS + C_SIREN_GAP_MS);
+    if (phaseMs < C_SIREN_SWEEP_MS) {
+        uint32_t freq = C_SIREN_FREQ_LOW_HZ +
+            ((C_SIREN_FREQ_HIGH_HZ - C_SIREN_FREQ_LOW_HZ) * phaseMs) / C_SIREN_SWEEP_MS;
+        EasyBuzzer.beep(freq);
+    }
+    else {
+        EasyBuzzer.stopBeep();
+    }
 }
 
 void ElocSystem::setBuzzerBeep(unsigned int frequency, unsigned int beeps) {

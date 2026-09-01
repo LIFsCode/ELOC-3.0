@@ -103,6 +103,8 @@ private:
     bool mRefreshStatus;
     bool mIntruderDetected;
     uint32_t mIntruderThresholdCnt;
+    uint32_t mIntruderAlarmStartMs;  // millis() of the knock that raised the active alarm (0 = no alarm)
+    bool mSirenActive;               // true while the intruder siren owns the buzzer
 
     bool mFwUpdateProcessing;
 
@@ -154,6 +156,13 @@ private:
         ElocSystem::GetInstance().setBuzzerIdle();
     }
     void setBuzzerIdle();
+
+    /// @brief Drive the intruder alarm siren: a swept tone interrupted by a short silence gap,
+    ///        switched off C_INTRUDER_SIREN_DURATION_MS after the alarm first triggered.
+    /// @note Owns the buzzer while the alarm is active, so it must run on every
+    ///       handleSystemStatus() cycle. Silencing it does NOT clear the alarm - the LoRa
+    ///       alarm uplinks and the GPS tracking keep running until the alarm itself is cleared.
+    void updateIntruderSiren();
 public:
     inline static ElocSystem& GetInstance() {
         static ElocSystem System;
@@ -247,6 +256,14 @@ public:
     /// @brief Whether the knock-based intruder alarm is currently active
     inline bool isIntruderDetected() const {
         return mIntruderDetected;
+    }
+
+    /// @brief Seconds since the active intruder alarm first triggered (0 when no alarm is active)
+    uint32_t getIntruderAlarmAgeS() const;
+
+    /// @brief Whether the siren is still sounding (false once it has timed out, alarm or not)
+    inline bool isSirenActive() const {
+        return mSirenActive;
     }
 
     /// @brief Whether a Bluetooth SPP client is currently connected (mStatus.btConnected is refreshed

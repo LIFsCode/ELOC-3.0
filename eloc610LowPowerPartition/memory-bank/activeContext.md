@@ -26,6 +26,25 @@ with BT up versus 46 KB here. Full state, next tests and the planned instrumenta
 
 ---
 
+**Intruder alarm: siren, 5-minute auto-off, status reporting (2026-09-01, V1.69), build-verified.**
+The knock alarm's buzzer is now a swept siren - 600 -> 1800 Hz over 1 s, then a 200 ms silence gap,
+repeating - driven by `ElocSystem::updateIntruderSiren()`, and it switches itself off five minutes
+after the trigger. The alarm itself is unaffected: LoRa alarm uplinks keep going out every
+`intruderCfg.alarmIntervalS` with the live GPS position and duty-cycle sleep stays blocked; the siren
+simply stops draining the battery and telling whoever took the device where it is. The siren owns the
+buzzer while it runs, so the generic `EasyBuzzer.update()` in the unchanged-status path is suppressed
+and the intruder branch of the LED/buzzer chain no longer fires the old one-shot 494 Hz beep (it still
+comes first in the chain so battery/SD/BT feedback cannot cut into an alarm). `getStatus` gained an
+`intruder` section - `enabled`, `armed`, `alarmActive`, `sirenActive`, `alarmAge[s]`,
+`alarmInterval[s]` - so the app can finally show whether an alarm is firing; `armed` is false in
+duty-cycle mode, where knock detection is disabled by design. The Android app renders it as an "Alarm"
+row in the Intruder section (firmware < 1.69 reads back as "not triggered"), and the web dashboard and
+LoRa map now draw intruder alarms in blue with their reported positions as a movement track.
+**Not hardware-tested yet** - the siren pattern, the 5-minute cut-off and the buzzer/knock guard
+interaction want a bench check on a real unit.
+
+---
+
 **Factory provisioning identity/defaults (2026-08-03, V1.65), build-verified.**
 `AutoFlasher.py` now reports and records a device name derived from the exact serial placed in NVS
 using its last five digits (`250700250` → `ELOC_00250`). Firmware uses that same factory serial at

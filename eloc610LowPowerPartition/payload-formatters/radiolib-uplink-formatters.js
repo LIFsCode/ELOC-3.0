@@ -131,6 +131,10 @@ function decodeUplink(input) {
             var date = timeConverter(timestamp);
             var flags = input.bytes[idx++];
             var hasFix = (flags & 0x01) != 0;
+            // bit1 (firmware >= 1.70): the device is still being moved. When clear it has been
+            // still for a few minutes, so it reports at the slower idleIntervalS with the GPS
+            // powered down and lat/lng from its last known fix - check fixAgeS.
+            var moving = (flags & 0x02) != 0;
             // int32 big endian, degrees * 1e5 (signed)
             var latRaw = ((input.bytes[idx++] << 24) | (input.bytes[idx++] << 16) |
                           (input.bytes[idx++] << 8)  |  input.bytes[idx++]) | 0;
@@ -147,6 +151,7 @@ function decodeUplink(input) {
                 timestamp: timestamp,
                 intruderAlarm: true,
                 hasFix: hasFix,
+                moving: moving,
                 latitude: hasFix ? latRaw / 100000.0 : null,
                 longitude: hasFix ? lngRaw / 100000.0 : null,
                 fixAgeS: hasFix ? fixAgeS : null,

@@ -1120,10 +1120,22 @@ static void manageGpsWhileAwake(bool& gpsTzApplied) {
     // live, refreshing position while the device is being moved/carried away. Overrides the burst
     // power management below; when the alarm clears, the normal burst cadence resumes (a still-
     // powered GPS is adopted by the burst logic like a boot-path burst).
+    //
+    // ...but only while it is actually moving. The GPS is by far the largest current draw during an
+    // alarm, and a device that has been put down somewhere is not changing position, so there is
+    // nothing to track: power it off and let the uplinks carry the last known fix (their fixAge
+    // field tells the reader how old it is) at the slower idle cadence. The moment the
+    // accelerometer sees movement again the module comes straight back up.
     if (ElocSystem::GetInstance().isIntruderDetected()) {
-        if (!gps.isInitialized()) {
-            ESP_LOGW(TAG, "Intruder alarm: powering GPS on for location tracking");
-            gps.init();
+        if (ElocSystem::GetInstance().isDeviceMoving()) {
+            if (!gps.isInitialized()) {
+                ESP_LOGW(TAG, "Intruder alarm: powering GPS on for location tracking");
+                gps.init();
+            }
+        }
+        else if (gps.isInitialized()) {
+            ESP_LOGI(TAG, "Intruder alarm: device parked, powering GPS down until it moves again");
+            gps.deinit();
         }
         return;
     }

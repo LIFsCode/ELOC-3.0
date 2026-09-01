@@ -38,10 +38,25 @@ comes first in the chain so battery/SD/BT feedback cannot cut into an alarm). `g
 `intruder` section - `enabled`, `armed`, `alarmActive`, `sirenActive`, `alarmAge[s]`,
 `alarmInterval[s]` - so the app can finally show whether an alarm is firing; `armed` is false in
 duty-cycle mode, where knock detection is disabled by design. The Android app renders it as an "Alarm"
-row in the Intruder section (firmware < 1.69 reads back as "not triggered"), and the web dashboard and
-LoRa map now draw intruder alarms in blue with their reported positions as a movement track.
+row in the Intruder section (firmware < 1.69 reads back as "not triggered") and finally exposes
+`alarmIntervalS` as a seconds-range editor (60 s..1 h, the 60 s matching the firmware clamp), and the
+web dashboard and LoRa map now draw intruder alarms in blue with their reported positions as a
+movement track, annotated with the GPS fix age the alarm carried.
 **Not hardware-tested yet** - the siren pattern, the 5-minute cut-off and the buzzer/knock guard
 interaction want a bench check on a real unit.
+
+**V1.70 follows immediately: motion-gated alarm reporting.** During an alarm the GPS, not the radio, is
+what drains the battery, so it is now powered only while the device is actually being moved. The
+accelerometer is sampled at 4 Hz (its data registers are already high-pass filtered, so gravity is out
+of the way and stillness reads as ~0); after C_MOTION_QUIET_MS (5 min) without a sample above 0.08 g the
+device counts as parked, the GPS is powered down and the uplink cadence backs off from
+`intruderCfg.alarmIntervalS` to the new `intruderCfg.idleIntervalS` (default 1 h), repeating the last
+known fix - whose growing `fixAge` the app and web UI now show. It deliberately never goes silent: a
+device that stops transmitting is indistinguishable from one that was destroyed or shielded. Movement
+resumes both within one sample. The payload gained a "moving" bit (flags bit1), carried through the TTN
+formatter, the Cloud Function, `getStatus` and the web UI (parked positions draw hollow on the map).
+The buzzer/knock guard also suppresses motion samples, so the siren cannot hold the device "moving".
+Same caveat: build-verified only, no bench test yet.
 
 ---
 

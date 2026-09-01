@@ -249,6 +249,9 @@ void printStatus(String& buf) {
     intruder["sirenActive"]              = elocSys.isSirenActive();
     intruder["alarmAge[s]"]              = static_cast<long>(elocSys.getIntruderAlarmAgeS());
     intruder["alarmInterval[s]"]         = static_cast<long>(intruderCfg.alarmIntervalS);
+    intruder["idleInterval[s]"]          = static_cast<long>(intruderCfg.idleIntervalS);
+    // Movement state behind the reporting cadence. Only meaningful while alarmActive is true.
+    intruder["moving"]                   = elocSys.isDeviceMoving();
 
     // The status document grows with every section added to it; a silent overflow would ship a
     // truncated status to the app, so say so in the log instead.

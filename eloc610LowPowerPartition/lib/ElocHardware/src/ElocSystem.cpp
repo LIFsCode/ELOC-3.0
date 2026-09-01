@@ -153,6 +153,7 @@ ElocSystem::ElocSystem():
     mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true),
     mLastBuzzerStopMs(0), mRefreshStatus(false), mIntruderDetected(false),
     mIntruderAlarmStartMs(0), mSirenActive(false),
+    mLastMotionMs(0), mLastMotionSampleMs(0),
     mFwUpdateProcessing(false), mFactoryInfo(),
     mTargetPmProfile(PmProfile::CONFIG_DEFAULT), mAppliedPmProfile(PmProfile::CONFIG_DEFAULT),
     mBtActive(false),
@@ -559,6 +560,7 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
     // Ahead of the status/LED/buzzer chain below, so the same cycle that clears the alarm also
     // silences the siren first and leaves the buzzer free for whatever feedback the chain wants.
     updateIntruderSiren();
+    updateMotionState();
 
     Status_t status;
     status.batteryLow = Battery::GetInstance().isLow();
@@ -754,6 +756,65 @@ void ElocSystem::setBuzzerBeep(unsigned int frequency, unsigned int beeps, unsig
     mBuzzerIdle = false;
     //ESP_LOGI(TAG, "Beep: freq: %u, beeps %u, pause: %u, ceq: %u", frequency, beeps, pauseDuration, sequences);
     return EasyBuzzer.beep(frequency, 100, 250, beeps, pauseDuration, sequences, BuzzerDone);
+}
+
+// Motion detection for the intruder alarm. The accelerometer's data registers are high-pass
+// filtered (lis3dh_config_hpf(..., data = true) in BluetoothServer.cpp), so gravity is already
+// removed: a device standing still reads near zero on every axis, and one being carried does not.
+// Thresholds are deliberately generous. Calling a parked device "moving" only costs battery for one
+// more interval, while calling a moving device "parked" would stop the position updates that are the
+// whole point of the alarm.
+static const uint32_t C_MOTION_SAMPLE_MS      = 250;      // accelerometer read cadence
+static const float    C_MOTION_THRESHOLD_G    = 0.08f;    // per-sample magnitude counting as movement
+static const uint32_t C_MOTION_QUIET_MS       = 5*60*1000;// stillness before the device counts as parked
+
+void ElocSystem::updateMotionState() {
+    if (!mLis3DH) {
+        return;
+    }
+    if (!mIntruderDetected) {
+        // Nothing consumes the state outside an alarm; drop it so the next alarm starts clean.
+        mLastMotionMs = 0;
+        return;
+    }
+    uint32_t nowMs = millis();
+    // A device that has just been knocked is by definition being handled: assume movement until it
+    // has actually been still, otherwise the first sample would park it and power the GPS down.
+    if (mLastMotionMs == 0) {
+        mLastMotionMs = nowMs ? nowMs : 1;
+    }
+    if (mLastMotionSampleMs != 0 && (nowMs - mLastMotionSampleMs) < C_MOTION_SAMPLE_MS) {
+        return;
+    }
+    mLastMotionSampleMs = nowMs;
+    // The buzzer shakes the board hard enough to look like movement - the same coupling the knock
+    // guard exists for - so the siren must not be able to keep the device flagged as moving.
+    if (!mBuzzerIdle || (nowMs - mLastBuzzerStopMs) < C_BUZZER_KNOCK_GUARD_MS) {
+        return;
+    }
+    lis3dh_float_data_t data;
+    if (!mLis3DH->lis3dh_get_float_data(&data)) {
+        return;
+    }
+    // Squared magnitude: same comparison, no sqrt.
+    float magnitudeSq = data.ax*data.ax + data.ay*data.ay + data.az*data.az;
+    if (magnitudeSq > (C_MOTION_THRESHOLD_G * C_MOTION_THRESHOLD_G)) {
+        if (!isDeviceMoving()) {
+            ESP_LOGI(TAG, "Intruder alarm: device is moving again, resuming fast reporting");
+        }
+        mLastMotionMs = nowMs ? nowMs : 1;
+    }
+    else if (isDeviceMoving() && (nowMs - mLastMotionMs) >= (C_MOTION_QUIET_MS - C_MOTION_SAMPLE_MS)) {
+        ESP_LOGI(TAG, "Intruder alarm: device has been still for %u s, backing off",
+            C_MOTION_QUIET_MS / 1000);
+    }
+}
+
+bool ElocSystem::isDeviceMoving() const {
+    if (mLastMotionMs == 0) {
+        return false;
+    }
+    return (millis() - mLastMotionMs) < C_MOTION_QUIET_MS;
 }
 
 void ElocSystem::notifyFwUpdateError() {

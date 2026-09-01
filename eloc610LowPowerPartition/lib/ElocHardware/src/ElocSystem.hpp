@@ -105,6 +105,8 @@ private:
     uint32_t mIntruderThresholdCnt;
     uint32_t mIntruderAlarmStartMs;  // millis() of the knock that raised the active alarm (0 = no alarm)
     bool mSirenActive;               // true while the intruder siren owns the buzzer
+    uint32_t mLastMotionMs;          // millis() of the last accelerometer sample that showed movement
+    uint32_t mLastMotionSampleMs;    // millis() of the last accelerometer read (sampling throttle)
 
     bool mFwUpdateProcessing;
 
@@ -163,6 +165,11 @@ private:
     ///       handleSystemStatus() cycle. Silencing it does NOT clear the alarm - the LoRa
     ///       alarm uplinks and the GPS tracking keep running until the alarm itself is cleared.
     void updateIntruderSiren();
+
+    /// @brief Sample the accelerometer and maintain the moving/parked state used by the alarm.
+    /// @note Only runs while an intruder alarm is active - it exists to decide how hard the device
+    ///       should work at reporting its position, and nothing else consumes it.
+    void updateMotionState();
 public:
     inline static ElocSystem& GetInstance() {
         static ElocSystem System;
@@ -265,6 +272,12 @@ public:
     inline bool isSirenActive() const {
         return mSirenActive;
     }
+
+    /// @brief Whether the device has moved recently enough to still count as "on the way".
+    /// @note Meaningful only while an intruder alarm is active (that is the only time the
+    ///       accelerometer is sampled for it). A device that has just alarmed counts as moving
+    ///       until it has been still for C_MOTION_QUIET_MS.
+    bool isDeviceMoving() const;
 
     /// @brief Whether a Bluetooth SPP client is currently connected (mStatus.btConnected is refreshed
     ///        by BluetoothServer -> handleSystemStatus). Used to hold GPS powered for live app status.

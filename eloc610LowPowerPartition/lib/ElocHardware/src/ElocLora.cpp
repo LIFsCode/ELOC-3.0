@@ -458,6 +458,14 @@ void ElocLora::ElocLoraLoop() {
       }
       if (nowS >= mNextIntruderUplinkS) {
         uint32_t intervalS = getConfig().IntruderConfig.alarmIntervalS;
+        // Parked device: back off to the idle cadence and let the GPS stay off (see main.cpp).
+        // It deliberately does NOT go silent - a device that stops reporting is indistinguishable
+        // from one that has been destroyed, shielded or has run flat - but a unit sitting in a shed
+        // does not need a fresh position every 10 minutes, and the GPS is what drains the battery.
+        const uint32_t idleIntervalS = getConfig().IntruderConfig.idleIntervalS;
+        if (!ElocSystem::GetInstance().isDeviceMoving() && (idleIntervalS > intervalS)) {
+          intervalS = idleIntervalS;
+        }
         if (intervalS < C_MIN_INTRUDER_INTERVAL_S) {
           intervalS = C_MIN_INTRUDER_INTERVAL_S;
         }
@@ -593,6 +601,10 @@ esp_err_t ElocLora::sendEventMessage() {
  *   byte  0      : (INTRUDER_MSG << 4) | LORA_MSG_VERS
  *   bytes 1..8   : int64 local epoch timestamp, big endian
  *   byte  9      : flags — bit0: GPS fix available (lat/lng fields valid)
+ *                          bit1: device is moving. Clear means it has been still for
+ *                                C_MOTION_QUIET_MS, so it is reporting at intruderCfg.idleIntervalS
+ *                                with the GPS powered down and lat/lng from the last known fix
+ *                                (fixAge says how old that is).
  *   bytes 10..13 : int32 latitude  * 1e5, big endian (0 if no fix)
  *   bytes 14..17 : int32 longitude * 1e5, big endian (0 if no fix)
  *   byte  18     : battery SoC in percent
@@ -624,7 +636,9 @@ esp_err_t ElocLora::sendIntruderAlarmMessage() {
     for (int i = sizeof(time) -1; i >= 0; i--) {
       if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (time >> (i*8))  & 0xFF;
     }
-    if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = hasFix ? 0x01 : 0x00;
+    const bool isMoving = ElocSystem::GetInstance().isDeviceMoving();
+    const uint8_t flags = (hasFix ? 0x01 : 0x00) | (isMoving ? 0x02 : 0x00);
+    if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = flags;
     for (int i = sizeof(latE5) -1; i >= 0; i--) {
       if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (latE5 >> (i*8)) & 0xFF;
     }
@@ -636,8 +650,8 @@ esp_err_t ElocLora::sendIntruderAlarmMessage() {
     if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = (fixAgeS >> 8) & 0xFF;
     if (idx < LORA_MAX_TX_PAYLOAD) uplinkPayload[idx++] = fixAgeS & 0xFF;
 
-    ESP_LOGW(TAG, "Sending INTRUDER ALARM (%d bytes): time = %lld, fix=%d, lat=%.5f, lng=%.5f, fixAge=%us, SoC=%hu",
-        idx, time, hasFix, latE5 / 100000.0, lngE5 / 100000.0, fixAgeS, batSoC);
+    ESP_LOGW(TAG, "Sending INTRUDER ALARM (%d bytes): time = %lld, fix=%d, moving=%d, lat=%.5f, lng=%.5f, fixAge=%us, SoC=%hu",
+        idx, time, hasFix, isMoving, latE5 / 100000.0, lngE5 / 100000.0, fixAgeS, batSoC);
     // Perform an uplink (with conservative recovery)
     int16_t state = sendReceiveWithRecovery(uplinkPayload, idx, &uplinkDetails);
     debug(state < RADIOLIB_ERR_NONE, F("Error in sendReceive"), state, false);

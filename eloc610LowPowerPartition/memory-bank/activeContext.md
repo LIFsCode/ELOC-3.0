@@ -26,10 +26,11 @@ with BT up versus 46 KB here. Full state, next tests and the planned instrumenta
 
 ---
 
-**Intruder alarm: siren, 5-minute auto-off, status reporting (2026-09-01, V1.69), build-verified.**
+**Intruder alarm: siren, auto-off, status reporting (2026-09-01, V1.69 / V1.71), build-verified.**
 The knock alarm's buzzer is now a swept siren - 600 -> 1800 Hz over 1 s, then a 200 ms silence gap,
-repeating - driven by `ElocSystem::updateIntruderSiren()`, and it switches itself off five minutes
-after the trigger. The alarm itself is unaffected: LoRa alarm uplinks keep going out every
+repeating - driven by `ElocSystem::updateIntruderSiren()`, and it switches itself off 30 s after the
+trigger (V1.69 shipped 5 min; EDsteve cut it to 30 s in V1.71 - long enough to startle someone and to
+be located by ear, short enough not to keep announcing the device). The alarm itself is unaffected: LoRa alarm uplinks keep going out every
 `intruderCfg.alarmIntervalS` with the live GPS position and duty-cycle sleep stays blocked; the siren
 simply stops draining the battery and telling whoever took the device where it is. The siren owns the
 buzzer while it runs, so the generic `EasyBuzzer.update()` in the unchanged-status path is suppressed
@@ -42,7 +43,7 @@ row in the Intruder section (firmware < 1.69 reads back as "not triggered") and 
 `alarmIntervalS` as a seconds-range editor (60 s..1 h, the 60 s matching the firmware clamp), and the
 web dashboard and LoRa map now draw intruder alarms in blue with their reported positions as a
 movement track, annotated with the GPS fix age the alarm carried.
-**Not hardware-tested yet** - the siren pattern, the 5-minute cut-off and the buzzer/knock guard
+**Not hardware-tested yet** - the siren pattern, the 30 s cut-off and the buzzer/knock guard
 interaction want a bench check on a real unit.
 
 **V1.70 follows immediately: motion-gated alarm reporting.** During an alarm the GPS, not the radio, is

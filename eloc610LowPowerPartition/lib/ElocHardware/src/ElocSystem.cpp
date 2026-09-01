@@ -690,9 +690,9 @@ void ElocSystem::setBuzzerIdle() {
 
 // Intruder siren timing. The audible alarm is deliberately short-lived: it startles whoever picked
 // the device up and helps someone nearby locate it, but a unit that has been carried off must not
-// keep beeping for hours - that only drains the battery and keeps telling the thief where it is.
+// keep beeping - that only drains the battery and keeps telling the thief where it is.
 // The alarm itself (LoRa alarm uplinks + GPS tracking) keeps running after the siren falls silent.
-static const uint32_t C_INTRUDER_SIREN_DURATION_MS = 5 * 60 * 1000;  // buzzer off 5 min after the trigger
+static const uint32_t C_INTRUDER_SIREN_DURATION_MS = 30 * 1000;  // buzzer off 30 s after the trigger
 static const uint32_t C_SIREN_SWEEP_MS     = 1000;  // length of one rising sweep
 static const uint32_t C_SIREN_GAP_MS       = 200;   // silence between sweeps
 static const uint32_t C_SIREN_FREQ_LOW_HZ  = 600;   // sweep start

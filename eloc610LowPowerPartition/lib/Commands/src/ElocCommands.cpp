@@ -238,7 +238,7 @@ void printStatus(String& buf) {
     // Intruder section - lets the app show whether the knock alarm is armed and whether it is
     // firing right now. "armed" is the effective state: detection is a 24/7-only feature, so a
     // device in duty-cycle mode reports armed=false even with intruderCfg.enable set (see
-    // ElocSystem::notifyStatusRefresh). "sirenActive" goes false 5 min after the trigger while
+    // ElocSystem::notifyStatusRefresh). "sirenActive" goes false 30 s after the trigger while
     // "alarmActive" stays true - the LoRa alarm uplinks and GPS tracking keep running.
     JsonObject intruder = doc.createNestedObject("intruder");
     const intruderConfig_t& intruderCfg = getConfig().IntruderConfig;

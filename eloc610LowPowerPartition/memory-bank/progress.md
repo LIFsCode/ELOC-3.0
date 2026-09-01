@@ -81,9 +81,11 @@
 ### Power Management — ✅ Operational
 - **Dynamic frequency scaling** (DFS) with configurable min/max
 - **Automatic mode-based CPU frequency profiles** (2026-07-05, not yet hardware-verified): AI modes
-  → fixed 240 MHz; recording-only (no AI/LoRa) → min 10 / max 80 MHz; otherwise configured values.
-  Deferred while BT is up (PLL relock constraint), applied on BT teardown or at duty-cycle wake boot.
-  See `ElocSystem::pm_requestProfile()` and `README-Config-Restart-Semantics.md`.
+  → fixed 240 MHz; recording-only (no AI/LoRa) → fixed 80 MHz, DFS off since V1.59; an open Bluetooth
+  window → fixed 240 MHz (`BT_ACTIVE`, V1.66 — the controller does not answer pages at 80 MHz);
+  otherwise configured values. Deferred while BT is up (PLL relock constraint), applied on BT teardown
+  or at duty-cycle wake boot. See `ElocSystem::pm_requestProfile()` and
+  `README-Config-Restart-Semantics.md`.
 - **Light sleep** configuration (effectiveness during recording uncertain)
 - **Deep sleep** with GPIO button wake-up
 - **Battery monitoring** with configurable intervals and averaging
@@ -230,6 +232,11 @@ reapply from there to resurrect it. See `activeContext.md` for the removal detai
 ## What's Left to Build / Fix
 
 ### Recently Fixed
+- [x] **Repeat knock now restarts the Bluetooth idle timeout (V1.66, 2026-08-04, hardware-verified)** —
+  the knock handler only acted when BT was *off*, and `lastBtConnectionTimeS` was never refreshed, so
+  the window always closed N seconds after the **first** knock no matter how often the user tapped.
+  Observed: three knocks at 169.5/170.8/171.1 s did not stop the shutdown at 172.9 s. Now a knock
+  while BT is up and unconnected restarts the timer. Verified on hardware.
 - [x] **DFS corrupts `esp_timer` and the FreeRTOS tick (V1.59, 2026-08-01; hardware verification
   pending)** — under the old 10/80 MHz `RECORDING_LOW_POWER` profile, `esp_timer` (TG0 LACT ÷ APB) ran
   **+41 %** fast and the FreeRTOS tick behind every `ESP_LOGx` timestamp (CCOUNT) **+23 %** fast; both
@@ -268,6 +275,37 @@ reapply from there to resurrect it. See `activeContext.md` for the removal detai
 - [x] **Buzzer drones for seconds during LoRa uplink** — `EasyBuzzer` is non-blocking and its tone is only switched off by `EasyBuzzer.update()`, pumped once per cycle in `ElocSystem::handleSystemStatus()`. The LoRa loop runs at the tail of that same cycle, and `node.sendReceive()` blocks for the full airtime + RX1/RX2 windows (seconds at AS923 SF10-SF12). A beep started earlier in the cycle (classically the "Bluetooth ready" notification colliding with the immediate first heartbeat) kept sounding in PWM hardware for the whole transmit. Fixed by calling `EasyBuzzer.stopBeep()` at the top of `ElocLora::sendReceiveWithRecovery()` (the single blocking choke point for both heartbeat and event uplinks) so no uplink can leave a tone droning.
 
 ### Known Issues
+- [ ] **Bluetooth unconnectable while a recording session is active — OPEN (investigated 2026-08-04/05,
+  ELOC_00150)**. After a knock the device is genuinely discoverable — the app clears its list every
+  scan and only adds live `ACTION_FOUND` results, so being listed proves inquiry scan responds — but
+  every `connect()` fails after ~5.1–5.3 s, i.e. the BR/EDR page timeout (0x2000 slots = 5.12 s), and
+  the device log carries **no `BT_HCI` lines at all** for the whole window. The failure is therefore
+  below SDP/RFCOMM: no `HCI_Connection_Complete` is ever emitted. Not a log artefact — `BT_APPL`
+  lines from the same task do get written while recording. Bluetooth works normally right after a
+  reboot, which is what makes it look time- or knock-related.
+  - **Established**: the differentiator is that a **recording session is active**. All 10 successful
+    connections across 8 rotated log files happened with recording OFF; every failure had it ON.
+  - **Ruled out — CPU frequency.** V1.66 pinned 240 MHz for the whole BT window (`CPU clock: 240 MHz`
+    confirmed throughout) and the connection still failed. Reverted in V1.67.
+  - **Ruled out — DFS/APB scaling.** V1.62 (V1.59's `min = max = 80`, DFS off) still failed.
+  - **Ruled out — internal-heap leak.** 46 KB free / 32–39 KB largest block is the *steady state* for
+    recording+BT from ~2 min uptime onward, identical at 40 h. Recording costs ~63 KB and BT ~46 KB;
+    nothing accumulates. Heap *pressure* is not ruled out — the V1.44 note below records that low
+    internal heap previously produced `BT_SDP: SDP - no buf for search rsp` and failed app
+    connections, and the healthy benchmark there was ~98 KB free with BT up.
+  - **Ruled out — pairing/bonding and the app.** The failure is below the ACL link.
+  - **Also not the EI buffers**: `EdgeImpulse: Allocating 2 buffers ... in RAM` is a lying log string,
+    the allocation is `MALLOC_CAP_SPIRAM` (`EdgeImpulse.cpp:59`).
+  - **Next tests**: (1) with BT failing during a session, press the button to stop recording
+    (`buttonISR`, `main.cpp:247`) and retry — buffers stay allocated, so this separates live I2S/SD
+    activity from persistent heap state, and at 80 MHz it also fills the untested "80 MHz + not
+    recording" cell; (2) confirm on the *same* unit whether `recordON_detectON` really does connect
+    while writing WAVs — if AI-on works and AI-off does not, recording load is out too and the
+    remaining difference is the Edge Impulse task on core 1.
+  - **Instrumentation not yet built**: log internal free/largest-block at BT bring-up and at SPP
+    start; register a GAP callback to surface ACL/auth events the WARNING-level bluedroid traces
+    hide; re-assert `esp_bt_gap_set_scan_mode()` after SPP start and log its return (also a candidate
+    fix, if the controller has quietly stopped page-scanning while still answering inquiry).
 - [ ] **Automatic gain adjustment** causes audio distortion — disabled
 - [ ] **Automatic light sleep is disabled and clamped** (V1.59) — it hangs this board and the
   safety-net RTC watchdog resets it. The hang itself is unexplained; VDD_SDIO carries both the PSRAM

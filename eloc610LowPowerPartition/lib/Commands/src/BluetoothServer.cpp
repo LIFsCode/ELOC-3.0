@@ -129,6 +129,14 @@ static esp_err_t disableBluetooth() {
 static esp_err_t enableBluetooth() {
     String nodeName = getDeviceInfo().nodeName;
     ESP_LOGI(TAG, "Enable BT with node %s", nodeName.c_str());
+    // NOTE: V1.66 raised the CPU to a fixed 240 MHz here on the theory that the controller does
+    // not answer incoming pages under the 80 MHz RECORDING_LOW_POWER profile. Falsified on
+    // hardware 2026-08-04: with the CPU held at 240 MHz for the whole window and a session
+    // running, connections still failed with no HCI_Connection_Complete. Reverted in V1.67 —
+    // the differentiator is that a recording session is active, not the CPU frequency. Do not
+    // reintroduce a frequency switch here without new evidence: it costs a BBPLL relock on
+    // every knock-wake, immediately before the radio starts.
+    //
     // Mark BT active BEFORE the controller starts so no PM profile switch can race the bring-up
     ElocSystem::GetInstance().setBluetoothActive(true);
     SerialBT.begin(nodeName, false);
@@ -362,6 +370,15 @@ void wakeup_task (void *pvParameters)
                 if (enableBluetooth() != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to enable bluetooth!");
                 }
+            }
+            else if (gBluetoothEnabled && !SerialBT.connected()) {
+                // BT is already up but nobody has connected yet. The idle timeout below runs
+                // from the *first* knock, so without this a second knock is silently ignored
+                // and the window still closes on the original deadline — a user still fumbling
+                // with the app gets no extra time no matter how often they tap. Restart it.
+                lastBtConnectionTimeS = esp_timer_get_time()/1000/1000;
+                ESP_LOGI(TAG, "Bluetooth already on, restarting the %d s idle timeout",
+                    getConfig().bluetoothOffTimeoutSeconds);
             }
             ElocSystem::GetInstance().notifyStatusRefresh();
         }

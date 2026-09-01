@@ -14,6 +14,9 @@ bench-tested, `partial` = some paths tested (see the detail doc).
 
 | Version | Date | Status | Change |
 |---|---|---|---|
+| V1.68 | 2026-09-01 | build | No functional change over V1.67. Version bump so this build can be published as the first GitHub prerelease under the new OTA convention (flat tag equal to the embedded version, plus an ELOC-P_V1.68-ei.bin asset), which is what the app update flow reads. |
+| V1.67 | 2026-08-05 | build | Revert V1.66's `BT_ACTIVE` profile — hardware-falsified, see below. Keeps the knock refresh. Bluetooth-unconnectable-while-recording remains **open**; CPU frequency is ruled out. |
+| V1.66 | 2026-08-04 | HW (negative) | Attempted fix for "Bluetooth unconnectable while recording": `BT_ACTIVE` profile pinning 240 MHz for each BT window, on the theory that the controller does not answer pages at 80 MHz. **Did not work** — on hardware, with the CPU confirmed at 240 MHz for the whole window and a session running, connections still failed with no `HCI_Connection_Complete`. The 240 MHz part is reverted in V1.67. Also added, and kept: a repeat knock restarts the idle timeout instead of being ignored (verified on hardware). |
 | V1.65 | 2026-08-03 | build | Fix dangling `nodeName.c_str()` serialization that wrote freed-memory garbage to SPIFFS; invalid UTF-8/control-character names are recovered automatically from the factory serial. |
 | V1.64 | 2026-08-03 | build | Correct serial-derived node names to use exactly the last five serial digits (`250700250` → `ELOC_00250`) and automatically migrate the incorrect full-serial name persisted by V1.63. |
 | V1.63 | 2026-08-03 | build | Factory flashing derives `device.nodeName` from the NVS serial (`123` → `ELOC_00123`), migrates only missing/empty/`ELOC_NONAME` values while preserving commissioned names, and sets production defaults to 1 h files, 80/80 MHz, light sleep off, APLL off, ICS-43434. |

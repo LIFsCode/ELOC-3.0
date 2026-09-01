@@ -23,7 +23,13 @@ and keeps the manual SD-swap fallback working.
   `hasLiIonBattery()`), so the check lives in `setFwUpdateBegin`, not the app.
 - **No 4 MB-flash devices in the field** — no need for multi-layout gating; a simple
   `size ≤ target slot size` check in `setFwUpdateBegin` suffices.
-- **Release channels:** `stable` default, `beta` opt-in per user profile.
+- **Release channels:** `stable` default, `beta` opt-in per user profile — carried by the GitHub
+  release's `prerelease` flag, not by a separate backend.
+- **Distribution is GitHub Releases** (public repo `LIFsCode/ELOC-3.0`), not Firebase Storage: the
+  release API already supplies version, notes, size, sha256 digest and download URL without auth.
+- **Only the `ei` variant is published** for now; `no-ai` stays supported in schema and guards.
+- **The Advanced file picker is permanent** — it is the revert-to-older-firmware path and must never
+  be hidden or gated by the automatic update flow.
 - **Partition0 hardware verification** (what's actually in the other OTA slot on deployed devices) is
   **deferred — the user will check on real hardware**. This gates *field rollout*, not development.
   See "Open items" at the bottom.
@@ -50,6 +56,7 @@ and keeps the manual SD-swap fallback working.
 | Foreground-service precedent | app `services/StatusUploadService.kt` |
 | Firebase helpers | app `data/helpers/firebase/FirestoreHelper.kt`, `StorageHelper.kt` |
 | Settings UI entry point | app `activities/themable/DeviceSettingsActivity.kt` |
+| Firmware releases (distribution) | https://github.com/LIFsCode/ELOC-3.0/releases — API: `api.github.com/repos/LIFsCode/ELOC-3.0/releases/latest` |
 
 ### Protocol constraints (verified in code)
 
@@ -60,8 +67,9 @@ and keeps the manual SD-swap fallback working.
   binary receive mode** in the firmware is required (base64-over-commands would take hours).
 - No WiFi stack is compiled in; BT SPP is the only app↔device channel. Realistic throughput
   30–80 KB/s → ~3 MB EI build transfers in ~1–2.5 min.
-- Firmware has **two build variants**: `esp32dev` (no AI) and `esp32dev-ei` (Edge Impulse). Releases
-  ship both; the device must report which it runs so the app picks the right binary.
+- Firmware has **two build variants**: `esp32dev` (no AI) and `esp32dev-ei` (Edge Impulse). Only
+  `ei` is published (user decision, 2026-09-01); the device reports which it runs (`buildVariant`)
+  so the app can refuse a mismatch, and so `no-ai` can be published again without a code change.
 - `sdkconfig.defaults` is the place for new ESP-IDF config (per `platformio.ini` comments).
 
 ---
@@ -174,40 +182,239 @@ resume completes; wrong hash → apply refused.
 happy path both variants; downgrade; BT drop mid-transfer + resume; corrupt file; update-while-recording
 refused; low-battery refused; old-firmware device → feature hidden.
 
-## Phase 3 — Distribution backend + full "update available" flow
+## Phase 3 — "Update available" flow, distributed through GitHub Releases
 
-**Files:** app `data/helpers/firebase/FirestoreHelper.kt` (+ small new model class), `HomeActivity.kt`
-badge, `FirmwareUpdateActivity` "latest available" path, `data/util/Preferences.kt` (beta opt-in);
-firmware repo: new `tools/make_release.py`.
+After Phase 2 the only way to get a `.bin` onto a device is the SAF file picker under **Device
+Settings → Advanced → Firmware update**. Phase 3 does **not** replace that path — it adds a *second*
+entry point: the app carries the current release in its cache, notices on connect that the device is
+behind, shows what changed, and installs with one tap. Everything after that tap is the Phase-2
+pipeline unchanged.
 
-1. **Firestore `firmware_releases` collection**, one doc per release:
-   ```json
-   {
-     "version": "v2.4.0",            // must equal what new firmware reports in getStatus
-     "channel": "stable" | "beta",
-     "releaseNotes": "...",
-     "date": <timestamp>,
-     "variants": {
-       "ei":    { "storagePath": "firmware/v2.4.0/firmware-ei.bin",    "sha256": "...", "size": N },
-       "no-ai": { "storagePath": "firmware/v2.4.0/firmware-no-ai.bin", "sha256": "...", "size": N }
-     }
-   }
+There is no new backend. Distribution is the repo's existing **GitHub Releases** page.
+
+### Decisions folded in (user, 2026-09-01)
+
+- **GitHub Releases is the whole distribution mechanism.** `LIFsCode/ELOC-3.0` is public and already
+  publishes firmware there (`Release/V1.4` carries `elocupdate.bin` plus a notes body). No Firebase
+  Storage, no Firestore manifest, no GitHub Action, no service account, no console rules. This also
+  sidesteps a hard blocker: on that repo the maintainer has push but **not admin**, so Actions secrets
+  were never available anyway.
+- **Only the `ei` variant is built and published.** `no-ai` stays in the firmware's `buildVariant`
+  reporting and in the app's variant guard — it is simply never published for now. Bringing it back is
+  one extra asset on a release; no code change.
+- **The file picker stays permanently**, under Advanced. It is the deliberate-downgrade path (revert to
+  an older firmware) and nothing here may gate or hide it. Downgrades already work end-to-end: firmware
+  `validateImageFile()` has been integrity-only since Phase 0, the app's confirm dialog states
+  `old → new` without a direction check, and the verdict logic in `FirmwareUpdater`
+  (`newVersion == oldVersion && imageVersion != oldVersion` → `RolledBack`) reports a deliberate
+  downgrade as **Success**, not as a false rollback.
+
+**Files:** app only — new `data/helpers/FirmwareReleaseHelper.kt`, new `driver/FirmwareVersion.kt`,
+new `data/FirmwareRelease.kt`; edits to `activities/themable/FirmwareUpdateActivity.kt` (+ layout),
+`activities/themable/DeviceActivity.kt` (+ `res/layout/activity_device.xml`),
+`activities/themable/DeviceSettingsActivity.kt`, `activities/themable/HomeActivity.kt`,
+`activities/themable/UserPrefsActivity.kt`, `data/util/Preferences.kt`. **No firmware source changes,
+no new release tooling, no new Gradle dependencies.**
+
+### 1. What GitHub already gives us
+
+`https://api.github.com/repos/LIFsCode/ELOC-3.0/releases/latest` — public, no auth, verified against
+the live repo:
+
+```jsonc
+{
+  "tag_name": "ELOC-P_V1.68",
+  "prerelease": false,
+  "body": "## Features\n- …\n\n## Fixes\n- …",
+  "assets": [{
+    "name": "ELOC-P_V1.68-ei.bin",
+    "size": 1779472,
+    "digest": "sha256:99fcee32…",
+    "browser_download_url": "https://github.com/…/releases/download/ELOC-P_V1.68/ELOC-P_V1.68-ei.bin"
+  }]
+}
+```
+
+That is the manifest, the notes, the integrity hash, the artifact host and the channel logic in one
+public document:
+
+| Need | GitHub mechanism |
+|---|---|
+| Latest stable version | `/releases/latest` — skips drafts **and** prereleases |
+| Beta channel | mark the release **prerelease**; app on beta reads `/releases?per_page=1` instead |
+| Release notes | the release **body** |
+| Integrity | asset `digest` (`sha256:…`) |
+| Kill switch | un-publish the release (back to draft) or mark it prerelease — `/releases/latest` falls back to the previous one |
+| Revert targets | every older release stays on the Releases page forever |
+
+**Conventions this depends on** (see §2): a flat tag equal to the version the binary reports, and an
+asset name carrying the `-ei` variant.
+
+### 2. Publishing a release (the human procedure)
+
+1. Build `pio run -e esp32dev-ei` and **bench-test the image on real hardware**. Only a tested image
+   gets published.
+2. Confirm the binary reports the version you think it does — offset 48 is the version, offset 80 the
+   project name, which must still be `idf-wav-sdcard`:
    ```
-   Binaries in the existing Firebase Storage bucket under `firmware/`. Firestore rules: releases
-   read-only to authenticated users; writes admin-only (manual console upload initially).
-2. **Release tooling** in the firmware repo: `tools/make_release.py` — builds both envs (or takes
-   `.pio/build/*/firmware.bin`), extracts the version string (same source as `genVersion.py` /
-   `version.h`), computes SHA-256s, emits the manifest JSON and canonically-named files
-   (`ELOC-<version>-<variant>.bin`).
-3. **App flow:** on app start with connectivity, fetch latest manifest for the user's channel
-   (`stable` default, `beta` if opted in via profile setting); download + cache the `.bin`s locally
-   (verify sha256 after download); badge on `HomeActivity` device list; when connected to a device
-   with older `device/firmware` + matching variant, show the "Update available" card in
-   `DeviceActivity`/`DeviceSettingsActivity` → same Phase-2 preflight/transfer/apply/verify pipeline.
-4. **Result upload:** after a completed (or rolled-back) update, queue a small result doc
-   (device name/MAC — key on **mac_address**, not device_name — from/to version, outcome, timestamp)
-   through the existing Firestore upload machinery (`FirestoreHelper` / `StatusUploadService`
-   patterns) for fleet visibility on the web dashboard. Web-dashboard rendering is out of scope here.
+   python -c "h=open('.pio/build/esp32dev-ei/firmware.bin','rb').read(112); print(h[48:80].split(b'\x00')[0].decode(), h[80:112].split(b'\x00')[0].decode())"
+   ```
+3. Tag **flat and equal to that version** — `ELOC-P_V1.68`, not `Release/V1.4`. The app compares the
+   tag against the embedded version to decide whether an update exists, and a slash in the tag also
+   turns the download path into `.../download/Release/V1.4/elocupdate.bin`.
+4. Attach the same bytes under **two names**: `elocupdate.bin` (the SD-card path expects exactly that
+   filename, so that workflow is unchanged) and `ELOC-P_V1.68-ei.bin` (the app reads the build variant
+   from the filename; the image itself carries no variant marker).
+5. Write the body as two sections, `## Features` and `## Fixes`, in plain language — this is what a
+   ranger reads at the foot of a tree, not `memory-bank/changelog.md`, whose entries are engineer-facing
+   root-cause essays.
+6. Publish as **prerelease** first; promote to a full release once a bench install from the beta
+   channel has worked.
+
+```bash
+gh release create ELOC-P_V1.68 -R LIFsCode/ELOC-3.0 --prerelease -F notes.md elocupdate.bin ELOC-P_V1.68-ei.bin
+```
+
+### 3. App: version comparison — new `driver/FirmwareVersion.kt`
+
+Device versions look like `ELOC-P_V1.67`: a prefix naming the build line, then a number. The comparator
+must
+
+- split into prefix + numeric tail (`ELOC-P_V` + `1.67`);
+- **require prefixes to match exactly** — a Patrol build must never be offered to a mainline device on a
+  string-sort accident;
+- compare the numeric tail component-wise;
+- return `null` for anything it cannot parse, with every caller treating `null` as "offer nothing".
+
+`FirmwareUpdater`'s rollback verdict stays the plain equality check it is today; the comparator only
+decides whether to *offer* an update.
+
+`MIN_OTA_SOURCE_VERSION` is a constant in the app, not a manifest field: `ELOC-P_V1.47`, the first
+firmware that advertises `fwUpdateProto`.
+
+### 4. App: prefetch while online — new `data/helpers/FirmwareReleaseHelper.kt`
+
+Discovery cannot happen at the device — there is no connectivity in the forest. The app fetches in town
+and installs later, offline.
+
+- Triggered from `HomeActivity.onResume()` when a network is available, rate-limited to a few checks a
+  day (unauthenticated GitHub API allows 60 requests/hour per IP; this stays far below it). Use the
+  existing `HttpsURLConnection` style from `HttpHelper`, off the main thread.
+- Read `/releases/latest` (or `/releases?per_page=1` when the user is on beta) → pick the asset whose
+  name contains `-ei` and not `no-ai` → if its tag is newer than the cached one, download it → verify
+  the `digest` → keep it.
+- **Then verify the download describes itself correctly:** run the existing `FirmwareImage.inspect()`
+  on it and discard the release if the embedded version does not equal the tag, or the project name is
+  not `idf-wav-sdcard`. The binary is self-describing, so the app never has to trust release metadata
+  for anything safety-relevant — the tag is only a cheap "is there something newer" signal before
+  spending 1.8 MB.
+- **Store under `filesDir/firmware/<version>/`, never `cacheDir`** (see the audit below).
+- Prune to the newest release only; never touch files while `FirmwareUpdater.isBusy`.
+- Mirror what the card needs (tag, notes body, size, local path) into `Preferences`, so the card renders
+  with no network.
+- Channel comes from a new "beta firmware" opt-in in `UserPrefsActivity` (`Preferences.firmwareChannel`,
+  default `stable`).
+
+### 5. App: the "update available" moment
+
+Evaluate in `DeviceActivity.onElocInfoReceived()` — the point where `getStatus` and `getConfig` have
+both landed and `General` is populated. Offer only when **all** hold:
+
+- `general.fwUpdateProto >= 1`;
+- `general.buildVariant == "ei"` — a positive match, so an empty or unknown variant gets nothing;
+- a cached release exists, downloaded and digest-verified;
+- `FirmwareVersion.compare(release, general.version) > 0`;
+- `general.version >= MIN_OTA_SOURCE_VERSION`;
+- this version is not in the per-device skip list;
+- `!FirmwareUpdater.isBusy`.
+
+UI: a dismissible card at the top of `content_layout` in `activity_device.xml` — "Firmware
+ELOC-P_V1.68 available", a **What's new** expander rendering the release body (`## Features` /
+`## Fixes` split into two lists, falling back to the body verbatim), an **Install** button, a dismiss X.
+A card, not a dialog: a tech connecting to check a recording must not be interrupted. Plus a badge on
+the Advanced → Firmware update row in `DeviceSettingsActivity`.
+
+**Per-device skip (required, not polish).** The moment a tech deliberately reverts a device, the card
+would otherwise reappear on every connect telling them to undo it. Dismissing writes
+`{mac_address → skippedVersion}` into `Preferences` — keyed on **mac_address**, which `DeviceActivity`
+already holds as `deviceAddress`, never on device_name — and is cleared when a release newer than the
+skipped one appears.
+
+If a newer tag is known but its binary is not downloaded yet, the card says so ("connect to the internet
+to download") with its button disabled. Never attempt a live download in the field.
+
+### 6. App: release mode in `FirmwareUpdateActivity`
+
+One new intent extra, `EXTRA_RELEASE_VERSION`. When present, the screen
+
+- hides the file-picker button and shows the release version + notes instead;
+- takes the staged file straight from `filesDir/firmware/<version>/`, with variant `"ei"` known from the
+  asset name rather than sniffed at pick time;
+- keeps preflight, the stop-recording offer, progress, abort, reconnect/verify and the terminal states
+  byte-for-byte as Phase 2, calling the same
+  `FirmwareUpdater.startUpdate(file, sha256, version, variant)`.
+
+Without the extra, the screen behaves exactly as today — which is what Advanced keeps opening.
+
+### 7. App: revert guard on the picker path
+
+The picker cannot know whether a chosen image supports BT updates, but it knows its version. If the
+picked version parses and is older than `MIN_OTA_SOURCE_VERSION`, the existing confirm dialog gains a
+line: this revert is one-way, and getting back off it needs the SD-card swap. **Warn and allow** — never
+block; that is the whole point of keeping the picker.
+
+### 8. Result upload (the only Firebase piece)
+
+On any terminal state (`Success` / `RolledBack` / `Failed`), write one small doc to
+`firmware_update_results` keyed on **mac_address**: from/to version, outcome, timestamp, ranger id,
+through the existing `FirestoreHelper` machinery. Firestore's offline write queue flushes when the phone
+next has signal — no custom retry needed. This is the only part of Phase 3 that touches Firebase, and it
+reuses collections/rules patterns the app already has. Web-dashboard rendering stays out of scope.
+
+### Compatibility audit — what Phase 3 must not break
+
+Checked against the shipped Phase-2 code:
+
+- **`DeviceDriver.isIdle` already excludes firmware transfers** (`firmwareTransferActive`), and
+  `DeviceActivity.maybeAutoRefreshStatus()` defers on it, so the 15 s auto-refresh cannot collide with a
+  transfer started from the card. No change needed — but the card evaluation must not issue its own
+  `getStatus`; it reads the `General` object `onElocInfoReceived()` has already filled.
+- **`onElocInfoReceived()` re-runs on every pull-to-refresh** (`refreshDeviceInfo()` clears
+  `statusReceived`/`configReceived` and they are set again), so the card binding must be idempotent —
+  evaluate and re-bind, never append or re-show something already dismissed this session.
+- **`cacheDir/fwupdate.bin` is a latent failure for resume.** The picker stages there today, and
+  `FirmwareUpdater` re-opens the staged file with `RandomAccessFile` + `seek(startOffset)` on every
+  resume attempt. If Android evicts `cacheDir` while the app is backgrounded mid-update — exactly the
+  "walk back to the tree tomorrow" case — resume fails with no useful message. Phase 3 stages releases in
+  `filesDir`; **the picker path should move there too**, a small independent fix worth doing in the same
+  change.
+- **Devices whose version string does not parse simply get no card**, including any unit predating the
+  clean `PROJECT_VER` string. Designed degradation: they keep the picker.
+- **The app's own update check is unrelated and untouched.** `HttpHelper.getAppProtocolVersion()` polls a
+  static `https://eloc-b1e63.web.app/api/protocol_version.json` from `StatusUploadService` and opens
+  `UpdateAppActivity`. Leave it alone; it answers a different question.
+- **The firmware needs no changes for Phase 3.** `buildVariant`, `fwUpdateProto` and the version string
+  are already in `getStatus` (`ElocCommands.cpp` `printStatus()`), and the `projectName` guard already
+  runs in `validateImageFile()`.
+- **New network dependency:** the version check needs github.com instead of Firebase. Same requirement —
+  internet in town — different host. Nothing in the *field* path changes: install works fully offline.
+- **Footprint:** one ~1.8 MB download per release per phone; prune-to-newest keeps one binary on disk.
+
+**Verify (bench, real hardware):**
+
+1. Publish a prerelease; a phone on the beta channel prefetches it in town, then — airplane mode except
+   Bluetooth — connects to a device one version behind, shows the card with the right notes, and Install
+   completes with `getStatus` reporting the new version.
+2. Un-publish that release (back to draft) → the card disappears at the next prefetch and the previous
+   version becomes latest again.
+3. Publish a release whose tag does not match the embedded version → the app discards it and offers
+   nothing (this is the stale-`PROJECT_VER` guard).
+4. Dismiss the card → reconnect repeatedly → stays gone; publish a newer release → it returns.
+5. Revert via Advanced → file picker to an older `.bin` → completes and reports **Success**, not
+   RolledBack; the card then offers the newer version again until dismissed.
+6. Pick an image older than V1.47 → one-way warning shown, install still allowed.
+7. `no-ai` device (rebuild `esp32dev`) → no card; picker still works.
+8. Result docs appear in `firmware_update_results` keyed on mac_address once the phone regains signal.
 
 ## Documentation updates (both repos, per `.clinerules`)
 
@@ -240,8 +447,8 @@ firmware repo: new `tools/make_release.py`.
    removed → firmware refuses with distinct error codes; app shows the reason.
 5. Downgrade B → A succeeds.
 6. Manual SD-swap update path still works (regression).
-7. Phase 3: upload release via console; app on another phone discovers it, caches offline, updates a
-   device with no internet present; result doc appears in Firestore.
+7. Phase 3: see the dedicated verification list in that section (prefetch-then-offline install, channel
+   kill switch, per-device dismiss, revert via the picker, result docs).
 
 ## Open items (tracked, not blocking development)
 

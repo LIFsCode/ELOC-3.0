@@ -2,6 +2,30 @@
 
 ## Current Work Focus
 
+**Bluetooth unconnectable while recording — STILL OPEN (2026-08-04/05, V1.66 → V1.67).**
+Knock-wake brings Bluetooth up and the device is genuinely discoverable, but every connection attempt
+fails after ~5.1–5.3 s (BR/EDR page timeout) with **zero `BT_HCI` lines** on the device side — no
+`HCI_Connection_Complete` is ever emitted, so the failure is below SDP/RFCOMM. Diagnosed from
+ELOC_00150's SD logs (`D:\log\eloc.log*`) cross-referenced against the app's logcat; the two were
+aligned to wall clock via the `setTime` epoch and the DFS-immune WAV filenames, confirming the failed
+attempts fell inside a live 60 s BT window.
+
+**The CPU-frequency hypothesis was wrong.** The correlation looked perfect — all 10 successful
+connections across 8 log files at 240 MHz, all failures under `RECORDING_LOW_POWER` — but CPU frequency
+and "a session is running" are perfectly confounded, because that profile is applied if and only if
+recording is active. V1.66's `BT_ACTIVE` profile held 240 MHz for the whole window and the connection
+still failed, which falsifies it; V1.62 had already ruled out DFS. V1.67 reverts the 240 MHz switch and
+keeps only the knock refresh (which works, hardware-verified).
+
+**Current position:** the differentiator is that a recording session is active. Ruled out so far: CPU
+frequency, DFS, internal-heap *leak* (the 46 KB/32 KB state is steady from 2 min to 40 h), pairing, the
+app, and the EI buffers (they are in PSRAM despite the log saying "in RAM"). Heap *pressure* is still
+live — see the V1.44 `SDP - no buf for search rsp` precedent, whose healthy benchmark was ~98 KB free
+with BT up versus 46 KB here. Full state, next tests and the planned instrumentation are in
+`progress.md` → Known Issues.
+
+---
+
 **Factory provisioning identity/defaults (2026-08-03, V1.65), build-verified.**
 `AutoFlasher.py` now reports and records a device name derived from the exact serial placed in NVS
 using its last five digits (`250700250` → `ELOC_00250`). Firmware uses that same factory serial at

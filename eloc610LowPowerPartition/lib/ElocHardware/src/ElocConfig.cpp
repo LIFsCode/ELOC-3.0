@@ -136,7 +136,7 @@ static const elocConfig_T C_ElocConfig_Default {
     .bluetoothOffTimeoutSeconds = 360,
     .testI2SClockInput = false,
     .logConfig = {
-        .logToSdCard = false,
+        .logToSdCard = true,
         .filename = "/sdcard/log/eloc.log",
         .maxFiles = 10,
         .maxFileSize = 5*1024*1024,

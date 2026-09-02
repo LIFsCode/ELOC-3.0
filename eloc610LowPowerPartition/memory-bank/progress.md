@@ -113,6 +113,25 @@
 - **BT-set timezone persisted to RTC** (Bug 6 in `README-DutyCycle-BugFixes.md`) so CSV detection timestamps survive duty-cycle wakes in the user's local TZ, not the compile-time `TIMEZONE_OFFSET` default. As of 2026-06-05 this is the **highest-priority tier** of the TZ chain (app-set > GPS-longitude-derived > compile default); see the GPS section.
 - **See:** `README-DutyCycle-and-LoRa-Cooldown.md`, `README-DutyCycle-BugFixes.md`
 
+### Intruder Alarm — 🔨 Reworked, candidate vs confirmed (2026-09-02, V1.73, not hardware-tested)
+
+Knocks alone no longer raise an alarm. A knock burst opens a **candidate**; the accelerometer must
+see real movement within `confirmWindowS` before it becomes **confirmed**. A device knocked on a
+table — by a branch, an animal, a passing vehicle — expires the candidate having sounded nothing,
+powered no GPS and sent no LoRa.
+
+- Knock counter off-by-one fixed: `thresholdCnt = 5` now means six knocks, not seven
+- Siren gated on CONFIRMED (it shakes the LIS3DH, so on a candidate it would blind the accelerometer
+  reading the candidate is waiting for)
+- Alarm uplinks **only while moving**, immediately when movement resumes, never waiting for a fix
+- Stopped devices go quiet on the alarm path; the heartbeat accelerates to
+  `lorawan.alarmUpLinkIntervalS` (1 h) instead, and needs no GPS. Normal default 24 h → 12 h
+- Alarm still latches across being put down; `alarmTimeoutH` (24 h) auto-clears it
+- `intruderCfg.idleIntervalS` deprecated — parsed and reported, ignored
+
+**Bench plan:** the nine-case table in `README-Intruder-Rework-Plan.md`. Cases 2 and 7 are the ones
+that would falsify the design.
+
 ### Intruder Alarm over LoRa — ✅ Implemented (2026-07-04, V1.43, awaiting hardware validation)
 - **Knock-based trigger** (existing LIS3DH click counting in `notifyStatusRefresh()`) now raises a
   LoRa alarm instead of only beeping the buzzer

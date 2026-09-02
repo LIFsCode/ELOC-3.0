@@ -26,6 +26,63 @@ with BT up versus 46 KB here. Full state, next tests and the planned instrumenta
 
 ---
 
+**Intruder detection: candidate vs confirmed — implemented 2026-09-02, V1.73, build-verified only.**
+Plan and code survey: `README-Intruder-Rework-Plan.md`.
+
+The problem: knocks alone raised a full alarm, so a branch, an animal or a passing vehicle rattling a
+device on a tree powered the GPS on, sounded a 30 s siren and started 10-minute LoRa tracking uplinks.
+
+Now `notifyStatusRefresh()` promotes a knock burst to **CANDIDATE**, not to an alarm. The
+accelerometer then has to see real movement within `confirmWindowS` for **CONFIRMED**; otherwise the
+candidate expires having transmitted nothing and powered nothing on. Three interlocking details made
+this harder than it looks:
+
+- **`updateMotionState()` used to run only while an alarm was already active**, and zeroed
+  `mLastMotionMs` otherwise — so there was no motion state *before* an alarm at all. It now runs for
+  CANDIDATE too.
+- **Its optimistic seed had to go.** The old code assumed "just knocked = being handled" so the first
+  sample would not park the device. Under the candidate model that would confirm *every* candidate
+  instantly, table included. Movement must now be observed.
+- **The siren had to be gated on CONFIRMED.** It shakes the LIS3DH, and `C_BUZZER_KNOCK_GUARD_MS`
+  blinds the accelerometer while it sounds — so a siren on the candidate would have blocked the very
+  reading the candidate is waiting for, for its whole 30 s.
+
+`settleMs` (2 s) covers the knock burst's own ringing, for the same reason.
+
+**Off-by-one fixed.** `cntFastUpdates` started at 0 and the first knock took the else-branch, so
+`thresholdCnt = 5` needed *seven* knocks. Bursts now start the run at 1: six knocks, as documented.
+
+**Uplinks only while moving.** A device put down has nothing new to report and the GPS is the biggest
+draw on the board, so both stop. Movement resuming clears the deadline and reports at once
+(`mIntruderWasMoving` edge) rather than waiting out an interval set before it was set down. The first
+uplink never waits for a fix — the payload's flags byte already distinguished "moving" from "has fix",
+so "moving, location unavailable" needed no format change.
+
+**The heartbeat is what stops a stopped device looking dead.** Since alarm uplinks are suppressed
+while still, `loraConfig.alarmUpLinkIntervalS` (1 h) replaces the normal interval while an alarm is
+latched; the normal default drops 24 h → 12 h. It costs no GPS — the status message carries battery
+and recording state, not a position. The two schedules were already independent by construction
+(`mNextIntruderUplinkS` vs `rtc_duty_cycle.lastStatusLoraTimeS`), so this needed no untangling.
+
+**Latching kept, with a way out.** A confirmed alarm survives being put down, so picking the device up
+resumes tracking with no fresh knocks. `alarmTimeoutH` (24 h of stillness) auto-clears it — without
+that, a device that alarmed once keeps the accelerated heartbeat for the rest of its deployment. No
+reset command was added; EDsteve chose the timeout alone.
+
+`intruderCfg.idleIntervalS` is deprecated: a stopped device now sends nothing, so there is no idle
+cadence to configure. Still parsed and reported so older app builds keep working.
+
+App side: the three new timings in Device Settings (greyed out below firmware 1.73 via
+`reportsCandidateState`), and "Knocks seen · waiting for movement" on the status page — the only
+outward sign a candidate exists, since it deliberately makes no sound.
+
+**Not tested on hardware.** The nine-case table in `README-Intruder-Rework-Plan.md` is the bench plan;
+cases 2 (knocks on a table cost nothing) and 7 (pick-up reports immediately) are the ones that would
+falsify the design. Also watch for `Status JSON exceeded its 2048 byte document` on the first
+getStatus — four fields were added to a doc that was already fairly full.
+
+---
+
 **LoRa coverage survey ("signal strength mapper") — implemented 2026-09-01, V1.72, build-verified only.**
 New `lib/ElocHardware/src/ElocLora_survey.cpp` plus a `surveyCfg` config block. Walk or drive a route
 and map where the gateway can hear the device.

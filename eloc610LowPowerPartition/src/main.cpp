@@ -1166,9 +1166,13 @@ static void manageGpsWhileAwake(bool& gpsTzApplied) {
     //
     // ...but only while it is actually moving. The GPS is by far the largest current draw during an
     // alarm, and a device that has been put down somewhere is not changing position, so there is
-    // nothing to track: power it off and let the uplinks carry the last known fix (their fixAge
-    // field tells the reader how old it is) at the slower idle cadence. The moment the
-    // accelerometer sees movement again the module comes straight back up.
+    // nothing to track: power it off. Since V1.73 the tracking uplinks stop with it — a stopped
+    // device transmits nothing on the alarm path at all, and what keeps it from looking dead is
+    // the heartbeat accelerating to loraConfig.alarmUpLinkIntervalS, which needs no GPS. The moment
+    // the accelerometer sees movement again the module comes straight back up and so do the uplinks.
+    //
+    // isIntruderDetected() means CONFIRMED (knocks *and* movement), never a mere candidate, so a
+    // device knocked on a table never reaches this block and never powers the GPS.
     if (ElocSystem::GetInstance().isIntruderDetected()) {
         if (ElocSystem::GetInstance().isDeviceMoving()) {
             if (!gps.isInitialized()) {

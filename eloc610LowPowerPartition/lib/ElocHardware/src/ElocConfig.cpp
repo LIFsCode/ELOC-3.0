@@ -148,8 +148,22 @@ static const elocConfig_T C_ElocConfig_Default {
         .detectEnable = false,
         .thresholdCnt = INTRUDER_DETECTION_THRSH,
         .detectWindowMS = 2000,
-        .alarmIntervalS = 600,      // 10 minutes between intruder alarm LoRa msgs while moving
-        .idleIntervalS  = 3600,     // 1 hour while the device is sitting still (GPS powered down)
+        // Tracking cadence while the device is actually being carried. Only ever used while moving.
+        .alarmIntervalS = 60,
+        .idleIntervalS  = 3600,     // DEPRECATED, ignored - see intruderConfig_t
+        // The knock burst itself shakes the board, so the accelerometer cannot be trusted for a
+        // moment afterwards. Short: someone lifting a device does so within a second or two.
+        .settleMs = 2000,
+        // How long to wait for movement before deciding the knocks were a branch, an animal or a
+        // passing vehicle. Long enough to cover someone knocking then unclipping a strap.
+        .confirmWindowS = 20,
+        // Stillness before a moving device counts as stopped. Short enough that GPS and the
+        // tracking uplinks shut down promptly when it is set down; long enough that someone
+        // carrying it and pausing to open a gate does not look parked.
+        .quietS = 45,
+        // Auto-clear a confirmed alarm that has not moved for a day. Without it a device that
+        // alarmed once stays latched forever, keeping the accelerated heartbeat running.
+        .alarmTimeoutH = 24,
     },
     .batteryConfig = {
         .updateIntervalMs = 10*60*1000, //10 minutes
@@ -159,7 +173,8 @@ static const elocConfig_T C_ElocConfig_Default {
     },
     .loraConfig = {
         .loraEnable = true,
-        .upLinkIntervalS = 86400,
+        .upLinkIntervalS = 43200,        // 12 h: two life signs a day in normal operation
+        .alarmUpLinkIntervalS = 3600,    // 1 h while a confirmed intruder alarm is latched
         .loraRegion = "AS923_2",
         .eventCooldownS = 900,      // 15 minutes between event LoRa msgs
         .eventEndTimeoutS = 300,    // 5 minutes without detection = event ended
@@ -330,6 +345,24 @@ static void validateSurveyConfig() {
     cfg.maxDownlinksPerDay= clampU32(cfg.maxDownlinksPerDay, 0, 1000, "surveyCfg.maxDownlinksPerDay");
 }
 
+/// @brief Range clamps for the intruder timings the app can write.
+static void validateIntruderConfig() {
+    intruderConfig_t& cfg = gElocConfig.IntruderConfig;
+    // Below ~500 ms the knock burst is still ringing the board and would confirm itself.
+    cfg.settleMs       = clampU32(cfg.settleMs, 500, 30000, "intruderCfg.settleMs");
+    // The confirm window must outlast the settle time or a candidate could never be promoted.
+    const uint32_t minConfirmS = (cfg.settleMs / 1000) + 2;
+    cfg.confirmWindowS = clampU32(cfg.confirmWindowS, minConfirmS, 600, "intruderCfg.confirmWindowS");
+    // 10 s of stillness is about the shortest that does not flap while someone carries the device
+    // and pauses; an hour is the longest that still counts as "prompt" for shutting the GPS down.
+    cfg.quietS         = clampU32(cfg.quietS, 10, 3600, "intruderCfg.quietS");
+    // 0 is meaningful: never auto-clear.
+    if (cfg.alarmTimeoutH != 0) {
+        cfg.alarmTimeoutH = clampU32(cfg.alarmTimeoutH, 1, 8760, "intruderCfg.alarmTimeoutH");
+    }
+    cfg.alarmIntervalS = clampU32(cfg.alarmIntervalS, 10, 86400, "intruderCfg.alarmIntervalS");
+}
+
 esp_err_t setSurveyEnabled(bool enable) {
     gElocConfig.surveyConfig.enable = enable;
     if (!writeConfig()) {
@@ -449,6 +482,11 @@ void loadConfig(const JsonObject& config) {
     gElocConfig.IntruderConfig.detectWindowMS = config["intruderCfg"]["windowsMs"]    | C_ElocConfig_Default.IntruderConfig.detectWindowMS;
     gElocConfig.IntruderConfig.alarmIntervalS = config["intruderCfg"]["alarmIntervalS"] | C_ElocConfig_Default.IntruderConfig.alarmIntervalS;
     gElocConfig.IntruderConfig.idleIntervalS  = config["intruderCfg"]["idleIntervalS"]  | C_ElocConfig_Default.IntruderConfig.idleIntervalS;
+    gElocConfig.IntruderConfig.settleMs       = config["intruderCfg"]["settleMs"]       | C_ElocConfig_Default.IntruderConfig.settleMs;
+    gElocConfig.IntruderConfig.confirmWindowS = config["intruderCfg"]["confirmWindowS"] | C_ElocConfig_Default.IntruderConfig.confirmWindowS;
+    gElocConfig.IntruderConfig.quietS         = config["intruderCfg"]["quietS"]         | C_ElocConfig_Default.IntruderConfig.quietS;
+    gElocConfig.IntruderConfig.alarmTimeoutH  = config["intruderCfg"]["alarmTimeoutH"]  | C_ElocConfig_Default.IntruderConfig.alarmTimeoutH;
+    validateIntruderConfig();
 
     gElocConfig.surveyConfig.enable             = config["surveyCfg"]["enable"]             | C_ElocConfig_Default.surveyConfig.enable;
     gElocConfig.surveyConfig.minIntervalS       = config["surveyCfg"]["minIntervalS"]       | C_ElocConfig_Default.surveyConfig.minIntervalS;
@@ -470,6 +508,7 @@ void loadConfig(const JsonObject& config) {
     /** lora config*/
     gElocConfig.loraConfig.loraEnable          = config["lorawan"]["loraEnable"]       | C_ElocConfig_Default.loraConfig.loraEnable;
     gElocConfig.loraConfig.upLinkIntervalS     = config["lorawan"]["upLinkIntervalS"]  | C_ElocConfig_Default.loraConfig.upLinkIntervalS;
+    gElocConfig.loraConfig.alarmUpLinkIntervalS = config["lorawan"]["alarmUpLinkIntervalS"] | C_ElocConfig_Default.loraConfig.alarmUpLinkIntervalS;
     gElocConfig.loraConfig.loraRegion          = config["lorawan"]["loraRegion"]       | C_ElocConfig_Default.loraConfig.loraRegion;
     gElocConfig.loraConfig.eventCooldownS      = config["lorawan"]["eventCooldownS"]   | C_ElocConfig_Default.loraConfig.eventCooldownS;
     gElocConfig.loraConfig.eventEndTimeoutS    = config["lorawan"]["eventEndTimeoutS"] | C_ElocConfig_Default.loraConfig.eventEndTimeoutS;
@@ -623,6 +662,10 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     config["intruderCfg"]["windowsMs"]    = ElocConfig.IntruderConfig.detectWindowMS;
     config["intruderCfg"]["alarmIntervalS"] = ElocConfig.IntruderConfig.alarmIntervalS;
     config["intruderCfg"]["idleIntervalS"]  = ElocConfig.IntruderConfig.idleIntervalS;
+    config["intruderCfg"]["settleMs"]       = ElocConfig.IntruderConfig.settleMs;
+    config["intruderCfg"]["confirmWindowS"] = ElocConfig.IntruderConfig.confirmWindowS;
+    config["intruderCfg"]["quietS"]         = ElocConfig.IntruderConfig.quietS;
+    config["intruderCfg"]["alarmTimeoutH"]  = ElocConfig.IntruderConfig.alarmTimeoutH;
 
     config["surveyCfg"]["enable"]             = ElocConfig.surveyConfig.enable;
     config["surveyCfg"]["minIntervalS"]       = ElocConfig.surveyConfig.minIntervalS;
@@ -641,6 +684,7 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     config["battery"]["noBatteryMode"]    = ElocConfig.batteryConfig.noBatteryMode;
     config["lorawan"]["loraEnable"]       = ElocConfig.loraConfig.loraEnable;
     config["lorawan"]["upLinkIntervalS"]  = ElocConfig.loraConfig.upLinkIntervalS;
+    config["lorawan"]["alarmUpLinkIntervalS"] = ElocConfig.loraConfig.alarmUpLinkIntervalS;
     config["lorawan"]["loraRegion"]       = ElocConfig.loraConfig.loraRegion;
     config["lorawan"]["eventCooldownS"]   = ElocConfig.loraConfig.eventCooldownS;
     config["lorawan"]["eventEndTimeoutS"] = ElocConfig.loraConfig.eventEndTimeoutS;

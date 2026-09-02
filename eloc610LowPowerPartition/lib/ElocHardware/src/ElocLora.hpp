@@ -127,6 +127,9 @@ private:
 
     // Intruder alarm uplink scheduling (see ElocLoraLoop)
     bool mIntruderAlarmActive = false;       // edge detection on ElocSystem's intruder flag
+    bool mIntruderWasMoving = false;         // edge detection on movement, so a device picked up
+                                             // again reports at once instead of waiting out a
+                                             // deadline set before it was put down
     int64_t mNextIntruderUplinkS = 0;        // epoch time the next alarm uplink is due
     static constexpr int64_t C_INTRUDER_RETRY_S = 60;         // retry delay after a failed alarm uplink
     static constexpr uint32_t C_MIN_INTRUDER_INTERVAL_S = 60; // lower bound for intruderCfg.alarmIntervalS

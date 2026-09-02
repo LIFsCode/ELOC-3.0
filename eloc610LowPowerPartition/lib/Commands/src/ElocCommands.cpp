@@ -246,11 +246,20 @@ void printStatus(String& buf) {
     intruder["enabled"]                  = intruderCfg.detectEnable;
     intruder["armed"]                    = intruderCfg.detectEnable && !getDutyCycleConfig().enable;
     intruder["alarmActive"]              = elocSys.isIntruderDetected();
+    // A knock burst that has not yet been backed up by movement. Nothing transmits or powers up in
+    // this state - it is reported so a field tech can tell "it saw my knocks" from "it ignored
+    // them", which is otherwise indistinguishable now that knocking alone is silent.
+    intruder["candidate"]                = elocSys.isIntruderCandidate();
     intruder["sirenActive"]              = elocSys.isSirenActive();
     intruder["alarmAge[s]"]              = static_cast<long>(elocSys.getIntruderAlarmAgeS());
     intruder["alarmInterval[s]"]         = static_cast<long>(intruderCfg.alarmIntervalS);
+    intruder["confirmWindow[s]"]         = static_cast<long>(intruderCfg.confirmWindowS);
+    intruder["quiet[s]"]                 = static_cast<long>(intruderCfg.quietS);
+    intruder["alarmTimeout[h]"]          = static_cast<long>(intruderCfg.alarmTimeoutH);
+    // Kept for older app builds that read it. Deprecated in V1.73: a stopped device now transmits
+    // nothing at all, so there is no idle cadence left for it to describe.
     intruder["idleInterval[s]"]          = static_cast<long>(intruderCfg.idleIntervalS);
-    // Movement state behind the reporting cadence. Only meaningful while alarmActive is true.
+    // Movement state behind the reporting cadence. Alarm uplinks go out only while this is true.
     intruder["moving"]                   = elocSys.isDeviceMoving();
 
     // The status document grows with every section added to it; a silent overflow would ship a

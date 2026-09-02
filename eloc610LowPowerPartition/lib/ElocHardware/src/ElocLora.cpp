@@ -456,39 +456,55 @@ void ElocLora::ElocLoraLoop() {
     // pick up setConfig changes to the uplink interval without a reboot
     refreshUplinkInterval();
 
-    // Intruder alarm: send an alarm uplink immediately when the knock-based intruder
-    // detection trips, then keep re-sending (with the current GPS position) every
-    // intruderCfg.alarmIntervalS while the alarm stays active, so a stolen/moved device
-    // can be tracked. A failed uplink is retried after C_INTRUDER_RETRY_S.
-    if (ElocSystem::GetInstance().isIntruderDetected()) {
+    // Intruder alarm tracking uplinks. These go out ONLY while the device is actually moving:
+    // an alarm is confirmed by knocks followed by movement, and a device that has been carried off
+    // and put down has nothing new to report - its position is not changing, and the GPS is the
+    // largest current draw on the board.
+    //
+    // A stopped device therefore goes quiet on this path entirely. What keeps it from looking dead
+    // is the heartbeat below, which switches to loraConfig.alarmUpLinkIntervalS (1 h) for exactly
+    // this reason: it carries battery and status without powering the GPS.
+    //
+    // The first uplink goes out the moment movement is confirmed, and again the moment movement
+    // RESUMES after a pause - an old deadline is never allowed to hold back a device that has just
+    // been picked up again. A failed uplink is retried after C_INTRUDER_RETRY_S.
+    const bool alarmConfirmed = ElocSystem::GetInstance().isIntruderDetected();
+    const bool alarmMoving    = alarmConfirmed && ElocSystem::GetInstance().isDeviceMoving();
+
+    if (alarmConfirmed) {
       int64_t nowS = timeObject.getLocalEpoch();
       if (!mIntruderAlarmActive) {
         mIntruderAlarmActive = true;
-        mNextIntruderUplinkS = nowS;  // first alarm goes out right away
+        mIntruderWasMoving = false;
       }
-      if (nowS >= mNextIntruderUplinkS) {
-        uint32_t intervalS = getConfig().IntruderConfig.alarmIntervalS;
-        // Parked device: back off to the idle cadence and let the GPS stay off (see main.cpp).
-        // It deliberately does NOT go silent - a device that stops reporting is indistinguishable
-        // from one that has been destroyed, shielded or has run flat - but a unit sitting in a shed
-        // does not need a fresh position every 10 minutes, and the GPS is what drains the battery.
-        const uint32_t idleIntervalS = getConfig().IntruderConfig.idleIntervalS;
-        if (!ElocSystem::GetInstance().isDeviceMoving() && (idleIntervalS > intervalS)) {
-          intervalS = idleIntervalS;
+      if (alarmMoving) {
+        // Edge into movement: send now rather than honouring a deadline set before the device was
+        // put down, which could otherwise sit on a fresh pick-up for a whole interval.
+        if (!mIntruderWasMoving) {
+          ESP_LOGW(TAG, "Intruder alarm: movement (re)started - reporting immediately");
+          mNextIntruderUplinkS = nowS;
         }
-        if (intervalS < C_MIN_INTRUDER_INTERVAL_S) {
-          intervalS = C_MIN_INTRUDER_INTERVAL_S;
-        }
-        if (sendIntruderAlarmMessage() == ESP_OK) {
-          mNextIntruderUplinkS = nowS + intervalS;
-        }
-        else {
-          mNextIntruderUplinkS = nowS + C_INTRUDER_RETRY_S;
+        if (nowS >= mNextIntruderUplinkS) {
+          uint32_t intervalS = getConfig().IntruderConfig.alarmIntervalS;
+          if (intervalS < C_MIN_INTRUDER_INTERVAL_S) {
+            intervalS = C_MIN_INTRUDER_INTERVAL_S;
+          }
+          // Deliberately NOT waiting for a GPS fix. A device being carried away is worth reporting
+          // even with no position: the payload's flags byte says "moving, no fix", and the next
+          // uplink carries the position as soon as one lands.
+          if (sendIntruderAlarmMessage() == ESP_OK) {
+            mNextIntruderUplinkS = nowS + intervalS;
+          }
+          else {
+            mNextIntruderUplinkS = nowS + C_INTRUDER_RETRY_S;
+          }
         }
       }
+      mIntruderWasMoving = alarmMoving;
     }
     else {
       mIntruderAlarmActive = false;
+      mIntruderWasMoving = false;
     }
 
 #ifdef EDGE_IMPULSE_ENABLED
@@ -510,10 +526,27 @@ void ElocLora::ElocLoraLoop() {
     // RTC memory so the interval is honoured across duty-cycle deep sleep cycles.
     // On first boot (or after power loss) lastStatusLoraTimeS == 0, so the very
     // first heartbeat is sent immediately — this is the desired behaviour.
+    //
+    // While a confirmed intruder alarm is latched the heartbeat accelerates to
+    // loraConfig.alarmUpLinkIntervalS (1 h by default, versus 12 h normally). This is what keeps a
+    // stolen device that has been put down from going silent: the tracking uplinks above only run
+    // while it is moving, so without this a unit in a shed would say nothing for half a day. It
+    // costs no GPS - the status message carries battery and recording state, not a position.
+    //
+    // The two schedules are independent by construction (mNextIntruderUplinkS versus
+    // rtc_duty_cycle.lastStatusLoraTimeS), so an alarm uplink can never postpone a heartbeat.
     int64_t nowEpochS = timeObject.getLocalEpoch();
     int64_t timeSinceLastHeartbeat = nowEpochS - rtc_duty_cycle.lastStatusLoraTimeS;
-    if  (timeSinceLastHeartbeat >= uplinkIntervalSeconds) {
-      ESP_LOGI(TAG, "Sending heartbeat uplink (last was %lld s ago)", timeSinceLastHeartbeat);
+    uint32_t heartbeatIntervalS = uplinkIntervalSeconds;
+    if (alarmConfirmed) {
+      const uint32_t alarmIntervalS = getConfig().loraConfig.alarmUpLinkIntervalS;
+      if ((alarmIntervalS != 0) && (alarmIntervalS < heartbeatIntervalS)) {
+        heartbeatIntervalS = alarmIntervalS;
+      }
+    }
+    if  (timeSinceLastHeartbeat >= heartbeatIntervalS) {
+      ESP_LOGI(TAG, "Sending heartbeat uplink (last was %lld s ago, interval %u s%s)",
+        timeSinceLastHeartbeat, heartbeatIntervalS, alarmConfirmed ? ", alarm active" : "");
       
       if (sendStatusUpdateMessage() == ESP_OK) {
         rtc_duty_cycle.lastStatusLoraTimeS = nowEpochS;

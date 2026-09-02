@@ -58,6 +58,18 @@ struct loraWAN_keys_t {
     uint8_t nwkKey[16];
 }; 
 
+/// @brief Intruder detection state.
+///
+/// Knocks alone are NOT an alarm. A burst of knocks opens a CANDIDATE window; the device then has to
+/// actually move for the alarm to become CONFIRMED. A device knocked on a table - by a branch, an
+/// animal, a passing vehicle, or a field tech - falls back to IDLE having powered nothing on and
+/// transmitted nothing.
+enum class IntruderState_t {
+    IDLE = 0,
+    CANDIDATE,   // knock burst seen, waiting to see whether it moves
+    CONFIRMED,   // it moved. Latched: stays confirmed when put down again.
+};
+
 class ElocSystem
 {
 public:
@@ -101,12 +113,15 @@ private:
     bool mBuzzerIdle;
     uint32_t mLastBuzzerStopMs;  // millis() when the buzzer last went idle (knock-sensor guard)
     bool mRefreshStatus;
-    bool mIntruderDetected;
+    IntruderState_t mIntruderState;  // IDLE -> CANDIDATE -> CONFIRMED, see notifyStatusRefresh()
     uint32_t mIntruderThresholdCnt;
     uint32_t mIntruderAlarmStartMs;  // millis() of the knock that raised the active alarm (0 = no alarm)
+    uint32_t mCandidateStartMs;      // millis() of the knock burst that opened the candidate window
+    uint32_t mLastKnockMs;           // millis() of the most recent knock, for the settle window
     bool mSirenActive;               // true while the intruder siren owns the buzzer
     uint32_t mLastMotionMs;          // millis() of the last accelerometer sample that showed movement
     uint32_t mLastMotionSampleMs;    // millis() of the last accelerometer read (sampling throttle)
+    uint32_t mConfirmedStillSinceMs; // millis() the confirmed alarm last saw movement (auto-clear timer)
 
     bool mFwUpdateProcessing;
 
@@ -167,9 +182,15 @@ private:
     void updateIntruderSiren();
 
     /// @brief Sample the accelerometer and maintain the moving/parked state used by the alarm.
-    /// @note Only runs while an intruder alarm is active - it exists to decide how hard the device
-    ///       should work at reporting its position, and nothing else consumes it.
+    /// @note Runs while a CANDIDATE or a CONFIRMED alarm is up. During a candidate it is what
+    ///       decides whether the knocks were someone taking the device or someone brushing past
+    ///       it; during a confirmed alarm it decides how hard the device works at reporting.
     void updateMotionState();
+
+    /// @brief Advance the intruder state machine: promote a candidate that has actually moved,
+    ///        expire one that has not, and auto-clear a confirmed alarm that has sat still for
+    ///        intruderCfg.alarmTimeoutH. Runs every handleSystemStatus() cycle.
+    void updateIntruderState();
 public:
     inline static ElocSystem& GetInstance() {
         static ElocSystem System;
@@ -260,10 +281,27 @@ public:
         return mSdRecModeBeforeRemoval;
     }
 
-    /// @brief Whether the knock-based intruder alarm is currently active
+    /// @brief Whether a CONFIRMED intruder alarm is active - knocks AND movement.
+    /// @note Deliberately false for a mere CANDIDATE, so every existing consumer (the GPS power
+    ///       gate in main.cpp, the LoRa alarm uplinks, the siren, getStatus) keeps its meaning:
+    ///       knocking on a device that then sits still must cost nothing.
     inline bool isIntruderDetected() const {
-        return mIntruderDetected;
+        return mIntruderState == IntruderState_t::CONFIRMED;
     }
+
+    /// @brief Whether a knock burst is waiting to see whether the device actually moves.
+    ///        Nothing transmits or powers up in this state - it exists to be visible in getStatus
+    ///        so a field tech can tell "it saw my knocks" from "it ignored them".
+    inline bool isIntruderCandidate() const {
+        return mIntruderState == IntruderState_t::CANDIDATE;
+    }
+
+    inline IntruderState_t getIntruderState() const {
+        return mIntruderState;
+    }
+
+    /// @brief Clear a confirmed alarm and return to IDLE (auto-timeout, or config disable).
+    void clearIntruderAlarm(const char* reason);
 
     /// @brief Seconds since the active intruder alarm first triggered (0 when no alarm is active)
     uint32_t getIntruderAlarmAgeS() const;

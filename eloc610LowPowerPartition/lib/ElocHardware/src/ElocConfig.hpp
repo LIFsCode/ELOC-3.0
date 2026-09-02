@@ -56,10 +56,18 @@ typedef struct {
 
 typedef struct {
     bool detectEnable;
-    uint32_t thresholdCnt;
+    uint32_t thresholdCnt;     // knocks within detectWindowMS needed to open a candidate ("more than")
     uint32_t detectWindowMS;
     uint32_t alarmIntervalS;   // interval between intruder alarm LoRa uplinks while the device is moving
-    uint32_t idleIntervalS;    // ... and while it is not: 0 or <= alarmIntervalS keeps the fast cadence
+    uint32_t idleIntervalS;    // DEPRECATED (V1.73): a stopped device now transmits nothing at all, so
+                               // there is no idle cadence left to configure. Still parsed and reported
+                               // so older apps and stored configs keep working; the value is ignored.
+    uint32_t settleMs;         // after a knock burst, ignore the accelerometer this long - the knocks
+                               // themselves register as movement and would confirm every candidate
+    uint32_t confirmWindowS;   // how long a candidate waits for real movement before expiring to IDLE
+    uint32_t quietS;           // stillness before a moving device counts as stopped
+    uint32_t alarmTimeoutH;    // auto-clear a confirmed alarm after this long with no movement
+                               // (0 = never; the alarm then latches until detection is disabled)
 }intruderConfig_t;
 
 typedef struct {
@@ -72,6 +80,10 @@ typedef struct {
 typedef struct {
     bool loraEnable;          // enable/disable Lora communication
     uint32_t upLinkIntervalS; // time between lora uplink messages in seconds
+    uint32_t alarmUpLinkIntervalS; // heartbeat interval while a CONFIRMED intruder alarm is active.
+                              // A stolen device that has been put down transmits no alarm messages at
+                              // all (they only go out while it is moving), so this accelerated
+                              // heartbeat is the only thing saying it is still alive and where it was.
     String loraRegion;        // Lora Region, e.g. EU868
     uint32_t eventCooldownS;  // Min seconds between event LoRa msgs (0 = legacy mode, send every detection)
     uint32_t eventEndTimeoutS;// Seconds without detection before event is considered ended

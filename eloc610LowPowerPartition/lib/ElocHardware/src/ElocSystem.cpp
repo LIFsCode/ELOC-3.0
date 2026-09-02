@@ -151,9 +151,9 @@ private:
 
 ElocSystem::ElocSystem():
     mI2CInstance(NULL), mIOExpInstance(NULL), mLis3DH(NULL), mStatus(), mBuzzerIdle(true),
-    mLastBuzzerStopMs(0), mRefreshStatus(false), mIntruderDetected(false),
-    mIntruderAlarmStartMs(0), mSirenActive(false),
-    mLastMotionMs(0), mLastMotionSampleMs(0),
+    mLastBuzzerStopMs(0), mRefreshStatus(false), mIntruderState(IntruderState_t::IDLE),
+    mIntruderAlarmStartMs(0), mCandidateStartMs(0), mLastKnockMs(0), mSirenActive(false),
+    mLastMotionMs(0), mLastMotionSampleMs(0), mConfirmedStillSinceMs(0),
     mFwUpdateProcessing(false), mFactoryInfo(),
     mTargetPmProfile(PmProfile::CONFIG_DEFAULT), mAppliedPmProfile(PmProfile::CONFIG_DEFAULT),
     mBtActive(false),
@@ -551,16 +551,19 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
     // notifyStatusRefresh() only runs on a knock event, so an active alarm would otherwise
     // stay latched forever after detection is disabled via setConfig — clear it here.
     // (Duty-cycle mode counts as disabled: intruder detection is a 24/7-only feature.)
-    if (mIntruderDetected &&
+    if ((mIntruderState != IntruderState_t::IDLE) &&
         (!getConfig().IntruderConfig.detectEnable || getDutyCycleConfig().enable)) {
-        ESP_LOGI(TAG, "Intruder detection disabled, clearing active alarm");
-        mIntruderDetected = false;
+        clearIntruderAlarm("detection disabled");
     }
 
-    // Ahead of the status/LED/buzzer chain below, so the same cycle that clears the alarm also
-    // silences the siren first and leaves the buzzer free for whatever feedback the chain wants.
-    updateIntruderSiren();
+    // Order matters here. Sample the accelerometer FIRST so the state machine decides on this
+    // cycle's reading rather than the previous one, then promote/expire/auto-clear, then let the
+    // siren react - so the same cycle that confirms an alarm starts sounding it, and the cycle
+    // that clears one silences it. It also has to sit ahead of the status/LED/buzzer chain below,
+    // which leaves the buzzer free for whatever feedback that chain wants.
     updateMotionState();
+    updateIntruderState();
+    updateIntruderSiren();
 
     Status_t status;
     status.batteryLow = Battery::GetInstance().isLow();
@@ -569,7 +572,7 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
     status.recMode = wav_writer.get_mode();
     status.ai_run_enable = ai_run_enable;
     status.sdCardMounted = sd_card.isMounted();
-    status.intruderDetected = mIntruderDetected;
+    status.intruderDetected = isIntruderDetected();
     if ((mStatus == status) && !mRefreshStatus) {
         if (esp_err_t err = mStatusLed->update()) {
             ESP_LOGE(TAG, "mStatusLed->update() failed with %s", esp_err_to_name(err));
@@ -584,7 +587,7 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
         }
     }
     else {
-        if (mIntruderDetected) {
+        if (isIntruderDetected()) {
             // The buzzer is driven by updateIntruderSiren() (swept siren + auto-off), not by a
             // one-shot beep here. This branch still comes first so the battery/SD/BT feedback
             // below cannot cut into an active alarm; releasing the buzzer once the alarm clears
@@ -658,7 +661,9 @@ void ElocSystem::notifyStatusRefresh() {
     // was tried and reverted (heap exhaustion when BT+LoRa+GPS+AI all boot together).
     if (!cfg.detectEnable || getDutyCycleConfig().enable) {
         cntFastUpdates = 0;
-        mIntruderDetected = false;
+        if (mIntruderState != IntruderState_t::IDLE) {
+            clearIntruderAlarm("detection disabled");
+        }
         return;
     }
     // The buzzer sits on the same PCB as the LIS3DH: its vibration fires the click (knock)
@@ -668,17 +673,38 @@ void ElocSystem::notifyStatusRefresh() {
     if (!mBuzzerIdle || (millis() - mLastBuzzerStopMs) < C_BUZZER_KNOCK_GUARD_MS) {
         return;
     }
+    // Count the knock that OPENS a burst as well as the ones that follow it. Before V1.73 the
+    // first knock only initialised lastRefreshMs and was not counted, so "more than 5" actually
+    // needed seven knocks. Starting the run at 1 makes thresholdCnt mean what its name says.
     if ((millis() - lastRefreshMs) <= cfg.detectWindowMS) {
         cntFastUpdates++;
     }
     else {
-        cntFastUpdates = 0;
+        cntFastUpdates = 1;
     }
+
+    // A knock burst is NOT an alarm - it opens a candidate window, and the device has to actually
+    // move before anything powers up or transmits. A branch, an animal or a passing vehicle can
+    // rattle a device on a tree all day; a thief picks it up.
     if ((cntFastUpdates > cfg.thresholdCnt) && (cfg.thresholdCnt != 0)) {
-        ESP_LOGW(TAG, "Intruder detected after %d knocks", cntFastUpdates);
-        mIntruderDetected = true;
+        if (mIntruderState == IntruderState_t::IDLE) {
+            uint32_t nowMs = millis();
+            mCandidateStartMs = nowMs ? nowMs : 1;
+            mIntruderState = IntruderState_t::CANDIDATE;
+            // Deliberately not seeded as "moving" (see updateMotionState): the candidate has to
+            // earn its promotion from a real accelerometer reading after the knocks settle.
+            mLastMotionMs = 0;
+            ESP_LOGW(TAG, "Intruder candidate after %u knocks - waiting %u s for movement",
+                cntFastUpdates, cfg.confirmWindowS);
+        }
+        else if (mIntruderState == IntruderState_t::CONFIRMED) {
+            // Already alarmed and someone is knocking it again. Treat that as handling, so the
+            // auto-clear timer does not expire under a device that is being worked on.
+            mConfirmedStillSinceMs = 0;
+        }
     }
     lastRefreshMs = millis();
+    mLastKnockMs = lastRefreshMs ? lastRefreshMs : 1;
     mRefreshStatus = true;
 }
 
@@ -698,6 +724,68 @@ static const uint32_t C_SIREN_GAP_MS       = 200;   // silence between sweeps
 static const uint32_t C_SIREN_FREQ_LOW_HZ  = 600;   // sweep start
 static const uint32_t C_SIREN_FREQ_HIGH_HZ = 1800;  // sweep end
 
+void ElocSystem::clearIntruderAlarm(const char* reason) {
+    if (mIntruderState == IntruderState_t::IDLE) {
+        return;
+    }
+    ESP_LOGW(TAG, "Intruder %s cleared: %s",
+        (mIntruderState == IntruderState_t::CONFIRMED) ? "alarm" : "candidate",
+        reason ? reason : "?");
+    mIntruderState = IntruderState_t::IDLE;
+    mCandidateStartMs = 0;
+    mLastKnockMs = 0;
+    mLastMotionMs = 0;
+    mConfirmedStillSinceMs = 0;
+    // mIntruderAlarmStartMs and the siren are released by updateIntruderSiren() on the next cycle,
+    // which also owns the buzzer teardown.
+    mRefreshStatus = true;
+}
+
+void ElocSystem::updateIntruderState() {
+    const intruderConfig_t& cfg = getConfig().IntruderConfig;
+    const uint32_t nowMs = millis();
+
+    switch (mIntruderState) {
+    case IntruderState_t::IDLE:
+        break;
+
+    case IntruderState_t::CANDIDATE:
+        // Promoted only by a real accelerometer reading taken after the knocks settled. This is the
+        // whole point of the candidate state: knocking on a device that then sits still costs
+        // nothing - no siren, no GPS, no LoRa.
+        if (isDeviceMoving()) {
+            mIntruderState = IntruderState_t::CONFIRMED;
+            mConfirmedStillSinceMs = 0;
+            ESP_LOGW(TAG, "Intruder ALARM confirmed - knocks followed by movement");
+            mRefreshStatus = true;
+        }
+        else if ((mCandidateStartMs != 0) &&
+                 ((nowMs - mCandidateStartMs) >= (cfg.confirmWindowS * 1000))) {
+            clearIntruderAlarm("no movement within the confirm window");
+        }
+        break;
+
+    case IntruderState_t::CONFIRMED:
+        // Latched on purpose: a device that has been carried off and put down stays alarmed, so
+        // picking it up again resumes tracking without needing another knock burst.
+        if (isDeviceMoving()) {
+            mConfirmedStillSinceMs = 0;
+        }
+        else {
+            if (mConfirmedStillSinceMs == 0) {
+                mConfirmedStillSinceMs = nowMs ? nowMs : 1;
+            }
+            // ...but not forever. Without this a device that alarmed once keeps the accelerated
+            // heartbeat running for the rest of its deployment. 0 = never auto-clear.
+            if ((cfg.alarmTimeoutH != 0) &&
+                ((nowMs - mConfirmedStillSinceMs) >= (cfg.alarmTimeoutH * 3600UL * 1000UL))) {
+                clearIntruderAlarm("no movement for the configured alarm timeout");
+            }
+        }
+        break;
+    }
+}
+
 uint32_t ElocSystem::getIntruderAlarmAgeS() const {
     if (mIntruderAlarmStartMs == 0) {
         return 0;
@@ -706,7 +794,10 @@ uint32_t ElocSystem::getIntruderAlarmAgeS() const {
 }
 
 void ElocSystem::updateIntruderSiren() {
-    if (!mIntruderDetected) {
+    // Gated on CONFIRMED, never on a candidate. A device knocked on a table must stay silent -
+    // and it has to, because the siren shakes the LIS3DH and the knock guard would then blind
+    // the very accelerometer reading the candidate is waiting for.
+    if (!isIntruderDetected()) {
         if (mSirenActive) {
             mSirenActive = false;
             setBuzzerIdle();
@@ -766,27 +857,42 @@ void ElocSystem::setBuzzerBeep(unsigned int frequency, unsigned int beeps, unsig
 // whole point of the alarm.
 static const uint32_t C_MOTION_SAMPLE_MS      = 250;      // accelerometer read cadence
 static const float    C_MOTION_THRESHOLD_G    = 0.08f;    // per-sample magnitude counting as movement
-static const uint32_t C_MOTION_QUIET_MS       = 5*60*1000;// stillness before the device counts as parked
+// Stillness before the device counts as parked is now intruderCfg.quietS (default 45 s), not a
+// compile-time constant: it trades how promptly the GPS shuts down against how easily someone
+// carrying the device and pausing looks parked, and that wants field tuning.
 
 void ElocSystem::updateMotionState() {
     if (!mLis3DH) {
         return;
     }
-    if (!mIntruderDetected) {
-        // Nothing consumes the state outside an alarm; drop it so the next alarm starts clean.
+    if (mIntruderState == IntruderState_t::IDLE) {
+        // Nothing consumes the state outside a candidate or an alarm; drop it so the next one
+        // starts clean.
         mLastMotionMs = 0;
         return;
     }
     uint32_t nowMs = millis();
-    // A device that has just been knocked is by definition being handled: assume movement until it
-    // has actually been still, otherwise the first sample would park it and power the GPS down.
-    if (mLastMotionMs == 0) {
-        mLastMotionMs = nowMs ? nowMs : 1;
-    }
+
+    // NO optimistic "just knocked, so assume movement" seed here. That is what the pre-V1.73 code
+    // did, and under the candidate model it would promote every candidate instantly - including a
+    // device sitting on a table. Movement now has to be observed.
     if (mLastMotionSampleMs != 0 && (nowMs - mLastMotionSampleMs) < C_MOTION_SAMPLE_MS) {
         return;
     }
     mLastMotionSampleMs = nowMs;
+
+    // The knock burst rings the board for a moment. Sampling through it would read the knocks
+    // themselves as movement and confirm the candidate on the strength of the knocking.
+    //
+    // Measured from the LAST knock, not the first: someone (or something) still knocking when the
+    // window elapsed would otherwise have its own knocking read as the movement that confirms it.
+    // Sustained knocking therefore keeps deferring the decision, which is the correct answer for
+    // heavy rain or a branch working against the case - neither of which ever displaces the device.
+    if ((mIntruderState == IntruderState_t::CANDIDATE) && (mLastKnockMs != 0) &&
+        ((nowMs - mLastKnockMs) < getConfig().IntruderConfig.settleMs)) {
+        return;
+    }
+
     // The buzzer shakes the board hard enough to look like movement - the same coupling the knock
     // guard exists for - so the siren must not be able to keep the device flagged as moving.
     if (!mBuzzerIdle || (nowMs - mLastBuzzerStopMs) < C_BUZZER_KNOCK_GUARD_MS) {
@@ -800,21 +906,27 @@ void ElocSystem::updateMotionState() {
     float magnitudeSq = data.ax*data.ax + data.ay*data.ay + data.az*data.az;
     if (magnitudeSq > (C_MOTION_THRESHOLD_G * C_MOTION_THRESHOLD_G)) {
         if (!isDeviceMoving()) {
-            ESP_LOGI(TAG, "Intruder alarm: device is moving again, resuming fast reporting");
+            if (mIntruderState == IntruderState_t::CANDIDATE) {
+                ESP_LOGW(TAG, "Intruder candidate: movement detected - confirming");
+            }
+            else {
+                ESP_LOGI(TAG, "Intruder alarm: device is moving again, resuming tracking");
+            }
         }
         mLastMotionMs = nowMs ? nowMs : 1;
     }
-    else if (isDeviceMoving() && (nowMs - mLastMotionMs) >= (C_MOTION_QUIET_MS - C_MOTION_SAMPLE_MS)) {
-        ESP_LOGI(TAG, "Intruder alarm: device has been still for %u s, backing off",
-            C_MOTION_QUIET_MS / 1000);
+    else if (isDeviceMoving() &&
+             ((nowMs - mLastMotionMs) >= (getConfig().IntruderConfig.quietS * 1000 - C_MOTION_SAMPLE_MS))) {
+        ESP_LOGI(TAG, "Intruder alarm: device has been still for %u s - GPS and tracking uplinks stop",
+            getConfig().IntruderConfig.quietS);
     }
 }
 
 bool ElocSystem::isDeviceMoving() const {
     if (mLastMotionMs == 0) {
-        return false;
+        return false;   // nothing observed yet - a fresh candidate is NOT moving until it is seen to
     }
-    return (millis() - mLastMotionMs) < C_MOTION_QUIET_MS;
+    return (millis() - mLastMotionMs) < (getConfig().IntruderConfig.quietS * 1000);
 }
 
 void ElocSystem::notifyFwUpdateError() {

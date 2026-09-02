@@ -58,6 +58,7 @@ private:
         STATUS_MSG = 0,
         EVENT_MSG = 1,
         INTRUDER_MSG = 2,
+        SURVEY_MSG = 3,
     };
 
 
@@ -138,6 +139,7 @@ private:
         double lat = 0.0;
         double lng = 0.0;
         uint32_t fixAgeS = 0;
+        uint32_t sats = 0;
     };
     GpsInfo_t mGpsInfo;
     portMUX_TYPE mGpsInfoMux = portMUX_INITIALIZER_UNLOCKED;
@@ -160,6 +162,63 @@ private:
 
     /// @brief Store the current radio RSSI/SNR values
     void captureSignalQuality();
+
+    /************************* Coverage survey (ElocLora_survey.cpp) *************************/
+
+    /// @brief Per-spreading-factor floor between survey uplinks, in seconds. Derived from the 1%
+    ///        AS923 duty cycle for a 25-byte PHY payload (SF7 62 ms .. SF12 1646 ms) with headroom,
+    ///        so a payload that grows by a few bytes cannot silently push the device over.
+    ///        Indexed by SF - 7.
+    static const uint32_t C_SF_MIN_INTERVAL_S[6];
+
+    bool     mSurveyActive = false;      // a session is running
+    bool     mSurveyStartFailed = false; // start attempted and failed; do not retry every loop
+    int64_t  mSurveyStartS = 0;          // epoch time the session began
+    int64_t  mSurveyLastTxMs = 0;        // esp_timer millis of the last survey uplink
+    double   mSurveyLastLat = 0.0;       // position of the last survey uplink
+    double   mSurveyLastLng = 0.0;
+    bool     mSurveyHasAnchor = false;   // a first sample has been sent, so distance is meaningful
+    uint32_t mSurveySampleCnt = 0;       // samples this session (drives linkCheckEveryN)
+    uint32_t mSurveyUplinkCnt = 0;       // uplinks / downlinks used, this local day
+    uint32_t mSurveyDownlinkCnt = 0;
+    int32_t  mSurveyBudgetDay = -1;      // local day the two counters above belong to
+    uint8_t  mSurveySF = 7;              // spreading factor currently in use
+    uint8_t  mSurveyMissedChecks = 0;    // consecutive unanswered link checks (steps SF down)
+    uint8_t  mSurveyGoodChecks = 0;      // consecutive healthy link checks (steps SF back up)
+    uint8_t  mSurveyLastMargin = 0xFF;   // 0xFF = no answer / not measured yet
+    uint8_t  mSurveyLastGwCnt = 0;
+    String   mSurveyCsvPath;             // "" until a session file has been opened
+
+    // Set from other contexts (button poll in main.cpp, Bluetooth command task) and consumed by
+    // the LoRa loop. Single-writer flags, so a plain volatile bool is sufficient here.
+    volatile bool mSurveyForceUplink = false;
+    volatile bool mSurveyForceCheck = false;
+
+    void surveyLoop();
+    bool surveyBeginSession();
+    void surveyEndSession(const char* reason);
+    void surveyApplyRadioSettings();
+    bool surveySend(bool wantLinkCheck, const char* trigger);
+    void surveyAdaptSpreadingFactor(bool answered, uint8_t margin);
+    void surveyRefreshBudgetDay();
+    void surveyWriteCsvRow(const char* kind, const char* trigger, bool hasFix,
+                           double lat, double lng, uint32_t fCnt, bool answered);
+    void surveyPlayReadout(int level, uint8_t gwCnt);
+    uint32_t surveyMinIntervalS() const;
+    /// @brief Great-circle distance in metres. Equirectangular approximation - well under 1% error
+    ///        at survey distances, and far cheaper than haversine on a device with no FPU headroom.
+    static double surveyDistanceM(double lat1, double lng1, double lat2, double lng2);
+    /// @brief Map a LinkCheckAns demodulation margin onto the 0..5 buzzer ladder.
+    ///        -1 means no answer was received at all.
+    static int surveyLevelFromMargin(int margin);
+
+    /// @brief Split one CSV line in place into at most maxCols field pointers. Empty fields stay
+    ///        empty strings rather than becoming null, so callers can test them with *field == '\0'.
+    /// @return number of fields found
+    static int surveySplitCsv(char* line, const char** fields, int maxCols);
+    /// @brief Pull lat/lon out of a split row. Returns false for rows logged without a GPS fix,
+    ///        which carry empty coordinate fields and must not be plotted at 0,0.
+    static bool surveyRowPosition(const char** fields, int nFields, double& lat, double& lng);
 
     // Session persistence functions
     uint32_t calculateCRC32(const uint8_t* data, size_t length);
@@ -190,15 +249,45 @@ public:
     /// @brief Whether LoRa is initialized and joined
     bool  isJoined() const { return mInitDone; }
 
+    /// @brief True while a coverage-survey session is running. The survey owns the LoRa loop:
+    ///        heartbeat, event and intruder uplinks are suspended so nothing competes for airtime.
+    bool surveyIsActive() const { return mSurveyActive; }
+
+    /// @brief GPIO0: force one survey uplink at the next loop pass, WITHOUT requesting a downlink.
+    ///        Free in downlink terms - it just drops an extra point on the map at this spot.
+    ///        Safe to call from a task; the flag is consumed by the LoRa loop.
+    void surveyRequestUplink() { mSurveyForceUplink = true; }
+
+    /// @brief App "measure here" button: force one survey uplink that DOES request a LinkCheckAns,
+    ///        so the margin comes back and the buzzer reads it out. Costs one downlink.
+    void surveyRequestLinkCheck() { mSurveyForceCheck = true; }
+
+    /// @brief Start/stop a survey session immediately (setSurveyMode). Persisting the choice
+    ///        across reboots is the caller's job, via setSurveyEnabled().
+    esp_err_t surveyStart();
+    void surveyStop(const char* reason);
+
+    /// @brief Append the survey status as JSON object fields (no braces) for getStatus/getSurveyStatus.
+    void surveyStatusJson(String& out);
+
+    /// @brief Convert a survey CSV into a .kml and a .gpx beside it, for Locus Map / Avenza.
+    ///        Runs at session close, and can be re-run over any session file - the CSV is written
+    ///        append-only during the survey precisely so a session that ended badly (flat battery,
+    ///        crash) can still be exported afterwards.
+    /// @param csvPath session file to convert, or nullptr for the current/most recent session
+    /// @return ESP_OK, ESP_ERR_NOT_FOUND if the CSV is missing, ESP_FAIL on a write error
+    esp_err_t surveyExport(const char* csvPath = nullptr);
+
     /// @brief Push the current GPS position (called from main.cpp's GPS management).
     ///        Used by the intruder alarm uplink; safe to call from a different task
     ///        than the LoRa loop.
-    void setGpsInfo(bool hasFix, double lat, double lng, uint32_t fixAgeS) {
+    void setGpsInfo(bool hasFix, double lat, double lng, uint32_t fixAgeS, uint32_t sats = 0) {
         portENTER_CRITICAL(&mGpsInfoMux);
         mGpsInfo.hasFix = hasFix;
         mGpsInfo.lat = lat;
         mGpsInfo.lng = lng;
         mGpsInfo.fixAgeS = fixAgeS;
+        mGpsInfo.sats = sats;
         portEXIT_CRITICAL(&mGpsInfoMux);
     }
 };

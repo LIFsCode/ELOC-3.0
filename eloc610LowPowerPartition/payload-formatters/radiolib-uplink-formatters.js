@@ -162,6 +162,57 @@ function decodeUplink(input) {
                 errors: []
             };
           break;
+        case 3: // coverage survey sample (LoRa signal strength mapper, firmware >= 1.72)
+            // 12 bytes, no timestamp: the sample is only meaningful against the gateway-side
+            // rx_metadata TTN attaches to THIS uplink, so the server's own receive time is the
+            // right clock and eight bytes of device epoch would be wasted airtime.
+            //
+            // margin and gwCnt come from the PREVIOUS link check, not this uplink - a Class A
+            // device cannot know how well its own transmission was heard until a downlink comes
+            // back, and most survey uplinks deliberately never ask for one.
+            var sLatRaw = ((input.bytes[idx++] << 24) | (input.bytes[idx++] << 16) |
+                           (input.bytes[idx++] << 8)  |  input.bytes[idx++]) | 0;
+            var sLngRaw = ((input.bytes[idx++] << 24) | (input.bytes[idx++] << 16) |
+                           (input.bytes[idx++] << 8)  |  input.bytes[idx++]) | 0;
+            var marginRaw = input.bytes[idx++];        // 0xFF = no link check answered yet
+            var sfGw = input.bytes[idx++];             // low nibble gwCnt, high nibble SF - 6
+            var sFlags = input.bytes[idx++];
+
+            var sHasFix = (sFlags & 0x01) != 0;
+            // bit1: this uplink carried a LinkCheckReq, so a margin should follow on the next one.
+            var askedForCheck = (sFlags & 0x02) != 0;
+            var sMargin = (marginRaw == 0xFF) ? null : marginRaw;
+            var sGwCnt = sfGw & 0x0F;
+            var sSf = (sfGw >> 4) + 6;
+
+            // Level mirrors the firmware's buzzer ladder (5 dB bands) so the map legend, the app
+            // readout and the beeps a ranger heard in the field all agree.
+            var sLevel = null;
+            if (sMargin !== null) {
+                sLevel = (sMargin < 5) ? 1 : (sMargin < 10) ? 2 : (sMargin < 15) ? 3 :
+                         (sMargin < 20) ? 4 : 5;
+            }
+
+            return {
+                data: {
+                msgType: msgType,
+                msgVers: msgVers,
+                survey: true,
+                hasFix: sHasFix,
+                latitude: sHasFix ? sLatRaw / 100000.0 : null,
+                longitude: sHasFix ? sLngRaw / 100000.0 : null,
+                sf: sSf,
+                marginDb: sMargin,
+                gwCnt: sGwCnt,
+                level: sLevel,
+                askedForCheck: askedForCheck,
+                Battery: (sFlags >> 2) * 4,
+                bytes: input.bytes
+                },
+                warnings: [],
+                errors: []
+            };
+          break;
         default:
           // code block
       }

@@ -26,6 +26,65 @@ with BT up versus 46 KB here. Full state, next tests and the planned instrumenta
 
 ---
 
+**LoRa coverage survey ("signal strength mapper") — implemented 2026-09-01, V1.72, build-verified only.**
+New `lib/ElocHardware/src/ElocLora_survey.cpp` plus a `surveyCfg` config block. Walk or drive a route
+and map where the gateway can hear the device.
+
+The shape follows from one fact: a **Class A device cannot listen for a signal**. Its radio is asleep
+except in the two RX windows after its own uplink, and gateways do not beacon, so "check the signal"
+always means "transmit and see what comes back". A beacon box at the gateway was designed first (rev 1/2
+of the plan) and abandoned — the gateway site is not reachable often enough to maintain one.
+
+So the survey is **uplink-first**. Position uplinks go out continuously and request no downlink; TTN
+attaches gateway-side RSSI/SNR to each one, which is the authoritative measurement and is strictly
+richer than a LinkCheckAns margin (it is per-gateway). A downlink is spent only every
+`linkCheckEveryN`-th sample (default 24 ≈ 10 downlinks per 2 h session, exactly TTN's daily allowance)
+or when the ranger asks. That removed the whole fair-use argument: every legal and physical limit is met
+with room to spare, and the only policy number in play is one we now stay inside.
+
+Key decisions:
+- **Distance triggering, not a fixed interval.** A fixed 30 s gives 36 m spacing on foot and 168 m from
+  a vehicle at 20 km/h, and a device standing still would spend the day's allowance on one coordinate.
+  `minDistanceM` sets resolution, `minIntervalS` is only a floor. Presets: 25 m walking, 100 m driving —
+  both land near 3 h of surveying inside the daily uplink budget.
+- **The per-SF floor always wins over the configured one** (`C_SF_MIN_INTERVAL_S`, SF7 10 s → SF12 180 s),
+  so raising the SF slows the cadence automatically and the app never has to reason about airtime.
+- **ADR off + `setDutyCycle(true, 36000)`** for the session. Nothing in this firmware had ever called
+  `setDutyCycle`, so `dutyCycleEnabled` defaulted to false and the stack would transmit as fast as asked.
+  ADR off also stops the `ADRACKReq` back-off, which after 64 unanswered uplinks (~30 min of an
+  uplink-only survey) would force its own data-rate fallback and fight the ladder.
+- **Every transmission is written to `/sdcard/survey/<node>_<ts>.csv` with its frame counter.** An uplink
+  nobody hears leaves no trace on the server, so without this "no coverage" and "nobody walked here" are
+  indistinguishable. Joining the CSV against Firestore on `fcnt` turns an absent record into a confirmed
+  dead spot with a position on it — the half of the dataset that cannot be recovered any other way.
+- **Triggers.** A double-knock gesture was designed and rejected: it is a *shock* gesture and these
+  devices travel on bad roads, so every pothole would spend a downlink. Instead GPIO0 (free during a
+  survey, since recording is suspended) forces an extra **uplink** with no downlink, and the app's
+  `getLinkCheck` forces one **with** a downlink and beeps the result.
+- **Buzzer readout counts the beeps** — level N = N beeps, pitch rising too, so it is coded twice and
+  needs no reference tone; "no answer" is one long 175 Hz tone. Frequencies avoid the tones already in
+  use (98 battery, 261 BT, 523 idle, 523/659/784 join OK, 400/300 join failed).
+- **Survives a reboot by design** (`surveyCfg.enable` is in the config cascade), which is exactly why the
+  session timeout and the daily uplink/downlink counters are not optional.
+
+Two cross-task hazards were designed around: `setSurveyMode` deliberately does **not** call
+`surveyStart()`/`surveyStop()` — both touch the radio (`setDatarate`/`setDutyCycle`) and the command runs
+on the Bluetooth task, which could land inside a blocking `sendReceive()` on the main loop. It only flips
+the persisted flag; the LoRa loop opens and closes the session itself. Likewise `buttonISR` only stores a
+DRAM flag, drained with debounce by `handleSurveyButton()` in task context.
+
+App side (V1.72-compatible): new `driver/Survey.kt`, a "LoRa signal survey" section in Device Settings
+with enable / distance / interval / spreading-factor rows, and a `startSF == 0` probe that greys the
+section out on older firmware.
+
+**Not done yet:** KML/GPX export, the TTN payload formatter for msgType 3, the Cloud Function branch and
+the web coverage map, the app's live readout and "measure here" button (the `getLinkCheck` command exists
+and is what that button will call), and the wiki pages. **Nothing is hardware-tested.** The first bench
+item is confirming `setADR(false)` really suppresses the back-off across 64+ unanswered uplinks, and that
+`getMacLinkCheckAns()` returns what is expected against a real gateway.
+
+---
+
 **Intruder alarm: siren, auto-off, status reporting (2026-09-01, V1.69 / V1.71), build-verified.**
 The knock alarm's buzzer is now a swept siren - 600 -> 1800 Hz over 1 s, then a 200 ms silence gap,
 repeating - driven by `ElocSystem::updateIntruderSiren()`, and it switches itself off 30 s after the

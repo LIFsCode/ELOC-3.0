@@ -90,6 +90,23 @@ typedef struct {
     uint32_t awakeDurationS;   // Active inference duration in seconds (default: 30)
 }dutyCycleConfig_t;
 
+/// @brief LoRa coverage survey ("signal strength mapper") configuration.
+///        While enabled the survey owns the LoRa loop: heartbeat, event and intruder uplinks are
+///        suspended, so nothing else competes for the airtime budget.
+typedef struct {
+    bool     enable;             // master switch; persists across reboot via the config cascade
+    uint32_t minIntervalS;       // time floor between survey uplinks (raised per SF, see C_SF_MIN_INTERVAL_S)
+    uint32_t minDistanceM;       // send once the device has moved this far since the last sample
+    uint32_t startSF;            // spreading factor the survey starts on (7..12)
+    bool     adaptiveSF;         // step 7 -> 9 -> 10 -> 12 when link checks stop being answered
+    uint32_t linkCheckEveryN;    // request a downlink every Nth sample (0 = only on demand)
+    bool     audio;              // buzzer readout after every link check
+    bool     buttonUplink;       // GPIO0 forces an immediate uplink (no downlink requested)
+    uint32_t sessionTimeoutMin;  // hard stop, so a forgotten session cannot run the battery flat
+    uint32_t maxUplinksPerDay;   // hard budgets, counted per local day
+    uint32_t maxDownlinksPerDay;
+}surveyConfig_t;
+
 /// @brief holds all the device specific configuration settings
 typedef struct {
     int  secondsPerFile;
@@ -107,6 +124,7 @@ typedef struct {
     loraConfig_T loraConfig;
     inferenceConfig_t inferenceConfig;
     dutyCycleConfig_t dutyCycleConfig;
+    surveyConfig_t surveyConfig;
 }elocConfig_T;
 
 const elocConfig_T& getConfig();
@@ -132,6 +150,13 @@ const loraConfig_T& getLoraConfig();
 const inferenceConfig_t& getInferenceConfig();
 
 const dutyCycleConfig_t& getDutyCycleConfig();
+
+const surveyConfig_t& getSurveyConfig();
+
+/// @brief Flip surveyConfig.enable in the running config and persist it, so survey mode
+///        survives a reboot (see setSurveyMode). Does not start/stop the session itself.
+/// @return ESP_OK on success, ESP_ERR_FLASH_BASE if persisting failed.
+esp_err_t setSurveyEnabled(bool enable);
 
 /// @brief Validate and clamp duty cycle config values to safe ranges
 void validateDutyCycleConfig();

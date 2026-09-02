@@ -37,7 +37,10 @@
 #include "SDCardSDIO.h"
 
 static const char* TAG = "CONFIG";
-static const uint32_t JSON_DOC_SIZE = 3072;
+// Sized for the whole config tree, not the serialized text (ArduinoJson needs roughly 2x).
+// Raised from 3072 when surveyCfg was added - an overflow here does not fail loudly, it
+// silently truncates the document and would corrupt the stored config.
+static const uint32_t JSON_DOC_SIZE = 4096;
 static const char* CFG_FILE = "/spiffs/eloc.config";
 static const char* CFG_FILE_SD = "/sdcard/eloctest.txt";
 static const char* LEGACY_NODE_NAME = "ELOC_NONAME";
@@ -171,6 +174,24 @@ static const elocConfig_T C_ElocConfig_Default {
         .sleepDurationS = 120,     // 5 minutes deep sleep
         .awakeDurationS = 30,      // 30 seconds active inference
     },
+    .surveyConfig = {
+        .enable = false,           // off by default: it transmits far more than normal operation
+        // 10 s is the SF7 floor: the 1% AS923 duty cycle allows 6.2 s and sendReceive() blocks
+        // ~6-7 s through RX1/RX2 anyway, so anything faster is neither legal nor achievable.
+        .minIntervalS = 10,
+        // Distance is the real control - a fixed interval gives 36 m spacing on foot and 168 m
+        // from a vehicle. 25 m suits walking; use ~100 m for a drive-along survey.
+        .minDistanceM = 25,
+        .startSF = 7,              // map at SF7: the tightest coverage, and it extrapolates upward
+        .adaptiveSF = true,
+        // Every 24th sample, i.e. ~10 downlinks over a 2 h session - TTN's whole daily allowance.
+        .linkCheckEveryN = 24,
+        .audio = true,
+        .buttonUplink = true,
+        .sessionTimeoutMin = 120,
+        .maxUplinksPerDay = 400,
+        .maxDownlinksPerDay = 20,
+    },
 };
 elocConfig_T gElocConfig = C_ElocConfig_Default;
 const elocConfig_T& getConfig() {
@@ -287,6 +308,36 @@ static uint32_t clampU32(uint32_t val, uint32_t minVal, uint32_t maxVal, const c
     return val;
 }
 
+const surveyConfig_t& getSurveyConfig() {
+    return gElocConfig.surveyConfig;
+}
+
+/// @brief Coarse range clamps for the survey settings the app can write.
+///        Deliberately generous - this only stops nonsense values reaching the radio. The real
+///        rate limit is the per-spreading-factor duty-cycle floor, applied at runtime in
+///        ElocLora_survey.cpp, plus RadioLib's own setDutyCycle() enforcement.
+static void validateSurveyConfig() {
+    surveyConfig_t& cfg = gElocConfig.surveyConfig;
+    // 5 s is below every legal floor, but sendReceive() blocks ~6-7 s through the RX windows
+    // regardless, so a smaller value could not be honoured even if it were allowed.
+    cfg.minIntervalS      = clampU32(cfg.minIntervalS, 5, 3600, "surveyCfg.minIntervalS");
+    // 5 m is inside GPS noise; 5 km is a coarse drive-along survey.
+    cfg.minDistanceM      = clampU32(cfg.minDistanceM, 5, 5000, "surveyCfg.minDistanceM");
+    cfg.startSF           = clampU32(cfg.startSF, 7, 12, "surveyCfg.startSF");
+    cfg.linkCheckEveryN   = clampU32(cfg.linkCheckEveryN, 0, 1000, "surveyCfg.linkCheckEveryN");
+    cfg.sessionTimeoutMin = clampU32(cfg.sessionTimeoutMin, 1, 1440, "surveyCfg.sessionTimeoutMin");
+    cfg.maxUplinksPerDay  = clampU32(cfg.maxUplinksPerDay, 1, 10000, "surveyCfg.maxUplinksPerDay");
+    cfg.maxDownlinksPerDay= clampU32(cfg.maxDownlinksPerDay, 0, 1000, "surveyCfg.maxDownlinksPerDay");
+}
+
+esp_err_t setSurveyEnabled(bool enable) {
+    gElocConfig.surveyConfig.enable = enable;
+    if (!writeConfig()) {
+        return ESP_ERR_FLASH_BASE;
+    }
+    return ESP_OK;
+}
+
 void validateDutyCycleConfig() {
     static const uint32_t AWAKE_MIN = 20;
     static const uint32_t AWAKE_MAX = 120;
@@ -398,6 +449,19 @@ void loadConfig(const JsonObject& config) {
     gElocConfig.IntruderConfig.detectWindowMS = config["intruderCfg"]["windowsMs"]    | C_ElocConfig_Default.IntruderConfig.detectWindowMS;
     gElocConfig.IntruderConfig.alarmIntervalS = config["intruderCfg"]["alarmIntervalS"] | C_ElocConfig_Default.IntruderConfig.alarmIntervalS;
     gElocConfig.IntruderConfig.idleIntervalS  = config["intruderCfg"]["idleIntervalS"]  | C_ElocConfig_Default.IntruderConfig.idleIntervalS;
+
+    gElocConfig.surveyConfig.enable             = config["surveyCfg"]["enable"]             | C_ElocConfig_Default.surveyConfig.enable;
+    gElocConfig.surveyConfig.minIntervalS       = config["surveyCfg"]["minIntervalS"]       | C_ElocConfig_Default.surveyConfig.minIntervalS;
+    gElocConfig.surveyConfig.minDistanceM       = config["surveyCfg"]["minDistanceM"]       | C_ElocConfig_Default.surveyConfig.minDistanceM;
+    gElocConfig.surveyConfig.startSF            = config["surveyCfg"]["startSF"]            | C_ElocConfig_Default.surveyConfig.startSF;
+    gElocConfig.surveyConfig.adaptiveSF         = config["surveyCfg"]["adaptiveSF"]         | C_ElocConfig_Default.surveyConfig.adaptiveSF;
+    gElocConfig.surveyConfig.linkCheckEveryN    = config["surveyCfg"]["linkCheckEveryN"]    | C_ElocConfig_Default.surveyConfig.linkCheckEveryN;
+    gElocConfig.surveyConfig.audio              = config["surveyCfg"]["audio"]              | C_ElocConfig_Default.surveyConfig.audio;
+    gElocConfig.surveyConfig.buttonUplink       = config["surveyCfg"]["buttonUplink"]       | C_ElocConfig_Default.surveyConfig.buttonUplink;
+    gElocConfig.surveyConfig.sessionTimeoutMin  = config["surveyCfg"]["sessionTimeoutMin"]  | C_ElocConfig_Default.surveyConfig.sessionTimeoutMin;
+    gElocConfig.surveyConfig.maxUplinksPerDay   = config["surveyCfg"]["maxUplinksPerDay"]   | C_ElocConfig_Default.surveyConfig.maxUplinksPerDay;
+    gElocConfig.surveyConfig.maxDownlinksPerDay = config["surveyCfg"]["maxDownlinksPerDay"] | C_ElocConfig_Default.surveyConfig.maxDownlinksPerDay;
+    validateSurveyConfig();
     /** battery config*/
     gElocConfig.batteryConfig.updateIntervalMs = config["battery"]["updateIntervalMs"] | C_ElocConfig_Default.batteryConfig.updateIntervalMs;
     gElocConfig.batteryConfig.avgSamples       = config["battery"]["avgSamples"]       | C_ElocConfig_Default.batteryConfig.avgSamples;
@@ -559,6 +623,18 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     config["intruderCfg"]["windowsMs"]    = ElocConfig.IntruderConfig.detectWindowMS;
     config["intruderCfg"]["alarmIntervalS"] = ElocConfig.IntruderConfig.alarmIntervalS;
     config["intruderCfg"]["idleIntervalS"]  = ElocConfig.IntruderConfig.idleIntervalS;
+
+    config["surveyCfg"]["enable"]             = ElocConfig.surveyConfig.enable;
+    config["surveyCfg"]["minIntervalS"]       = ElocConfig.surveyConfig.minIntervalS;
+    config["surveyCfg"]["minDistanceM"]       = ElocConfig.surveyConfig.minDistanceM;
+    config["surveyCfg"]["startSF"]            = ElocConfig.surveyConfig.startSF;
+    config["surveyCfg"]["adaptiveSF"]         = ElocConfig.surveyConfig.adaptiveSF;
+    config["surveyCfg"]["linkCheckEveryN"]    = ElocConfig.surveyConfig.linkCheckEveryN;
+    config["surveyCfg"]["audio"]              = ElocConfig.surveyConfig.audio;
+    config["surveyCfg"]["buttonUplink"]       = ElocConfig.surveyConfig.buttonUplink;
+    config["surveyCfg"]["sessionTimeoutMin"]  = ElocConfig.surveyConfig.sessionTimeoutMin;
+    config["surveyCfg"]["maxUplinksPerDay"]   = ElocConfig.surveyConfig.maxUplinksPerDay;
+    config["surveyCfg"]["maxDownlinksPerDay"] = ElocConfig.surveyConfig.maxDownlinksPerDay;
     config["battery"]["updateIntervalMs"] = ElocConfig.batteryConfig.updateIntervalMs;
     config["battery"]["avgSamples"]       = ElocConfig.batteryConfig.avgSamples;
     config["battery"]["avgIntervalMs"]    = ElocConfig.batteryConfig.avgIntervalMs;

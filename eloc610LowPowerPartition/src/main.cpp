@@ -113,6 +113,12 @@ SDCardSDIO sd_card;
 I2SMEMSSampler input;
 WAVFileWriter wav_writer;
 QueueHandle_t rec_req_evt_queue = nullptr;  // wav recording queue
+
+// GPIO0 during a coverage survey. Written by buttonISR() (IRAM, no function calls) and drained by
+// handleSurveyButton() in the main loop. Two flags rather than one so the ISR never has to ask
+// ElocLora whether a survey is running.
+static volatile bool gSurveyButtonArmed = false;
+static volatile bool gSurveyButtonPressed = false;
 QueueHandle_t rec_ai_evt_queue = nullptr;   // AI inference queue
 TaskHandle_t i2s_TaskHandler = nullptr;     // Task handler from I2S to wav writer
 TaskHandle_t ei_TaskHandler = nullptr;      // Task handler from I2S to AI inference TODO: Move to EdgeImpulse.cpp ??
@@ -246,6 +252,15 @@ void printMemory()
  */
 static void IRAM_ATTR buttonISR(void *args)
 {
+    // During a coverage survey the button means "mark this spot": it forces one extra survey
+    // uplink. Recording is suspended while surveying, so the usual meaning has nothing to toggle
+    // and there is no conflict. The flag is a plain DRAM store - no function call, no flash
+    // access - and is consumed in task context by handleSurveyButton() below.
+    if (gSurveyButtonArmed) {
+        gSurveyButtonPressed = true;
+        return;
+    }
+
     if (wav_writer.get_mode() == WAVFileWriter::Mode::disabled) {
         wav_writer.set_mode(WAVFileWriter::Mode::continuous);
     } else {
@@ -257,6 +272,34 @@ static void IRAM_ATTR buttonISR(void *args)
      */
 
     // xQueueSendFromISR(rec_req_evt_queue, &mode, (TickType_t)0);
+}
+
+/**
+ * @brief Drain the survey button press set by buttonISR().
+ *
+ * Kept out of the ISR so the debounce can use millis() and the request can be handed to ElocLora
+ * from task context. GPIO0 is a mechanical button and bounces; without the guard a single press
+ * would queue several uplinks.
+ */
+static void handleSurveyButton() {
+    static uint32_t lastPressMs = 0;
+    static const uint32_t C_BUTTON_DEBOUNCE_MS = 1500;
+
+    // Arm/disarm here rather than in the ISR, so the ISR only ever reads the flag.
+    gSurveyButtonArmed = ElocLora::GetInstance().surveyIsActive();
+    if (!gSurveyButtonPressed) {
+        return;
+    }
+    gSurveyButtonPressed = false;
+
+    const uint32_t nowMs = millis();
+    if ((nowMs - lastPressMs) < C_BUTTON_DEBOUNCE_MS) {
+        return;
+    }
+    lastPressMs = nowMs;
+
+    ESP_LOGI(TAG, "Survey button: requesting an extra uplink");
+    ElocLora::GetInstance().surveyRequestUplink();
 }
 
 /**
@@ -1102,7 +1145,7 @@ static void manageGpsWhileAwake(bool& gpsTzApplied) {
     // Pushed rather than pulled: lib/gps already depends on lib/ElocHardware, so ElocLora
     // cannot include ElocGPS without creating an LDF dependency cycle.
     ElocLora::GetInstance().setGpsInfo(gps.hasFix(), gps.getLat(), gps.getLng(),
-                                       gps.getFixAgeMs() / 1000);
+                                       gps.getFixAgeMs() / 1000, gps.getSatellites());
 
     // No module on the UART (see declareGpsModuleAbsent): stop all GPS power management for the rest
     // of this boot. Placed after the setGpsInfo push above so ElocLora keeps getting its (empty)
@@ -1779,6 +1822,8 @@ void app_main(void) {
         if (ElocSystem::GetInstance().consumeSdRemountEvent()) {
             handleSdCardRemounted();
         }
+
+        handleSurveyButton();
 
         if (xQueueReceive(rec_req_evt_queue, &new_mode, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG, "Received new wav writer mode");

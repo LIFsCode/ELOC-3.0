@@ -806,6 +806,101 @@ static esp_err_t scheduleRestart(uint64_t delayUs) {
     return err;
 }
 
+/****************************************************************************************
+ * LoRa coverage survey (see ElocLora_survey.cpp)
+ ****************************************************************************************/
+
+void cmd_SetSurveyMode(CmdParser *cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    ElocLora& lora = ElocLora::GetInstance();
+
+    const char* modeStr = cmdParser->getValueFromKey("mode");
+    bool enable;
+    if (modeStr == NULL) {
+        enable = !lora.surveyIsActive();   // no argument toggles, like setRecordMode
+    } else if (!strcasecmp(modeStr, "on") || !strcasecmp(modeStr, "true")) {
+        enable = true;
+    } else if (!strcasecmp(modeStr, "off") || !strcasecmp(modeStr, "false")) {
+        enable = false;
+    } else {
+        resp.setError(ESP_ERR_INVALID_ARG, "mode must be on or off");
+        return;
+    }
+
+    if (enable && !lora.isJoined()) {
+        resp.setError(ESP_ERR_INVALID_STATE, "LoRa is not joined - cannot survey");
+        return;
+    }
+
+    // Persist first: surveyCfg.enable is what makes the mode survive a reboot, and the LoRa loop
+    // starts/stops the session from that same flag.
+    if (esp_err_t err = setSurveyEnabled(enable)) {
+        resp.setError(err, "Failed to persist survey mode");
+        return;
+    }
+    // Deliberately NOT calling surveyStart()/surveyStop() here. Both touch the radio
+    // (setDatarate / setDutyCycle) and this runs on the Bluetooth task, which could land in the
+    // middle of a blocking sendReceive() on the main loop. The LoRa loop watches surveyCfg.enable
+    // and opens/closes the session itself on the next pass, so "active" in the reply below may
+    // still be the previous state for a moment - poll getSurveyStatus for the settled value.
+
+    String& payload = resp.getPayload();
+    payload = "{";
+    lora.surveyStatusJson(payload);
+    payload += "}";
+    resp.setResultSuccess(payload);
+}
+
+void cmd_GetSurveyStatus(CmdParser *cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    String& payload = resp.getPayload();
+    payload = "{";
+    ElocLora::GetInstance().surveyStatusJson(payload);
+    payload += "}";
+    resp.setResultSuccess(payload);
+}
+
+void cmd_SetSurveyExport(CmdParser *cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    ElocLora& lora = ElocLora::GetInstance();
+
+    // Optional: convert an older session file instead of the current one. That is the whole point
+    // of keeping the CSV append-only - a survey that ended on a flat battery never reached the
+    // automatic export at session close, but its data is all there and can still be converted.
+    const char* file = cmdParser->getValueFromKey("file");
+
+    if (lora.surveyIsActive() && (file == NULL)) {
+        resp.setError(ESP_ERR_INVALID_STATE,
+                      "survey is still running - stop it first, or pass file=<path>");
+        return;
+    }
+
+    esp_err_t err = lora.surveyExport(file);
+    if (err != ESP_OK) {
+        resp.setError(err, (err == ESP_ERR_NOT_FOUND) ? "session file not found"
+                                                      : "export failed - is the SD card mounted?");
+        return;
+    }
+    resp.setResultSuccess("\"exported\"");
+}
+
+void cmd_GetLinkCheck(CmdParser *cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    ElocLora& lora = ElocLora::GetInstance();
+
+    if (!lora.surveyIsActive()) {
+        resp.setError(ESP_ERR_INVALID_STATE, "survey mode is not running - use setSurveyMode#mode=on");
+        return;
+    }
+
+    // Deliberately asynchronous. The check is one uplink plus both RX windows, so it blocks for
+    // 6-7 s; doing that here would starve SPP and drop the app connection (the same reason SD
+    // hot-swap handling was moved off the Bluetooth task). Set the flag, let the LoRa loop run it,
+    // and let the app poll getSurveyStatus for the result - which is also when the buzzer speaks.
+    lora.surveyRequestLinkCheck();
+    resp.setResultSuccess("\"scheduled\"");
+}
+
 void cmd_Reboot(CmdParser *cmdParser) {
     CmdResponse& resp = CmdResponse::getInstance();
     if (esp_err_t err = scheduleRestart(1000 * 1000)) {
@@ -898,6 +993,10 @@ bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     success &= cmdCallback.addCmd("getConfig", &cmd_GetConfig, "Read config as jso. Optional argument 'cfgType' can be set to ('DEFAULT' or 'RUNTIME') to read default config or currently set config. Without 'cfgType' current set config is returned, e.g. getConfig --> return{\"device\":{\"location\":\"not_set\"}}");
     success &= cmdCallback.addCmd("delConfig", &cmd_DelConfig, "Delete the current config file. Current config is not reset to default until next reboot");
     success &= cmdCallback.addCmd("getStatus", &cmd_GetStatus, "Returns the current status in JSON format");
+    success &= cmdCallback.addCmd("setSurveyMode", &cmd_SetSurveyMode, "Start/stop the LoRa coverage survey. Without arguments the current mode is toggled. The choice is persisted, so a running survey resumes after a reboot and reads out the signal on its own. Tune it with setConfig surveyCfg (minDistanceM, minIntervalS, startSF), e.g. setSurveyMode#mode=on");
+    success &= cmdCallback.addCmd("getSurveyStatus", &cmd_GetSurveyStatus, "Survey status as JSON: active, sf, level (0-5), marginDb, gwCnt, samples, elapsedS, uplinks/downlinks used against the daily budget, and the session CSV path");
+    success &= cmdCallback.addCmd("setSurveyExport", &cmd_SetSurveyExport, "Convert a survey CSV into .kml and .gpx beside it, for Locus Map or Avenza. Runs automatically when a session ends; use this to redo it, or to convert an older session that ended on a flat battery, e.g. setSurveyExport#file=/sdcard/survey/ELOC_00123_20260901_071500.csv");
+    success &= cmdCallback.addCmd("getLinkCheck", &cmd_GetLinkCheck, "\"Measure here\": request one immediate link check (uplink + downlink) outside the schedule. Returns as soon as it is scheduled - the result is beeped out and appears in getSurveyStatus ~7 s later. Costs one of the daily downlinks. Requires survey mode to be running");
     success &= cmdCallback.addCmd("setTime", &cmd_SetTime, "Set the current Time. Time format is given as JSON, e.g. setTime#time={\"seconds\":1351824120,\"ms\":42,\"timezone\":6,\"type\":\"G\"}");
     success &= cmdCallback.addCmd("setRecordMode", &cmd_SetRecordMode, "Enable/disable recording. If used without arguments, current mode is toggled(on/off). Otherwise set recording to specified mode. Accepted modes (matched case-insensitively, reported back by getStatus in this exact spelling): recordOff_detectOff, recordOn_detectOff, recordOn_detectOn, recordOff_detectOn, recordOnEvent, e.g. setRecordMode#mode=recordOff_detectOn");
     success &= cmdCallback.addCmd("setLogPersistent", &cmd_SetLogPersistent, "Configure the logging messages to be stored on a rotating log file on SD carde.g. setLogPersitent#cfg={\"logToSdCard\":\"true\",\"filename\":\"/sdcard/log/eloc.log\",\"maxFiles\":6,\"maxFileSize\":1024}");

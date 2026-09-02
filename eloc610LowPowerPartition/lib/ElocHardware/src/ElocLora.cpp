@@ -443,6 +443,16 @@ void ElocLora::ElocLoraLoop() {
       // if initialization failed Lora is not available so we skip everything
       return;
     }
+
+    // The coverage survey owns the LoRa loop while it runs (see ElocLora_survey.cpp): heartbeat,
+    // event and intruder uplinks are suspended so nothing competes for the airtime budget, and so
+    // the survey dataset is not polluted by uplinks sent at a different spreading factor.
+    // The config flag is what survives a reboot, so an enabled survey resumes on its own.
+    if (getSurveyConfig().enable || mSurveyActive) {
+      surveyLoop();
+      return;
+    }
+
     // pick up setConfig changes to the uplink interval without a reboot
     refreshUplinkInterval();
 

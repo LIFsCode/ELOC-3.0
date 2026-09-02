@@ -134,6 +134,34 @@
 - **Remaining limitations:** dashboard/frontend UI for the alert still open; deep sleep is
   knock-blind by design (24/7 mode is the intended deployment for this feature)
 
+### LoRa Coverage Survey — 🔨 Built, nothing hardware-tested (2026-09-01, V1.72)
+
+Handheld "signal strength mapper": walk or drive a route and map where the gateway can hear the device.
+Lives in `ElocLora_survey.cpp`; config block `surveyCfg`; commands `setSurveyMode`, `getSurveyStatus`,
+`getLinkCheck`. While a session runs it owns the LoRa loop — heartbeat, event and intruder uplinks are
+suspended so nothing competes for the airtime budget or pollutes the dataset.
+
+- **Uplink-first.** Position uplinks request no downlink; TTN's per-gateway RSSI/SNR is the map data. A
+  LinkCheckReq rides every `linkCheckEveryN`-th sample (default 24) or on demand, keeping a 2 h session
+  at ~10 downlinks — TTN's whole daily allowance and no more.
+- **Distance-triggered** with a per-SF duty-cycle time floor (`C_SF_MIN_INTERVAL_S`: SF7 10 s → SF12
+  180 s). Presets 25 m walking / 100 m driving; standing still costs nothing.
+- **Adaptive SF ladder** 7→9→10→12 after two unanswered link checks, back down after two healthy ones,
+  so the expensive long-range transmissions only happen at the boundary.
+- **ADR off + `setDutyCycle(true, 36000)`** for the session (neither was ever set before).
+- **CSV on SD** for every transmission with its frame counter, so a missing Firestore record is a
+  confirmed dead spot rather than an unwalked gap.
+- **Triggers:** GPIO0 = extra uplink (no downlink); app `getLinkCheck` = uplink + downlink + buzzer
+  readout. Double-knock was rejected — a shock gesture on bad roads would fire constantly.
+- **Buzzer:** level N = N beeps with rising pitch; no answer = one long 175 Hz tone; extra tick if two or
+  more gateways heard the uplink.
+
+**Left to do:** KML/GPX export, TTN msgType 3 payload formatter, Cloud Function branch + web coverage
+map, the app's live readout and measure-here button, wiki pages.
+
+**First bench items:** confirm `setADR(false)` suppresses the `ADRACKReq` back-off across 64+ unanswered
+uplinks, and that `getMacLinkCheckAns()` returns a sensible margin/gwCnt against a real gateway.
+
 ### Hardware Support — ✅ Operational
 - **LIS3DH accelerometer** for intruder detection and double-tap BT wake
 - **PCA9557 IO expander** for expanded GPIO

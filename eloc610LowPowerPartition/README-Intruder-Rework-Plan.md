@@ -1,9 +1,14 @@
 # Intruder Detection Rework — Handoff Brief
 
-> **Status:** specification + code survey. Nothing implemented.
-> **Date:** 2026-09-01
-> **Written for:** a forked session picking this up. Read this first, then the files it names.
-> **Baseline:** V1.72 (uncommitted in the working tree — see [Before you start](#before-you-start)).
+> **Status:** **implemented** in V1.73, extended in V1.74. Build-verified only — not on hardware.
+> **Date:** 2026-09-01, revised 2026-09-02
+> **Now serves as:** the bench plan (the test table below) and the design rationale.
+> **Baseline:** V1.72, committed as `37071a2`.
+
+> ⚠️ **The survey and analysis below describe the code as it was *before* V1.73.** They are kept
+> because the reasoning is still what the implementation rests on. Two things have since changed and
+> are called out inline: the knock counter now trips at six (it is fixed), and the siren now *does*
+> sound on a candidate (V1.74) with the timing reworked so it no longer blinds the confirmation.
 
 Goal: stop the intruder alarm firing on knocks alone, gate GPS and LoRa on *confirmed movement*, and
 keep the heartbeat independent of all of it.
@@ -116,9 +121,22 @@ the buzzer sounds and for a second after. `updateIntruderSiren()` sweeps 600→1
 `C_INTRUDER_SIREN_DURATION_MS = 30 s`.
 
 So **if the siren fires on the candidate, movement can never be confirmed** — the confirmation window
-would be entirely inside the guard. The siren must not sound until the alarm is *confirmed*. This is
-compatible with what you want anyway (a device knocked on a table should stay silent), but it has to
-be an explicit decision in the state machine, not an accident.
+would be entirely inside the guard.
+
+> **Resolved differently in V1.74.** EDsteve wanted the candidate to announce itself after all: even a
+> monkey playing with a device is worth reporting. So the siren *does* sound on a candidate now, and
+> the conflict is settled by **starting the listening window only after the siren and the guard are
+> over** rather than by keeping the siren silent:
+>
+> ```cpp
+> const uint32_t listenFromMs =
+>     mCandidateStartMs + C_INTRUDER_SIREN_DURATION_MS + C_BUZZER_KNOCK_GUARD_MS;
+> ```
+>
+> Total candidate lifetime is therefore ~31 s + `confirmWindowS`. Nothing is missed: someone carrying
+> the device away is still moving 30 s later. The siren runs **once per episode** and is not restarted
+> on promotion to CONFIRMED — a second 30 s of blinding would land exactly when the tracking uplinks
+> start depending on `isDeviceMoving()`. Test case 2b exists to catch a regression here.
 
 The same coupling is why requirement 1's "wait briefly for the knock vibrations to settle" is
 genuinely necessary and not just politeness: the knocks themselves register as movement.
@@ -146,11 +164,11 @@ in `include/project_config.h`):
 | 2–6 | 1–5 | no |
 | **7** | **6** | **yes** (`6 > 5`) |
 
-**It takes seven knocks, not six.** Requirement 1 says "more than five knocks … creates a candidate"
-and the test plan says six. Decide which is intended and change *either* the counter *or* the test
-expectations — do not leave them disagreeing. Confirm on hardware before changing anything; the
-reasoning above is from reading, and `lastRefreshMs` being static means the very first knock after
-boot behaves differently from one following an earlier burst.
+**It took seven knocks, not six.**
+
+> **Fixed in V1.73:** a burst now starts the run at 1 rather than 0, so `thresholdCnt = 5` means six
+> knocks, as the field name and the wiki always claimed. Devices upgrading become one knock more
+> sensitive. Still worth confirming on hardware — the reasoning above is from reading the code.
 
 ### Every knock is a hardware double-tap
 
@@ -229,7 +247,9 @@ joined and serial attached. Note which knock count you settled on above.
 | # | Action | Pass | Fail signature |
 |---|---|---|---|
 | 1 | 5 knocks (or one below threshold), device still | No candidate, no log entry, no siren | Any `Intruder detected` line |
-| 2 | Threshold knocks, device left flat on the table | Candidate logged, then expires. **No siren, no GPS power-up, no intruder uplink.** | `powering GPS on` appears; or a msgType-2 uplink in the TTN console |
+| 2 | Threshold knocks, device left flat on the table | *(V1.74)* Candidate logged, siren sounds 30 s, **exactly one** msgType-2 uplink, **no GPS power-up**. Candidate then expires and the device returns to its previous mode. | A second uplink; `powering GPS on` appears; or the candidate never expires |
+| 2b | *(V1.74)* Threshold knocks, then pick the device up **during** the siren | Still confirms — the listening window starts after the siren ends, and someone carrying it is still moving then | Candidate expires despite the device being carried. This is the case the siren timing could break |
+| 2c | *(V1.74)* Start recording, then knock immediately | Nothing at all for `armDelayS`; `getStatus` shows `armed:false` with `armsIn[s]` counting down | Knocks register during the grace period |
 | 3 | Threshold knocks, then pick the device up and carry it | Candidate → CONFIRMED. Siren sounds. `powering GPS on`. **Intruder uplink attempted immediately**, not after the first fix | Uplink waits for a GPS fix |
 | 4 | As (3) but indoors, no fix obtainable | Uplink still goes, flags byte = moving set, GPS-fix bit clear, lat/lng zero | No uplink at all |
 | 5 | Keep moving for 5 min | Uplink every `alarmIntervalS` (60 s), each with a fresher fix once one lands | Cadence drifts or stalls |

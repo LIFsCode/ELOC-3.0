@@ -122,6 +122,9 @@ private:
     uint32_t mLastMotionMs;          // millis() of the last accelerometer sample that showed movement
     uint32_t mLastMotionSampleMs;    // millis() of the last accelerometer read (sampling throttle)
     uint32_t mConfirmedStillSinceMs; // millis() the confirmed alarm last saw movement (auto-clear timer)
+    uint32_t mRecordActiveSinceMs;   // millis() recording/detection last became active (arming delay)
+    bool     mRecordWasActive;       // edge detection for the above
+    bool     mCandidateNotifyPending;// one-shot: a candidate opened and owes a LoRa message
 
     bool mFwUpdateProcessing;
 
@@ -299,6 +302,19 @@ public:
     inline IntruderState_t getIntruderState() const {
         return mIntruderState;
     }
+
+    /// @brief Whether knocks are currently acted on at all. False during the arming delay after a
+    ///        recording mode is started (or after boot), so a ranger mounting the device and
+    ///        fiddling with the strap cannot set it off in their hands.
+    bool isIntruderArmed() const;
+
+    /// @brief Seconds until the arming delay expires (0 once armed, or when disabled).
+    uint32_t getIntruderArmsInS() const;
+
+    /// @brief One-shot: true exactly once per candidate, telling ElocLora it owes a LoRa message.
+    ///        A candidate reports "something is handling this device" even if it turns out to be a
+    ///        monkey - the message goes out immediately and, if nothing moves, is the only one.
+    bool consumeIntruderCandidateEvent();
 
     /// @brief Clear a confirmed alarm and return to IDLE (auto-timeout, or config disable).
     void clearIntruderAlarm(const char* reason);

@@ -26,6 +26,54 @@ with BT up versus 46 KB here. Full state, next tests and the planned instrumenta
 
 ---
 
+**Intruder V1.74: candidate reports, and an arming delay — 2026-09-02, build-verified only.**
+
+Two changes on top of V1.73, both from EDsteve.
+
+**A candidate now announces itself.** It sirens for 30 s and sends one LoRa message immediately,
+rather than staying silent. The reasoning is a different requirement from the one V1.73 solved: even
+if a monkey is playing with the device, that is worth knowing. If nothing then moves, the device
+returns to whatever mode it was in and that single message is the only trace.
+
+This collided head-on with the coupling V1.73 was built around: the siren shakes the LIS3DH, and the
+buzzer guard suppresses motion sampling while it sounds. A 30 s siren over a 20 s confirm window would
+have left the device **deaf for the entire window**, so a real thief who knocked and carried it off
+would never have been confirmed — the exact failure V1.73 existed to prevent, reintroduced by the fix.
+
+Resolved by starting the candidate's listening window only after the siren and the guard are over:
+`listenFromMs = mCandidateStartMs + C_INTRUDER_SIREN_DURATION_MS + C_BUZZER_KNOCK_GUARD_MS`, with a
+signed comparison so the not-yet-listening case is negative rather than a huge unsigned number. Total
+candidate lifetime is therefore ~31 s + `confirmWindowS`. Nothing is missed: someone carrying the
+device away is still moving 30 s later. The siren runs **once per episode** and is deliberately not
+restarted on promotion to CONFIRMED — a second 30 s of blinding would land exactly when the tracking
+uplinks start depending on `isDeviceMoving()`.
+
+No new message type or flag bit. EDsteve chose no distinction, and it holds up better than it first
+looks: a candidate sends **one** message while a confirmed theft sends a **stream** every 60 s, and the
+flags byte's `moving` bit is false on a candidate. A single point versus a track already reads
+differently on the map with no backend change.
+
+No notification cooldown either. The premise for one was wrong — the LIS3DH click detector needs sharp
+z-axis double-taps above threshold, and wind displaces rather than producing impulses. If the field
+shows spurious candidates (hail, an animal worrying the case), a cooldown is the knob to add.
+
+**Arming delay (`armDelayS`, default 300 s).** Knocks are ignored entirely for this long after
+recording/detection becomes active, and after boot. Detected by polling the record-active edge inside
+`handleSystemStatus()`, which already reads `wav_writer.get_mode()` and `ai_run_enable` — no hooks at
+the `setRecordMode` call sites. Boot is covered by `mRecordActiveSinceMs == 0` stamping on the first
+pass, so a battery swap in the field gets the same grace as a fresh deployment.
+
+Also folded in: **knock detection is suppressed while a coverage survey runs.** A survey is a handheld
+mode — the device is carried and knocked about all day and the buzzer belongs to the survey readout,
+so an intruder siren in the middle of it would be both wrong and confusing. That interaction existed
+unnoticed since V1.72.
+
+**Not tested on hardware.** The nine-case table in `README-Intruder-Rework-Plan.md` needs two new
+cases: six knocks on a table must now siren and send exactly one message and then go quiet; and a
+knock-then-carry must still confirm, which is the case the siren timing could break.
+
+---
+
 **Intruder detection: candidate vs confirmed — implemented 2026-09-02, V1.73, build-verified only.**
 Plan and code survey: `README-Intruder-Rework-Plan.md`.
 

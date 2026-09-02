@@ -468,6 +468,15 @@ void ElocLora::ElocLoraLoop() {
     // The first uplink goes out the moment movement is confirmed, and again the moment movement
     // RESUMES after a pause - an old deadline is never allowed to hold back a device that has just
     // been picked up again. A failed uplink is retried after C_INTRUDER_RETRY_S.
+    // A candidate owes exactly one uplink, sent the moment the knocks are counted - before anyone
+    // knows whether this is a thief or a monkey. If nothing then moves it is the only message the
+    // episode ever produces, which is what tells the difference on the map: a single point means
+    // something handled the device, a stream of them means it is being carried away.
+    if (ElocSystem::GetInstance().consumeIntruderCandidateEvent()) {
+      ESP_LOGW(TAG, "Intruder candidate - sending one alarm uplink");
+      sendIntruderAlarmMessage();
+    }
+
     const bool alarmConfirmed = ElocSystem::GetInstance().isIntruderDetected();
     const bool alarmMoving    = alarmConfirmed && ElocSystem::GetInstance().isDeviceMoving();
 

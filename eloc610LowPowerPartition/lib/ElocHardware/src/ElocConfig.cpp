@@ -164,6 +164,9 @@ static const elocConfig_T C_ElocConfig_Default {
         // Auto-clear a confirmed alarm that has not moved for a day. Without it a device that
         // alarmed once stays latched forever, keeping the accelerated heartbeat running.
         .alarmTimeoutH = 24,
+        // Long enough to mount the device, close the case, start recording from the app and walk
+        // away without the alarm going off in your hands.
+        .armDelayS = 300,
     },
     .batteryConfig = {
         .updateIntervalMs = 10*60*1000, //10 minutes
@@ -361,6 +364,10 @@ static void validateIntruderConfig() {
         cfg.alarmTimeoutH = clampU32(cfg.alarmTimeoutH, 1, 8760, "intruderCfg.alarmTimeoutH");
     }
     cfg.alarmIntervalS = clampU32(cfg.alarmIntervalS, 10, 86400, "intruderCfg.alarmIntervalS");
+    // 0 is meaningful: arm immediately. A day is the longest that still reads as a setup grace.
+    if (cfg.armDelayS != 0) {
+        cfg.armDelayS = clampU32(cfg.armDelayS, 10, 86400, "intruderCfg.armDelayS");
+    }
 }
 
 esp_err_t setSurveyEnabled(bool enable) {
@@ -486,6 +493,7 @@ void loadConfig(const JsonObject& config) {
     gElocConfig.IntruderConfig.confirmWindowS = config["intruderCfg"]["confirmWindowS"] | C_ElocConfig_Default.IntruderConfig.confirmWindowS;
     gElocConfig.IntruderConfig.quietS         = config["intruderCfg"]["quietS"]         | C_ElocConfig_Default.IntruderConfig.quietS;
     gElocConfig.IntruderConfig.alarmTimeoutH  = config["intruderCfg"]["alarmTimeoutH"]  | C_ElocConfig_Default.IntruderConfig.alarmTimeoutH;
+    gElocConfig.IntruderConfig.armDelayS      = config["intruderCfg"]["armDelayS"]      | C_ElocConfig_Default.IntruderConfig.armDelayS;
     validateIntruderConfig();
 
     gElocConfig.surveyConfig.enable             = config["surveyCfg"]["enable"]             | C_ElocConfig_Default.surveyConfig.enable;
@@ -666,6 +674,7 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     config["intruderCfg"]["confirmWindowS"] = ElocConfig.IntruderConfig.confirmWindowS;
     config["intruderCfg"]["quietS"]         = ElocConfig.IntruderConfig.quietS;
     config["intruderCfg"]["alarmTimeoutH"]  = ElocConfig.IntruderConfig.alarmTimeoutH;
+    config["intruderCfg"]["armDelayS"]      = ElocConfig.IntruderConfig.armDelayS;
 
     config["surveyCfg"]["enable"]             = ElocConfig.surveyConfig.enable;
     config["surveyCfg"]["minIntervalS"]       = ElocConfig.surveyConfig.minIntervalS;

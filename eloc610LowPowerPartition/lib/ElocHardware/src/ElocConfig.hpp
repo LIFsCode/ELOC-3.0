@@ -68,6 +68,10 @@ typedef struct {
     uint32_t quietS;           // stillness before a moving device counts as stopped
     uint32_t alarmTimeoutH;    // auto-clear a confirmed alarm after this long with no movement
                                // (0 = never; the alarm then latches until detection is disabled)
+    uint32_t armDelayS;        // grace period after a recording/detection mode is started (and after
+                               // boot) during which knocks are ignored entirely, so a ranger
+                               // mounting the device and fiddling with the strap cannot set it off
+
 }intruderConfig_t;
 
 typedef struct {

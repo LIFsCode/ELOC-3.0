@@ -244,7 +244,11 @@ void printStatus(String& buf) {
     const intruderConfig_t& intruderCfg = getConfig().IntruderConfig;
     ElocSystem& elocSys = ElocSystem::GetInstance();
     intruder["enabled"]                  = intruderCfg.detectEnable;
-    intruder["armed"]                    = intruderCfg.detectEnable && !getDutyCycleConfig().enable;
+    // "armed" now also accounts for the setup grace period after recording starts, and for a
+    // running coverage survey - both suppress knock detection entirely.
+    intruder["armed"]                    = elocSys.isIntruderArmed();
+    intruder["armsIn[s]"]                = static_cast<long>(elocSys.getIntruderArmsInS());
+    intruder["armDelay[s]"]              = static_cast<long>(intruderCfg.armDelayS);
     intruder["alarmActive"]              = elocSys.isIntruderDetected();
     // A knock burst that has not yet been backed up by movement. Nothing transmits or powers up in
     // this state - it is reported so a field tech can tell "it saw my knocks" from "it ignored

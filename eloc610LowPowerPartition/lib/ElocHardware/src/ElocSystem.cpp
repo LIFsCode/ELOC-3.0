@@ -154,6 +154,7 @@ ElocSystem::ElocSystem():
     mLastBuzzerStopMs(0), mRefreshStatus(false), mIntruderState(IntruderState_t::IDLE),
     mIntruderAlarmStartMs(0), mCandidateStartMs(0), mLastKnockMs(0), mSirenActive(false),
     mLastMotionMs(0), mLastMotionSampleMs(0), mConfirmedStillSinceMs(0),
+    mRecordActiveSinceMs(0), mRecordWasActive(false), mCandidateNotifyPending(false),
     mFwUpdateProcessing(false), mFactoryInfo(),
     mTargetPmProfile(PmProfile::CONFIG_DEFAULT), mAppliedPmProfile(PmProfile::CONFIG_DEFAULT),
     mBtActive(false),
@@ -551,6 +552,21 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
     // notifyStatusRefresh() only runs on a knock event, so an active alarm would otherwise
     // stay latched forever after detection is disabled via setConfig — clear it here.
     // (Duty-cycle mode counts as disabled: intruder detection is a 24/7-only feature.)
+    // Arming delay. The clock starts when recording/detection becomes active - which is the moment
+    // a ranger has finished setting the device up - and also at boot, so a battery swap in the
+    // field gets the same grace. Until it expires, knocks are ignored entirely.
+    {
+        const bool recordActive = (wav_writer.get_mode() != WAVFileWriter::Mode::disabled) || ai_run_enable;
+        if ((mRecordActiveSinceMs == 0) || (recordActive && !mRecordWasActive)) {
+            uint32_t nowMs = millis();
+            mRecordActiveSinceMs = nowMs ? nowMs : 1;
+            if (recordActive && mRecordWasActive == false && mRecordActiveSinceMs != 0) {
+                ESP_LOGI(TAG, "Intruder detection arms in %u s", getConfig().IntruderConfig.armDelayS);
+            }
+        }
+        mRecordWasActive = recordActive;
+    }
+
     if ((mIntruderState != IntruderState_t::IDLE) &&
         (!getConfig().IntruderConfig.detectEnable || getDutyCycleConfig().enable)) {
         clearIntruderAlarm("detection disabled");
@@ -666,6 +682,11 @@ void ElocSystem::notifyStatusRefresh() {
         }
         return;
     }
+    // Still inside the setup grace period - the ranger is probably holding the device.
+    if (!isIntruderArmed()) {
+        cntFastUpdates = 0;
+        return;
+    }
     // The buzzer sits on the same PCB as the LIS3DH: its vibration fires the click (knock)
     // interrupt, so the BT-connect beep would count as knocks on every app connection — and
     // an active alarm's own beeping would keep re-triggering it indefinitely. Ignore clicks
@@ -694,8 +715,9 @@ void ElocSystem::notifyStatusRefresh() {
             // Deliberately not seeded as "moving" (see updateMotionState): the candidate has to
             // earn its promotion from a real accelerometer reading after the knocks settle.
             mLastMotionMs = 0;
-            ESP_LOGW(TAG, "Intruder candidate after %u knocks - waiting %u s for movement",
-                cntFastUpdates, cfg.confirmWindowS);
+            mCandidateNotifyPending = true;
+            ESP_LOGW(TAG, "Intruder candidate after %u knocks - siren + LoRa now, then %u s to see "
+                "whether it moves", cntFastUpdates, cfg.confirmWindowS);
         }
         else if (mIntruderState == IntruderState_t::CONFIRMED) {
             // Already alarmed and someone is knocking it again. Treat that as handling, so the
@@ -734,6 +756,7 @@ void ElocSystem::clearIntruderAlarm(const char* reason) {
     mIntruderState = IntruderState_t::IDLE;
     mCandidateStartMs = 0;
     mLastKnockMs = 0;
+    mCandidateNotifyPending = false;
     mLastMotionMs = 0;
     mConfirmedStillSinceMs = 0;
     // mIntruderAlarmStartMs and the siren are released by updateIntruderSiren() on the next cycle,
@@ -759,9 +782,18 @@ void ElocSystem::updateIntruderState() {
             ESP_LOGW(TAG, "Intruder ALARM confirmed - knocks followed by movement");
             mRefreshStatus = true;
         }
-        else if ((mCandidateStartMs != 0) &&
-                 ((nowMs - mCandidateStartMs) >= (cfg.confirmWindowS * 1000))) {
-            clearIntruderAlarm("no movement within the confirm window");
+        else if (mCandidateStartMs != 0) {
+            // The listening window starts only once the siren has finished and the buzzer guard
+            // has cleared - until then the accelerometer reads nothing but the buzzer, so counting
+            // that time as "no movement" would expire the candidate while the device was deaf.
+            const uint32_t listenFromMs =
+                mCandidateStartMs + C_INTRUDER_SIREN_DURATION_MS + C_BUZZER_KNOCK_GUARD_MS;
+            // Signed comparison so the not-yet-listening case is negative rather than a huge
+            // unsigned number.
+            if (static_cast<int32_t>(nowMs - listenFromMs) >=
+                static_cast<int32_t>(cfg.confirmWindowS * 1000)) {
+                clearIntruderAlarm("no movement after the siren - back to normal operation");
+            }
         }
         break;
 
@@ -786,6 +818,44 @@ void ElocSystem::updateIntruderState() {
     }
 }
 
+bool ElocSystem::isIntruderArmed() const {
+    const intruderConfig_t& cfg = getConfig().IntruderConfig;
+    if (!cfg.detectEnable || getDutyCycleConfig().enable) {
+        return false;
+    }
+    // A coverage survey is a handheld mode: the device is being carried and knocked about all day,
+    // and the buzzer belongs to the survey readout. An intruder siren in the middle of that would
+    // be both wrong and confusing.
+    if (ElocLora::GetInstance().surveyIsActive()) {
+        return false;
+    }
+    if (cfg.armDelayS == 0) {
+        return true;
+    }
+    if (mRecordActiveSinceMs == 0) {
+        return false;   // handleSystemStatus has not run yet; nothing is armed before it does
+    }
+    return (millis() - mRecordActiveSinceMs) >= (cfg.armDelayS * 1000);
+}
+
+uint32_t ElocSystem::getIntruderArmsInS() const {
+    const intruderConfig_t& cfg = getConfig().IntruderConfig;
+    if (isIntruderArmed() || !cfg.detectEnable || getDutyCycleConfig().enable ||
+        (cfg.armDelayS == 0) || (mRecordActiveSinceMs == 0)) {
+        return 0;
+    }
+    const uint32_t elapsedS = (millis() - mRecordActiveSinceMs) / 1000;
+    return (elapsedS >= cfg.armDelayS) ? 0 : (cfg.armDelayS - elapsedS);
+}
+
+bool ElocSystem::consumeIntruderCandidateEvent() {
+    if (!mCandidateNotifyPending) {
+        return false;
+    }
+    mCandidateNotifyPending = false;
+    return true;
+}
+
 uint32_t ElocSystem::getIntruderAlarmAgeS() const {
     if (mIntruderAlarmStartMs == 0) {
         return 0;
@@ -794,10 +864,16 @@ uint32_t ElocSystem::getIntruderAlarmAgeS() const {
 }
 
 void ElocSystem::updateIntruderSiren() {
-    // Gated on CONFIRMED, never on a candidate. A device knocked on a table must stay silent -
-    // and it has to, because the siren shakes the LIS3DH and the knock guard would then blind
-    // the very accelerometer reading the candidate is waiting for.
-    if (!isIntruderDetected()) {
+    // Sounds for a CANDIDATE as well as a CONFIRMED alarm: something is handling the device and
+    // that is worth announcing even if it turns out to be a monkey. It runs once per episode - it
+    // is not restarted on promotion to CONFIRMED, which would add a second 30 s of blinding the
+    // accelerometer just as the tracking uplinks start needing isDeviceMoving().
+    //
+    // The siren shakes the LIS3DH, so while it sounds (and for the guard period after) no movement
+    // can be read at all. updateIntruderState() therefore does not start the candidate's listening
+    // window until the siren is over - otherwise the window would expire while the device was deaf
+    // and a real theft would be missed.
+    if (mIntruderState == IntruderState_t::IDLE) {
         if (mSirenActive) {
             mSirenActive = false;
             setBuzzerIdle();

@@ -213,6 +213,7 @@ bool ElocLora::surveyBeginSession() {
     mSurveyStartS       = timeObject.getLocalEpoch();
     mSurveyLastTxMs     = 0;
     mSurveyHasAnchor    = false;
+    mSurveyHasPosition  = false;
     mSurveySampleCnt    = 0;
     mSurveyMissedChecks = 0;
     mSurveyGoodChecks   = 0;
@@ -438,10 +439,16 @@ bool ElocLora::surveySend(bool wantLinkCheck, const char* trigger) {
     mSurveyUplinkCnt++;
     mSurveySampleCnt++;
     mSurveyLastTxMs = esp_timer_get_time() / 1000;
+    // "A sample has been sent" and "we have a position to measure distance from" are different
+    // facts. Conflating them meant a session that never got a fix - indoors, or under canopy
+    // before the first fix - never set the anchor, so the due-check below fired on every pass and
+    // the device transmitted at the interval floor indefinitely, emptying the daily budget in
+    // about an hour on nothing but null-position points.
+    mSurveyHasAnchor = true;
     if (hasFix) {
         mSurveyLastLat = gpsInfo.lat;
         mSurveyLastLng = gpsInfo.lng;
-        mSurveyHasAnchor = true;
+        mSurveyHasPosition = true;
     }
 
     bool answered = false;
@@ -583,14 +590,21 @@ void ElocLora::surveyLoop() {
     bool due = false;
     const char* trigger = "periodic";
     if (!mSurveyHasAnchor) {
-        // No position logged yet this session - send regardless, so the track has a start.
+        // Nothing sent yet this session - send once so the track has a start, fix or no fix.
         due = true;
-    } else if (gpsInfo.hasFix &&
+    } else if (gpsInfo.hasFix && !mSurveyHasPosition) {
+        // First real fix of the session, after starting without one. Worth a point immediately:
+        // it anchors the track, and waiting out the idle backstop would throw away up to ten
+        // minutes of walking.
+        due = true;
+        trigger = "firstfix";
+    } else if (gpsInfo.hasFix && mSurveyHasPosition &&
                surveyDistanceM(mSurveyLastLat, mSurveyLastLng, gpsInfo.lat, gpsInfo.lng)
                    >= static_cast<double>(cfg.minDistanceM)) {
         due = true;
     } else if (sinceS >= C_SURVEY_IDLE_INTERVAL_S) {
-        // Standing still is nearly free by design, but not literally invisible.
+        // Standing still is nearly free by design, but not literally invisible. This is also what
+        // a fixless session falls back to, rather than the interval floor.
         due = true;
         trigger = "idle";
     }

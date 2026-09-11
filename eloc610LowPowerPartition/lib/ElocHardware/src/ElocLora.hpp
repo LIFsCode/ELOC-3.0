@@ -180,7 +180,9 @@ private:
     int64_t  mSurveyLastTxMs = 0;        // esp_timer millis of the last survey uplink
     double   mSurveyLastLat = 0.0;       // position of the last survey uplink
     double   mSurveyLastLng = 0.0;
-    bool     mSurveyHasAnchor = false;   // a first sample has been sent, so distance is meaningful
+    bool     mSurveyHasAnchor = false;   // a first sample has been sent this session (any fix state)
+    bool     mSurveyHasPosition = false; // ...and it carried a GPS fix, so mSurveyLastLat/Lng are a
+                                         // real reference the distance trigger can measure against
     uint32_t mSurveySampleCnt = 0;       // samples this session (drives linkCheckEveryN)
     uint32_t mSurveyUplinkCnt = 0;       // uplinks / downlinks used, this local day
     uint32_t mSurveyDownlinkCnt = 0;

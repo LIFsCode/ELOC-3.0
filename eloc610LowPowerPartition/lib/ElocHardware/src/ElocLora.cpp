@@ -389,6 +389,8 @@ esp_err_t ElocLora::init() {
     playJoinFeedback(true);
   } else if (state == RADIOLIB_LORAWAN_NEW_SESSION) {
     ESP_LOGI(TAG, "New OTAA session established");
+    // The first uplink on a brand-new session cannot carry a useful link check - see mFreshSession.
+    mFreshSession = true;
     // CRITICAL: Set mInitDone BEFORE saving session
     // (saveSessionToRTC checks mInitDone)
     mInitDone = true;
@@ -818,6 +820,7 @@ bool ElocLora::attemptRejoin(const char* reason) {
         // Capture signal quality from Join-Accept (only meaningful for NEW_SESSION)
         if (joinState == RADIOLIB_LORAWAN_NEW_SESSION) {
             captureSignalQuality();
+            mFreshSession = true;
         }
         saveSessionToRTC();
         playJoinFeedback(true);

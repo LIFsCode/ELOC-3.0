@@ -418,6 +418,16 @@ bool ElocLora::surveySend(bool wantLinkCheck, const char* trigger) {
                                                 (wantLinkCheck ? 0x02 : 0x00) |
                                                 ((soc / 4) << 2));
 
+    // A freshly joined session cannot answer a link check on its very first uplink (see
+    // mFreshSession). Spend that uplink on the position alone and carry the check over to the next
+    // one, which is a second or two later for a forced check and costs no extra airtime - rather
+    // than reporting "no link" while sitting next to a gateway.
+    if (wantLinkCheck && mFreshSession) {
+        ESP_LOGI(TAG, "[survey] first uplink of a new session - deferring the link check");
+        wantLinkCheck = false;
+        mSurveyForceCheck = true;
+    }
+
     if (wantLinkCheck) {
         int16_t reqState = node.sendMacCommandReq(RADIOLIB_LORAWAN_MAC_LINK_CHECK);
         if (reqState != RADIOLIB_ERR_NONE) {
@@ -436,6 +446,8 @@ bool ElocLora::surveySend(bool wantLinkCheck, const char* trigger) {
         return false;
     }
 
+    // The session has now carried an uplink, so link checks work from here on.
+    mFreshSession = false;
     mSurveyUplinkCnt++;
     mSurveySampleCnt++;
     mSurveyLastTxMs = esp_timer_get_time() / 1000;

@@ -166,6 +166,15 @@ private:
     /// @brief Store the current radio RSSI/SNR values
     void captureSignalQuality();
 
+    /// @brief True from a fresh OTAA join until the first uplink has gone out on that session.
+    ///
+    /// Observed on hardware: the FIRST uplink of a freshly joined session never gets a
+    /// LinkCheckAns back, while the second one does - reproducibly, and with the gateway
+    /// receiving the first at a healthy RSSI. Requesting a link check on that uplink therefore
+    /// produces a "no link" reading next to a working gateway, which is the single most
+    /// misleading thing the survey could tell a ranger at the moment they start one.
+    bool mFreshSession = false;
+
     /************************* Coverage survey (ElocLora_survey.cpp) *************************/
 
     /// @brief Per-spreading-factor floor between survey uplinks, in seconds. Derived from the 1%

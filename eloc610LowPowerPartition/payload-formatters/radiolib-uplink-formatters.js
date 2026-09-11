@@ -130,11 +130,11 @@ function decodeUplink(input) {
             }
             var date = timeConverter(timestamp);
             var flags = input.bytes[idx++];
-            var hasFix = (flags & 0x01) != 0;
+            var hasFix = (flags & 0x01) !== 0;
             // bit1 (firmware >= 1.70): the device is still being moved. When clear it has been
             // still for a few minutes, so it reports at the slower idleIntervalS with the GPS
             // powered down and lat/lng from its last known fix - check fixAgeS.
-            var moving = (flags & 0x02) != 0;
+            var moving = (flags & 0x02) !== 0;
             // int32 big endian, degrees * 1e5 (signed)
             var latRaw = ((input.bytes[idx++] << 24) | (input.bytes[idx++] << 16) |
                           (input.bytes[idx++] << 8)  |  input.bytes[idx++]) | 0;
@@ -178,10 +178,10 @@ function decodeUplink(input) {
             var sfGw = input.bytes[idx++];             // low nibble gwCnt, high nibble SF - 6
             var sFlags = input.bytes[idx++];
 
-            var sHasFix = (sFlags & 0x01) != 0;
+            var sHasFix = (sFlags & 0x01) !== 0;
             // bit1: this uplink carried a LinkCheckReq, so a margin should follow on the next one.
-            var askedForCheck = (sFlags & 0x02) != 0;
-            var sMargin = (marginRaw == 0xFF) ? null : marginRaw;
+            var askedForCheck = (sFlags & 0x02) !== 0;
+            var sMargin = (marginRaw === 0xFF) ? null : marginRaw;
             var sGwCnt = sfGw & 0x0F;
             var sSf = (sfGw >> 4) + 6;
 

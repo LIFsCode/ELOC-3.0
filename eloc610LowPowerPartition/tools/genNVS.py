@@ -31,20 +31,48 @@ def get_python_exe():
     venv_dir = os.path.join(
         env.subst("$PROJECT_CORE_DIR"), "penv", ".espidf-" + idf_version)
 
-    if not os.path.isdir(venv_dir):
-        _create_venv(venv_dir)
-
     python_exe_path = os.path.join(
         venv_dir,
         "Scripts" if IS_WINDOWS else "bin",
         "python" + (".exe" if IS_WINDOWS else ""),
     )
 
+    # Test for the interpreter itself, not just the directory: an existing-but-empty venv
+    # dir (left behind by an interrupted setup or an external cleanup) passes an isdir()
+    # test, so creation gets skipped and the assert below then fails with a confusing
+    # "Missing Python executable" instead of just rebuilding the venv.
+    if not os.path.isfile(python_exe_path):
+        _create_venv(venv_dir)
+
     assert os.path.isfile(python_exe_path), (
         "Error: Missing Python executable file `%s`" % python_exe_path
     )
 
     return python_exe_path
+
+
+def ensure_distutils(python_exe):
+    """Make sure `import distutils` works in the IDF venv.
+
+    nvs_partition_gen.py (IDF 4.4.x) imports distutils.dir_util at module level, but
+    distutils was removed from the stdlib in Python 3.12 (PEP 632). setuptools re-provides
+    it via distutils-precedence.pth - however a venv created by Python 3.12+ no longer
+    bootstraps setuptools, and PlatformIO's IDF dependency install does not pull it in
+    either. So every venv (re)creation would otherwise silently break NVS generation.
+    """
+    probe = subprocess.call(
+        [python_exe, "-c", "import distutils.dir_util"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if probe == 0:
+        return
+
+    print("genNVS.py: distutils missing from the IDF venv (Python 3.12+ / PEP 632) - "
+          "installing setuptools, which re-provides it")
+    if subprocess.call([python_exe, "-m", "pip", "install", "--quiet", "setuptools"]) != 0:
+        print("genNVS.py: WARNING - failed to install setuptools; NVS generation will "
+              "likely fail with \"No module named 'distutils'\"")
 
 from SCons.Script import (
     ARGUMENTS,
@@ -101,7 +129,9 @@ with open(partition_file) as csv_file:
             print(f'partition0 base: {row[3].strip()}')
             partition_base = row[3].strip()
     print(f'Generating NVS binary: {nvs_bin_path} (size: {nvs_size})')
-    ret = subprocess.call([get_python_exe(), nvs_tool, 'generate', 'nvs.csv', nvs_bin_path, nvs_size])
+    python_exe = get_python_exe()
+    ensure_distutils(python_exe)
+    ret = subprocess.call([python_exe, nvs_tool, 'generate', 'nvs.csv', nvs_bin_path, nvs_size])
     if ret != 0:
         print(f"ERROR: NVS generation failed with return code: {ret}")
     else:

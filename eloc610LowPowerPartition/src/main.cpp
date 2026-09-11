@@ -987,6 +987,16 @@ void handleSleepCycleStateMachine() {
         return; // Not in duty cycle mode or already preparing to sleep
     }
 
+    // A coverage survey is a handheld mode and must not be interrupted by duty-cycle sleep.
+    // mSurveyActive is RAM-only while surveyCfg.enable persists, so a wake would not resume the
+    // session - it would START A NEW ONE, with a new CSV file. With the shipped defaults (30 s
+    // awake / 120 s asleep) that fragments a single walk into dozens of files, resets the distance
+    // anchor each time, and sleeps through most of the survey. dutyCycle.enable defaults to true,
+    // so this is the common case rather than an edge one.
+    if (ElocLora::GetInstance().surveyIsActive()) {
+        return;
+    }
+
     const dutyCycleConfig_t& dcCfg = getDutyCycleConfig();
     // Calculate how long since duty cycle was activated (not since boot)
     int64_t awakeTimeS = (esp_timer_get_time() - gDutyCycleActivationTimeUS) / 1000000LL;

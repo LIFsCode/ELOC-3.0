@@ -1,0 +1,33 @@
+{
+    "name": "esp-nn",
+    "version": "1.1.2",
+    "description": "Espressif ESP-NN v1.1.2 optimised NN kernels, vendored for the esp32dev-tflm build. See ../tflite-micro/ELOC_VENDOR.md.",
+    "license": "Apache-2.0",
+    "frameworks": "*",
+    "platforms": "*",
+    "build": {
+        "srcDir": "src",
+        "includeDir": "include",
+        "srcFilter": [
+            "-<*>",
+            "+<activation_functions/esp_nn_relu_ansi.c>",
+            "+<basic_math/esp_nn_add_ansi.c>",
+            "+<basic_math/esp_nn_mul_ansi.c>",
+            "+<convolution/esp_nn_conv_ansi.c>",
+            "+<convolution/esp_nn_conv_opt.c>",
+            "+<convolution/esp_nn_depthwise_conv_ansi.c>",
+            "+<convolution/esp_nn_depthwise_conv_opt.c>",
+            "+<fully_connected/esp_nn_fully_connected_ansi.c>",
+            "+<softmax/esp_nn_softmax_ansi.c>",
+            "+<softmax/esp_nn_softmax_opt.c>",
+            "+<pooling/esp_nn_avg_pool_ansi.c>",
+            "+<pooling/esp_nn_max_pool_ansi.c>"
+        ],
+        "flags": [
+            "-DCONFIG_NN_OPTIMIZED",
+            "-Isrc/common",
+            "-O2",
+            "-Wno-unused-function"
+        ]
+    }
+}

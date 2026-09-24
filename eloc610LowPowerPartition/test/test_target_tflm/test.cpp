@@ -147,6 +147,12 @@ void test_golden_vectors() {
     TEST_ASSERT_EQUAL(f.nMels, h.nMels);
     TEST_ASSERT_EQUAL(gPackage.outputCount(), h.nOutputs);
 
+    // The quantized input is rebuilt from the device's own features with the model's input
+    // quantization (the same MelFrontend::quantize() classify() uses). The input tensor itself cannot
+    // be read back: after Invoke() TFLM has reused its arena space for later layers.
+    int8_t* quantized = mlAllocArray<int8_t>(f.nFeatures(), MemKind::Large);
+    TEST_ASSERT_NOT_NULL(quantized);
+
     uint32_t dspTotal = 0;
     uint32_t nnTotal = 0;
     int worstIn = 0;
@@ -161,12 +167,13 @@ void test_golden_vectors() {
         dspTotal += timing.dspUs;
         nnTotal += timing.nnUs;
 
+        MelFrontend::quantize(gClassifier.lastFeatures(), f.nFeatures(), gClassifier.inputQuant(), quantized);
         float maxFeature = 0.0f;
         int maxIn = 0;
         for (size_t k = 0; k < f.nFeatures(); k++) {
             float df = fabsf(gClassifier.lastFeatures()[k] - r.features[k]);
             maxFeature = df > maxFeature ? df : maxFeature;
-            int dq = abs(static_cast<int>(gClassifier.lastInput()[k]) - static_cast<int>(r.input[k]));
+            int dq = abs(static_cast<int>(quantized[k]) - static_cast<int>(r.input[k]));
             maxIn = dq > maxIn ? dq : maxIn;
         }
         int maxOut = 0;
@@ -185,6 +192,7 @@ void test_golden_vectors() {
     }
     printf("%u records: worst |din| %d, |dout| %d; mean DSP %.1f ms, NN %.1f ms\n", static_cast<unsigned>(h.count),
            worstIn, worstOut, dspTotal / 1000.0 / h.count, nnTotal / 1000.0 / h.count);
+    mlFree(quantized);
     mlFree(data);
     logHeap("after golden vectors");
 }

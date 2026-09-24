@@ -209,10 +209,6 @@ size_t TflmClassifier::arenaUsed() const {
     return mInterpreter != nullptr ? mInterpreter->arena_used_bytes() : 0;
 }
 
-const int8_t* TflmClassifier::lastInput() const {
-    return mInterpreter != nullptr ? mInterpreter->input(0)->data.int8 : nullptr;
-}
-
 const int8_t* TflmClassifier::lastRawOutput() const {
     return mInterpreter != nullptr ? mInterpreter->output(0)->data.int8 : nullptr;
 }

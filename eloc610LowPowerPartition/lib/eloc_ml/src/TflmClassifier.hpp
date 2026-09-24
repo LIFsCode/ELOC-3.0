@@ -67,10 +67,17 @@ class TflmClassifier {
      */
     bool classify(const int16_t* window, float* probs, Timing* timing = nullptr);
 
-    /// The last window's features (nFrames * nMels floats), quantized input and raw output
+    /// The last window's features (nFrames * nMels floats) and raw int8 output
     const float* lastFeatures() const { return mFeatures; }
-    const int8_t* lastInput() const;
     const int8_t* lastRawOutput() const;
+
+    /**
+     * @brief Quantization of the model input, as read from the input tensor
+     * @note  There is deliberately no "last input" accessor: TFLM's memory planner reuses the input
+     *        tensor's arena space for later layers, so after Invoke() it holds other activations. To
+     *        see the quantized input, quantize lastFeatures() with this.
+     */
+    const TensorQuant& inputQuant() const { return mInputQuant; }
 
     size_t arenaSize() const { return mArenaSize; }
     size_t arenaUsed() const;

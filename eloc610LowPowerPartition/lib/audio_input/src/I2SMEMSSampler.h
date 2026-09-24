@@ -114,6 +114,9 @@ class I2SMEMSSampler {
 
     virtual bool is_i2s_installed_and_started() { return i2s_installed_and_started; }
 
+    /// The I2S sample rate set by init(), i.e. the rate the inference buffer is decimated from
+    uint32_t get_i2s_sampling_rate() const { return i2s_sampling_rate; }
+
     virtual void init(i2s_port_t _i2s_port, const i2s_pin_config_t &_i2s_pins_config, i2s_config_t _i2s_config, int _volume2_pwr = I2S_DEFAULT_VOLUME);
 
     virtual esp_err_t uninstall();

@@ -141,10 +141,46 @@ void printStatus(String& buf) {
     ai["detectingTime[h]"]        = 0.0;
     ai["detectedEvents"]          = 0;
     ai["aiModel"]                 = "";
+#ifdef ELOC_AI_ENABLED
+    ai["detectingTime[h]"]        = round((aiRuntime.get_totalDetectingTime_secs() / 60.f / 60.f), 3);
+    ai["detectedEvents"]          = aiRuntime.get_detectedEvents();
+#endif
 #ifdef EDGE_IMPULSE_ENABLED
-    ai["detectingTime[h]"]        = round((edgeImpulse.get_totalDetectingTime_secs() / 60.f / 60.f), 3);
-    ai["detectedEvents"]          = edgeImpulse.get_detectedEvents();
     ai["aiModel"]                 = EI_CLASSIFIER_PROJECT_NAME;
+    ai["aiRuntime"]               = "ei";
+#endif
+#ifdef ELOC_TFLM_ENABLED
+    // TFLite Micro runtime: the model is the device package from ELOC Model Training. Old apps
+    // ignore the extra keys. Strings are passed as const char* into the loaded package, which
+    // lives for the whole boot, so ArduinoJson stores pointers rather than copies.
+    const eloc_ml::ModelPackage& model = aiRuntime.model();
+    ai["aiRuntime"]               = "tflm";
+    ai["aiModel"]                 = model.name();
+    ai["aiModelId"]               = model.jobId();
+    ai["aiModelCreated"]          = model.createdUtc();
+    JsonArray aiLabels = ai.createNestedArray("aiLabels");
+    for (uint32_t i = 0; i < model.labelCount(); i++) {
+        aiLabels.add(model.label(i));
+    }
+    // The model's recommended settings for its first target label, on the same scale as the
+    // device's own inference config (threshold 0-100). Shown only, never applied.
+    JsonObject aiDefaults = ai.createNestedObject("aiModelDefaults");
+    for (uint32_t i = 1; i < model.labelCount(); i++) {
+        const eloc_ml::DetectionDefaults& d = model.detectionDefaults(i);
+        if (d.present) {
+            aiDefaults["label"]              = model.label(i);
+            aiDefaults["threshold"]          = round(d.threshold * 100.0f, 1);
+            aiDefaults["observationWindowS"] = d.observationWindowS;
+            aiDefaults["requiredDetections"] = d.requiredDetections;
+            break;
+        }
+    }
+    ai["aiArenaUsed"]             = static_cast<uint32_t>(aiRuntime.get_arenaUsed());
+    JsonObject aiLastMs = ai.createNestedObject("aiLastMs");
+    aiLastMs["dsp"]               = aiRuntime.get_lastDspMs();
+    aiLastMs["nn"]                = aiRuntime.get_lastNnMs();
+    ai["silentWindows"]           = aiRuntime.get_silentWindows();
+    ai["aiError"]                 = aiRuntime.get_aiError();
 #endif
     JsonObject device = doc.createNestedObject("device");
     device["firmware"]                   = gFirmwareVersion;
@@ -152,7 +188,10 @@ void printStatus(String& buf) {
     // fwUpdateProto and picks the matching release binary via buildVariant.
     // Old apps ignore unknown keys.
     device["fwUpdateProto"]              = 1;
-#ifdef EDGE_IMPULSE_ENABLED
+#ifdef ELOC_AI_ENABLED
+    // Both AI runtimes report "ei", so the app's variant guard lets a unit switch between the Edge
+    // Impulse and the TFLite Micro build from its file picker; detection.aiRuntime tells them
+    // apart. Revisit when TFLM becomes the published AI build (Phase 3).
     device["buildVariant"]               = "ei";
 #else
     device["buildVariant"]               = "no-ai";

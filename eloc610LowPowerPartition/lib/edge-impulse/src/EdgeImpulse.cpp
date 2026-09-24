@@ -239,7 +239,7 @@ const char* EdgeImpulse::get_ei_classifier_inferencing_categories(int i) const {
     return ei_classifier_inferencing_categories[i];
 }
 
-void EdgeImpulse::updateEventInfo(const ei_impulse_result_classification_t* results, uint32_t numMatches) {
+void EdgeImpulse::updateEventInfo(const char* const* labels, const float* values, uint32_t numMatches) {
     lastEventInfo.time = timeObject.getSystemTimeMS()/1000; // store sys time in seconds
     if (numMatches > EI_CLASSIFIER_LABEL_COUNT) {
         ESP_LOGE(TAG, "Number of Event Matches %d, exceeds Label count(%d)!", numMatches, EI_CLASSIFIER_LABEL_COUNT);
@@ -247,8 +247,8 @@ void EdgeImpulse::updateEventInfo(const ei_impulse_result_classification_t* resu
     }
     lastEventInfo.numClassifierMatch = numMatches;
     for (int i=0; i<numMatches; i++) {
-        lastEventInfo.label[i] = String(results[i].label);
-        lastEventInfo.classifierValue[i] = results[i].value;
+        lastEventInfo.label[i] = String(labels[i]);
+        lastEventInfo.classifierValue[i] = values[i];
     }
 }
 

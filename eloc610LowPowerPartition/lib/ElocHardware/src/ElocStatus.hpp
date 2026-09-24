@@ -36,9 +36,16 @@
 extern WAVFileWriter wav_writer;
 extern bool ai_run_enable;
 
-#ifdef EDGE_IMPULSE_ENABLED
-    #include "EdgeImpulse.hpp"
-    extern EdgeImpulse edgeImpulse;
+#ifdef ELOC_AI_ENABLED
+    // The runtime header is named here as well as in ai_runtime.h: PlatformIO's dependency finder
+    // follows includes inside libraries but not into the project's include/ folder, and this is
+    // what puts the runtime's library on the include path of everything that uses aiRuntime.
+    #if defined(EDGE_IMPULSE_ENABLED)
+        #include "EdgeImpulse.hpp"
+    #elif defined(ELOC_TFLM_ENABLED)
+        #include "ElocDetector.hpp"
+    #endif
+    #include "../../../include/ai_runtime.h"  // extern AiRuntime aiRuntime
 #endif
 
 extern int64_t gTotalUPTimeSinceReboot;  //esp_timer_get_time returns 64-bit time since startup, in microseconds.

@@ -1031,7 +1031,7 @@ void ElocSystem::notifyFwUpdate() {
     }
 }
 
-#if defined(EDGE_IMPULSE_ENABLED) && defined (AI_INCREASE_CPU_FREQ)
+#if defined(ELOC_AI_ENABLED) && defined (AI_INCREASE_CPU_FREQ)
         // #ifndef CONFIG_ESP32_DEFAULT_CPU_FREQ_240
         //         #warning "AI_INCREASE_CPU_FREQ requires CONFIG_ESP32_DEFAULT_CPU_FREQ_240"
         // #endif

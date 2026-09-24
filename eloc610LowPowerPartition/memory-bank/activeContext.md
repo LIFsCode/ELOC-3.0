@@ -1,14 +1,62 @@
 ﻿# Active Context
 
-## Planned next: TFLite Micro runtime (Edge Impulse replacement, Phase 1)
+## TFLite Micro runtime (Edge Impulse replacement, Phase 1) — implemented 2026-09-24, V1.79, hardware pending
 
-Not started. Replaces the Edge Impulse library with a direct TensorFlow Lite Micro runtime.
-- It runs the INT8 "device model package" that the web app's ELOC Model Training tool builds after
-  every job. Phase 0 (web side) was deployed and verified on real jobs by 2026-09-24.
-- The implementation plan for another agent is **`README-TFLM-Runtime-Plan.md`**: tasks T0–T8,
-  verified toolchain facts (IDF 4.4.7 → esp-tflite-micro v1.3.4 is the last compatible tag; GCC 8.4
-  is the compile risk), fixtures, decisions and acceptance.
-- `esp32dev-ei` stays the default and the fallback build.
+New build env **`esp32dev-tflm`**. It runs the INT8 "device model package" that the web app's ELOC
+Model Training builds after every job, directly on TensorFlow Lite Micro, with no Edge Impulse code
+linked. The plan (T0–T8, decisions, acceptance) is `README-TFLM-Runtime-Plan.md`, and the user
+guide is the top section of `README-ai.md`. `esp32dev-ei` stays the shipped build and the fallback.
+
+**Shape.**
+- `include/ai_runtime.h` makes `AiRuntime` either `EdgeImpulse` or `ElocDetector`.
+- Shared code uses `ELOC_AI_ENABLED` and `aiRuntime`: sampler, status, LoRa, duty cycle, main loop.
+- The per-window detection rules were pulled out of `ei_callback_func()` into
+  `handleClassification()` in `main.cpp`, which both runtimes call. The EI log lines, CSV rows and
+  threshold stayed as they were.
+- `lib/eloc_ml` is the portable core, also built on the PC: package parser, spec-v1 mel front-end
+  on KissFFT, TFLM classifier.
+- `lib/eloc_detector` is the firmware glue: AI task, buffers, silence guard, counters.
+- `lib/tflite-micro` + `lib/esp-nn` are esp-tflite-micro v1.3.4 + ESP-NN v1.1.2, unpatched.
+
+**Verified on the PC:**
+- T0: both vendored trees compile with GCC 8.4.
+- `esp32dev-tflm` and `esp32dev-ei` build; the TFLM map has no Edge Impulse object.
+- Native golden-vector test: quantized model inputs bit-identical on all 9 records.
+- The on-target test builds.
+
+**Not yet run on hardware:**
+- `pio test -e target_tflm_tests` (golden vectors on the device, DSP/NN ms, `arena_used_bytes`);
+- the acceptance list in the plan.
+
+**Decisions and findings from the implementation:**
+- **Full-scale sine: 1.6e-3 feature error, not the 1e-3 the plan asked for.** It is float32 FFT
+  round-off in bands 100 dB below a pure tone that sits exactly on an FFT bin. The reference is
+  float64-accurate, and a full complex FFT would get 6.4e-4 at twice the FFT cost. Real audio agrees
+  within 3.7e-6 and the quantized input is still exact, so that single synthetic record's feature
+  tolerance is 2e-3. Question for the user: accept, or pay for the complex FFT.
+- **Quantization rounds half to even** (`rintf`, like NumPy), not `roundf` as the plan said. The
+  result is exact parity instead of ±1.
+- **Front-end working set (~12.6 KB, internal RAM) is held only while the AI task runs**, not from
+  boot. This is because of the Bluetooth internal-heap sensitivity (see Current Work Focus). The
+  model, arena, features and audio buffers are PSRAM, allocated at boot.
+- **IRAM:** the EI build has ~330 B of IRAM left. `heap_caps_aligned_alloc()` pulled 1.5 KB of
+  TLSF code into IRAM and overflowed it, so `MlAlloc` aligns by hand.
+- **GCC 8.4 ICE** ("insn does not satisfy its constraints") when the mel band sum was inlined; worked
+  around with a `noinline` helper (`bandSum()`).
+- **base64** is decoded by a small built-in decoder, not `mbedtls_base64_decode`, so the native test
+  runs the same code.
+- **`ElocDetector` got its own library** (`lib/eloc_detector`), not `lib/eloc_ml` as the plan said.
+  Inside `eloc_ml`, the on-target test dragged the whole firmware (config, LoRa...) into its build.
+- **`generic_unit_tests` was broken on this machine before this work** (every native test failed to
+  build). It now uses `lib_ldf_mode = off` plus explicit `lib_deps`, and all 19 native test cases
+  pass.
+- **Timer-wake CSV name** is now built after the model loads, because the TFLM name carries the job
+  id. It is built by one function, `buildInferenceResultFilename()`, for both runtimes.
+- Web-app follow-up still open: the training worker should add silent / very low-level windows to
+  every model's background set. The first chainsaw model scores digital silence 0.95; the
+  firmware's silence guard (`AI_SILENCE_PEAK`) is only the dead-mic net.
+
+---
 
 ## Current Work Focus
 

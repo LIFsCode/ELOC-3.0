@@ -274,10 +274,11 @@ class EdgeImpulse {
     uint32_t get_detectedEvents() const {return detectedEvents;}
 
     /**
-     * @brief Store the information from result in the lastEventInfo
-     *
+     * @brief Store the detections of one window in lastEventInfo
+     * @note  Plain arrays rather than EI result types: called from the per-window code in main.cpp
+     *        that both AI runtimes share (handleClassification())
      */
-    void updateEventInfo(const ei_impulse_result_classification_t* results, uint32_t numMatches);
+    void updateEventInfo(const char* const* labels, const float* values, uint32_t numMatches);
 
     /**
      * @brief Getter for lastEventInfo

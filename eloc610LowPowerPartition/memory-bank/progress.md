@@ -40,6 +40,22 @@
   when a new Edge Impulse SDK overwrites `numpy.hpp`. It is sentinel-idempotent and fails closed when
   the upstream `software_rfft()` no longer matches the verified implementation.
 
+### TFLite Micro runtime (`esp32dev-tflm`) — 🔨 Built, native tests green, hardware pending (2026-09-24, V1.79)
+Phase 1 of the Edge Impulse replacement (`README-TFLM-Runtime-Plan.md`). Runs the device model
+package from the web app's ELOC Model Training directly on TFLM, with no Edge Impulse code linked.
+- **Verified on the PC:**
+  - esp-tflite-micro v1.3.4 + ESP-NN v1.1.2 compile unpatched with GCC 8.4 (T0 compile gate);
+  - `esp32dev-tflm` and `esp32dev-ei` both build;
+  - the TFLM map has no Edge Impulse object and one TFLM copy;
+  - `test_generic_mel_frontend`: quantized model inputs **bit-identical** to the golden vectors on
+    all 9 records. Features are within 3.7e-6 on real audio; the synthetic full-scale sine gets
+    1.6e-3 (float32 FFT round-off 100 dB below a pure tone, so that record's tolerance is 2e-3).
+- **Not yet on hardware:** the T0 run, `pio test -e target_tflm_tests` (golden vectors on the
+  device, DSP/NN ms, arena used), and the acceptance list in the plan (end-to-end detection, app
+  threshold change, silence guard, duty cycle, 24 h soak, EI build flashed back).
+- Binary: 1,977,376 B (EI 1,797,776 B; OTA slot 0x7E0000). IRAM is 90 B below the EI build.
+  **The EI build has only ~330 B of IRAM left**, so the next IRAM-placed feature will not fit.
+
 ### LoRaWAN — ✅ Operational
 - **SX1262 radio** via RadioLib 7.2.1
 - **OTAA join** with TTN (The Things Network)

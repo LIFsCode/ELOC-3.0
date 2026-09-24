@@ -1,0 +1,7 @@
+{
+    "name": "eloc_detector",
+    "version": "1.0.0",
+    "description": "ELOC TFLite Micro AI runtime glue (esp32dev-tflm): the ElocDetector AI task, buffers and event counters on top of lib/eloc_ml.",
+    "frameworks": "*",
+    "platforms": "espressif32"
+}

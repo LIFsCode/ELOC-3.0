@@ -21,15 +21,36 @@
 -DBOARD_HAS_PSRAM                  # Enable PSRAM support
 -DCONFIG_SPIRAM_CACHE_WORKAROUND   # ESP32 PSRAM cache bug workaround
 -Wl,-Map,firmware.map              # Generate linker map
--DEDGE_IMPULSE_ENABLED             # (esp32dev-ei only) Enable AI inference
+-DELOC_AI_ENABLED                  # (both AI envs) any AI runtime: shared AI code
+-DEDGE_IMPULSE_ENABLED             # (esp32dev-ei only) Edge Impulse runtime
+-DELOC_TFLM_ENABLED                # (esp32dev-tflm only) TFLite Micro runtime
+-DTF_LITE_STATIC_MEMORY + -I lib/tflite-micro/third_party/...   # [tflm] section, every TFLM env
 ```
+`TF_LITE_STATIC_MEMORY` changes the layout of `TfLiteTensor`. Every translation unit that includes
+a TFLM header must see it, which is why it sits in the env and not in the library.
 
 ### Build Environments
 - **esp32dev** — Standard build without AI
-- **esp32dev-ei** — Build with Edge Impulse inference enabled
+- **esp32dev-ei** — Build with Edge Impulse inference enabled (the shipped build, and the fallback)
+- **esp32dev-tflm** — TFLite Micro runtime running the device model package from ELOC Model
+  Training (`lib/eloc_ml/model/eloc_model_data.h`). Reports `buildVariant "ei"` and
+  `aiRuntime "tflm"`. See `README-ai.md`.
 - **target_unit_selected_tests** — Run selected unit tests on hardware
-- **target_unit_all_tests** — Run all unit tests on hardware
-- **generic_unit_tests** — Desktop/native unit tests
+- **target_unit_all_tests** — Run all unit tests on hardware (ignores `test_target_tflm`)
+- **target_tflm_tests** — `test_target_tflm`: TFLM golden vectors on the device (from the SD card)
+- **generic_unit_tests** — Desktop/native unit tests. `lib_ldf_mode = off` with an explicit
+  `lib_deps` (ArduinoJson, Unity, `eloc_ml`, `mock`). The automatic dependency finder dragged
+  ESP-only libraries into the host build, so every native test failed to build before 2026-09-24.
+
+Library isolation: both AI runtimes define `tflite::` symbols. `esp32dev-tflm` sets
+`lib_ignore = edge-impulse`; `esp32dev` and `esp32dev-ei` set
+`lib_ignore = eloc_ml, eloc_detector, tflite-micro, esp-nn`.
+
+**Any edit to `platformio.ini` wipes every env's `.pio/build/`**, so the next build is a full one.
+
+**IRAM is nearly full:** `esp32dev-ei` has ~330 B of IRAM left (2026-09-24). The IDF heap runs from
+IRAM, so even calling a new heap function (e.g. `heap_caps_aligned_alloc`, +1.5 KB) overflows it;
+`lib/eloc_ml/src/MlAlloc.cpp` aligns by hand for that reason.
 
 ### Pre-build Scripts
 - `tools/patch_fatfs_exfat.py` — Patches `FF_FS_EXFAT 0 → 1` in the packaged IDF FatFs `ffconf.h` to enable exFAT (see below)
@@ -69,7 +90,11 @@ fatfs objects remain.
 ### Bundled Libraries (in /lib)
 | Library | Source | Purpose |
 |---------|--------|---------|
-| edge-impulse | Edge Impulse Studio export | TFLite Micro AI inference |
+| edge-impulse | Edge Impulse Studio export | TFLite Micro AI inference (`esp32dev-ei`) |
+| tflite-micro | esp-tflite-micro **v1.3.4** (last tag for IDF 4.4), unmodified | TFLite Micro for `esp32dev-tflm`; see `lib/tflite-micro/ELOC_VENDOR.md` |
+| esp-nn | ESP-NN **v1.1.2**, unmodified | Optimised int8 kernels used by tflite-micro (`CONFIG_NN_OPTIMIZED`) |
+| eloc_ml | ELOC + KissFFT 131.2.0 (BSD-3, `third_party/kissfft`) | Portable TFLM runtime core: `ModelPackage`, `MelFrontend`, `RealFft`, `TflmClassifier`, `GoldenVectors`, the compiled-in model; also built on the PC |
+| eloc_detector | ELOC | `ElocDetector`: the TFLM AI task, buffers, silence guard and counters (firmware glue) |
 | esp32Time | Third-party | RTC time management |
 | CPPI2C | Third-party | I2C bus abstraction |
 | CPPANALOGIO_Battery | Custom/third-party | ADC battery voltage reading |

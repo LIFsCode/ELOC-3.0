@@ -44,8 +44,8 @@
 #include "strutils.h"
 #include "EasyBuzzer.h"
 
-#ifdef EDGE_IMPULSE_ENABLED
-#include "EdgeImpulse.hpp"
+#ifdef ELOC_AI_ENABLED
+#include "../../../include/ai_runtime.h"
 #endif
 
 const char* TAG = "LoraWAN";
@@ -518,7 +518,7 @@ void ElocLora::ElocLoraLoop() {
       mIntruderWasMoving = false;
     }
 
-#ifdef EDGE_IMPULSE_ENABLED
+#ifdef ELOC_AI_ENABLED
     static int64_t lastEiDetectedEvents = 0;
      //TODO: Check if we really want all classifier to trigger an event
      //      this implementation does not differentiate between which classifier has been triggered
@@ -527,9 +527,9 @@ void ElocLora::ElocLoraLoop() {
     //        to notify only the last one. 
     //        This changes once different kind of events trigger LoRa messages. then we have to accumulate different events
     //        so no information is lost.
-    if (edgeImpulse.get_detectedEvents() != lastEiDetectedEvents) {
+    if (aiRuntime.get_detectedEvents() != lastEiDetectedEvents) {
       ESP_LOGI(TAG, "Sending uplink with detected Event");  
-      lastEiDetectedEvents = edgeImpulse.get_detectedEvents();
+      lastEiDetectedEvents = aiRuntime.get_detectedEvents();
       sendEventMessage();
     }
 #endif
@@ -600,14 +600,14 @@ esp_err_t ElocLora::sendStatusUpdateMessage() {
 esp_err_t ElocLora::sendEventMessage() {
   // event messages only make sense if the ELOC Build is made for AI
   // if no AI model is running no event messages can be generated
-#ifdef EDGE_IMPULSE_ENABLED
+#ifdef ELOC_AI_ENABLED
 
     // you can also retrieve additional information about an uplink or
     // downlink by passing a reference to LoRaWANEvent_t structure
     LoRaWANEvent_t uplinkDetails;
 
     // Build payload byte array
-    EdgeImpulse::DetectedEventInfo info = edgeImpulse.get_lastEventInfo();
+    AiRuntime::DetectedEventInfo info = aiRuntime.get_lastEventInfo();
     int64_t time = info.time;
 
     uint8_t uplinkPayload[LORA_MAX_TX_PAYLOAD];

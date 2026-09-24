@@ -71,9 +71,24 @@ The main loop polls these queues and orchestrates state transitions.
 ### 4. Callback Pattern for AI Inference
 
 Due to namespace and static function pointer constraints in Edge Impulse, AI inference uses a callback pattern:
-- `EdgeImpulse` class stores a `std::function<void()>` callback
-- `ei_callback_func()` in main.cpp runs the actual inference pipeline
-- The EI thread calls this callback repeatedly when status is `running`
+- The AI runtime class stores a `std::function<void()>` callback
+- `ei_callback_func()` (Edge Impulse) or `tflm_callback_func()` (TFLite Micro) in main.cpp runs one window
+- Both hand the per-label scores to **`handleClassification()`** in main.cpp: threshold (strictly
+  greater), single-mode recording start, observation window, event count for LoRa, SD CSV row. The
+  detection rules exist once, for both runtimes.
+- The AI thread calls this callback for every completed window while status is `running`
+
+**Two AI runtimes, one name.** `include/ai_runtime.h` makes `AiRuntime` either `EdgeImpulse`
+(`esp32dev-ei`, `EDGE_IMPULSE_ENABLED`) or `ElocDetector` (`esp32dev-tflm`, `ELOC_TFLM_ENABLED`).
+Both set `ELOC_AI_ENABLED`. Shared code (sampler, status, LoRa, duty cycle, main loop) uses
+`ELOC_AI_ENABLED` and the global `aiRuntime`, never a runtime's own class or flag. `ElocDetector`
+offers the same public names as `EdgeImpulse` (`start_ei_thread`, `get_detectedEvents`,
+`get_lastEventInfo`, ...).
+- `lib/eloc_detector` is the firmware glue: AI task, buffers, counters.
+- `lib/eloc_ml` is the portable core: package parser, mel front-end, TFLM classifier. It also
+  builds on the PC.
+- Library headers name the runtime header directly (`ElocStatus.hpp`), because PlatformIO's
+  dependency finder does not follow includes into the project's `include/` folder.
 
 ### 5. Configuration Cascade
 
@@ -234,6 +249,24 @@ I2S DMA → I2SMEMSSampler::read() → fill EI inference buffer
     → run_classifier() → threshold check → event logging + LoRa uplink
 ```
 
+TFLite Micro build (`esp32dev-tflm`):
+```
+I2SMEMSSampler ──(keep every i2s_rate/model_rate-th sample)──► inference_t double buffer (PSRAM)
+                                                                  │ xTaskNotify
+                                                                  ▼
+                        ElocDetector "ai_thread" (core 1, prio 7, 8 KB, 1 s notify timeout)
+                          1. silence guard (peak <= AI_SILENCE_PEAK → skip, silentWindows++)
+                          2. MelFrontend: spec v1 (Hann, KissFFT rFFT, sparse mel, PCEN/log, norm)
+                          3. quantize (round half to even) → int8 input tensor
+                          4. TflmClassifier Invoke() (ESP-NN kernels, arena in PSRAM)
+                          5. dequantize → per-label probabilities (sigmoid → [1-p, p])
+                          6. handleClassification() in main.cpp (shared with Edge Impulse)
+```
+The model is loaded and validated at boot, before LoRa and Bluetooth (on a timer wake too). A
+rejected model leaves AI unable to start, with the reason in status `aiError`; the rest of the
+firmware runs normally. The front-end's per-frame buffers (~12.6 KB, internal RAM) exist only while
+the AI task runs. Everything else is PSRAM, allocated once.
+
 ### Bluetooth Command Flow
 ```
 BT Serial input → CmdParser → ElocCommands handler
@@ -248,7 +281,7 @@ Recording state is managed through `WAVFileWriter::Mode`:
 - `single` — record one session (AI-triggered)
 - `continuous` — record indefinitely in segments
 
-AI state is managed through `EdgeImpulse::Status`:
+AI state is managed through `AiRuntime::Status` (`EdgeImpulse` or `ElocDetector`):
 - `not_running` — inference stopped
 - `running` — inference thread active
 

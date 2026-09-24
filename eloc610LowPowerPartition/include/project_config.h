@@ -24,7 +24,7 @@
 
         #define BLUETOOTH_CLASSIC
 
-        #define VERSION "ELOC-P_V1.78"
+        #define VERSION "ELOC-P_V1.79"
 
         #define STATUS_LED          GPIO_NUM_4
         #define BATTERY_LED         GPIO_NUM_4
@@ -303,6 +303,29 @@
  */
 
 #define AI_INCREASE_CPU_FREQ
+
+/**
+ * @brief Most labels (classes) one model may have, including background
+ * @note  TFLM runtime (esp32dev-tflm) only. Sizes the per-label arrays shared with LoRa/status, so a
+ *        model with more labels is rejected at load instead of being truncated.
+ */
+#define AI_MAX_LABELS 8
+
+/**
+ * @brief Silence guard: a window whose peak |sample| is at or below this is not classified
+ * @note  TFLM runtime (esp32dev-tflm) only. A dead-mic safety net and indicator (status
+ *        silentWindows), not a detection feature: at 16 LSB (-66 dBFS) nothing detectable is lost.
+ *        The real fix for models scoring silence is silent/low-level background windows in the
+ *        training data. 0 disables the guard.
+ */
+#define AI_SILENCE_PEAK 16
+
+/**
+ * @brief Stack of the TFLM AI task (ElocDetector), in bytes
+ * @note  The Edge Impulse thread runs on 4 KB with ~1.4 KB free under load; this one also carries
+ *        the SD CSV write and ESP_LOG formatting, so it gets more headroom.
+ */
+#define AI_TASK_STACK_SIZE (8 * 1024)
 
 /**
  * @brief Master switch for AUTOMATIC light sleep (the cpuEnableLightSleep config field).

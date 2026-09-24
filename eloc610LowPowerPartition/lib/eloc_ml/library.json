@@ -1,0 +1,17 @@
+{
+    "name": "eloc_ml",
+    "version": "1.0.0",
+    "description": "ELOC TFLite Micro runtime core: device model package loader, mel front-end, TFLM classifier (esp32dev-tflm). Self-contained; the firmware glue is lib/eloc_detector.",
+    "frameworks": "*",
+    "platforms": "*",
+    "build": {
+        "srcDir": ".",
+        "includeDir": "src",
+        "srcFilter": [
+            "-<*>",
+            "+<src/*.cpp>",
+            "+<third_party/kissfft/kiss_fft.c>",
+            "+<third_party/kissfft/kiss_fftr.c>"
+        ]
+    }
+}

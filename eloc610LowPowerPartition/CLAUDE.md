@@ -30,7 +30,7 @@ It targets ELOC 3.0 hardware (ESP32-WROVER, 16 MB flash, PSRAM, ICS-43434 I2S mi
 
 ## Build / flash / test commands
 
-The default environment is `esp32dev-ei` (defined in `platformio.ini`). Use `pio run -e <env>` to target a specific one.
+The build that ships is `esp32dev-ei` (the `default_envs` line in `platformio.ini` still says `esp32dev`, so always pass `-e`). It stays the default AI build until the TFLite Micro build `esp32dev-tflm` has proved itself in the field (Phase 3 of `README-TFLM-Runtime-Plan.md`).
 
 ```bash
 # Build (no AI)
@@ -38,6 +38,9 @@ pio run -e esp32dev
 
 # Build with Edge Impulse AI inference
 pio run -e esp32dev-ei
+
+# Build with the TFLite Micro runtime (model from ELOC Model Training, lib/eloc_ml/model/)
+pio run -e esp32dev-tflm
 
 # Upload firmware (auto-detects port via tools/setUploadMonitorPort.py)
 pio run -e esp32dev -t upload
@@ -58,6 +61,10 @@ python flashNVSonly.py
 
 Edge Impulse builds **must do a Full Clean** before Build whenever any file under `lib/edge-impulse/src/` changes — otherwise stale objects remain in `.pio/`. See `README-ai.md` for the full model-update procedure and known EI SDK patches (e.g. `select.cpp` uninitialized `output_size`).
 
+The two AI builds are selected by flags in `platformio.ini`: `ELOC_AI_ENABLED` (any AI runtime: shared code) plus `EDGE_IMPULSE_ENABLED` or `ELOC_TFLM_ENABLED`. Shared code talks to `aiRuntime` via `include/ai_runtime.h`, never to one runtime's class. Both runtimes define `tflite::` symbols, so each AI env `lib_ignore`s the other's libraries. Updating the TFLM model = replace `lib/eloc_ml/model/eloc_model_data.h` (+ `test/fixtures/`), Full Clean, build — see `README-ai.md`.
+
+Note: any edit to `platformio.ini` makes PlatformIO wipe every env's `.pio/build/` folder, so the next build of each env is a full one (~4-5 min).
+
 ### Tests
 
 ```bash
@@ -69,7 +76,12 @@ pio test -e target_unit_all_tests
 
 # Run desktop/native tests (test/test_generic_*)
 pio test -e generic_unit_tests
+
+# TFLM runtime on the device: golden vectors from <SD>/eloc_golden_vectors.bin
+pio test -e target_tflm_tests
 ```
+
+`generic_unit_tests` runs with `lib_ldf_mode = off` and lists its libraries in `lib_deps` (ArduinoJson, Unity, `eloc_ml`, `mock`). Otherwise the dependency finder follows test includes into the ESP-only libraries and the host build fails.
 
 To run a different single target test, edit `selected_tests = test_target_<name>` in `platformio.ini` under `[options]`. Tests live under `test/test_target_*` (on-device) and `test/test_generic_*` (native); `test/test_*` (without prefix) builds for both. See `test/README.md`.
 
@@ -85,8 +97,8 @@ To run a different single target test, edit `selected_tests = test_target_<name>
 FreeRTOS multi-task layout split across the two ESP32 cores; details in `memory-bank/systemPatterns.md`.
 
 - **Core 0**: I2S read (prio 10), WAV writer (prio 8), main loop (control + state machine).
-- **Core 1**: Edge Impulse inference (prio 7), LoRa work.
-- **Producer/consumer**: `I2SMEMSSampler` (audio_input) fills double buffers; `WAVFileWriter` (wav_file) drains to SD; `EdgeImpulse` consumes a parallel buffer.
+- **Core 1**: AI inference (prio 7; Edge Impulse or TFLite Micro, per build), LoRa work.
+- **Producer/consumer**: `I2SMEMSSampler` (audio_input) fills double buffers; `WAVFileWriter` (wav_file) drains to SD; the AI runtime (`EdgeImpulse` or `ElocDetector`) consumes a parallel buffer.
 - **Singletons**: `ElocSystem`, `ElocLora`, `Battery` — accessed via `GetInstance()`. New hardware subsystems should follow the same pattern.
 - **Control flow**: Bluetooth commands and the boot button feed FreeRTOS queues (`rec_req_evt_queue`, `rec_ai_evt_queue`); the main loop in `src/main.cpp` polls them and orchestrates state transitions.
 - **Duty-cycle deep sleep**: state machine in `ElocStatus.hpp` (`SleepCycleState_t`); persistent state in `RTC_DATA_ATTR rtc_duty_cycle_t` (magic `0xE10CDC1E`); LoRaWAN session in RTC, DevNonces in NVS. **Timer-wake takes a fast-boot path** that skips Battery/PerfMonitor/Bluetooth/LED animation/LoRa serial-monitor delay — preserve this when adding boot-time work; gate any new heavy init on `esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER`.

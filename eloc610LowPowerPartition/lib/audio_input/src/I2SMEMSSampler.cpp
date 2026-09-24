@@ -346,10 +346,10 @@ int I2SMEMSSampler::read()
                 }
             }
 
-            #ifdef EDGE_IMPULSE_ENABLED
+            #ifdef ELOC_AI_ENABLED
 
-            // Check buffer exists
-            if (inference->buffers[inference->buf_select] != nullptr) {
+            // Check buffer exists (the TFLM build registers nothing when its model failed to load)
+            if (inference != nullptr && inference->buffers[inference->buf_select] != nullptr) {
                 // Store into edge-impulse buffer taking into requirement to skip if necessary
                 if (skip_current >= ei_skip_rate) {
                     ESP_LOGV(TAG, "Saving sample, skip_current = %d", skip_current);
@@ -367,9 +367,11 @@ int I2SMEMSSampler::read()
                         }
 
                         inference->buf_ready = 1;
-                        if (inference->status_running == true && ei_TaskHandler != NULL) {
+                        // One read of the handle: the AI task clears it when it exits
+                        TaskHandle_t aiTask = ei_TaskHandler;
+                        if (inference->status_running == true && aiTask != NULL) {
                             ESP_LOGV(TAG, "Notifying inference task");
-                            xTaskNotify(ei_TaskHandler, (0), eNoAction);
+                            xTaskNotify(aiTask, (0), eNoAction);
                         }
                     }
 
@@ -379,7 +381,7 @@ int I2SMEMSSampler::read()
                 }
             }
 
-            #endif  // EDGE_IMPULSE_ENABLED
+            #endif  // ELOC_AI_ENABLED
 
             #ifdef VISUALIZE_WAVEFORM
                 total_raw_sample += raw_samples[i];
@@ -403,26 +405,26 @@ int I2SMEMSSampler::read()
         ESP_LOGI(TAG, "writer->buf_select = %d", writer->buf_select);
         ESP_LOGI(TAG, "writer->buf_ready = %d", writer->buf_ready);
 
-        #ifdef EDGE_IMPULSE_ENABLED
+        #ifdef ELOC_AI_ENABLED
 
         ESP_LOGI(TAG, "inference.buf_count = %d", inference->buf_count);
         ESP_LOGI(TAG, "inference.buf_select = %d", inference->buf_select);
         ESP_LOGI(TAG, "inference.buf_ready = %d", inference->buf_ready);
 
-        #endif  // EDGE_IMPULSE_ENABLED
+        #endif  // ELOC_AI_ENABLED
     }
 
     if (writer_buffer_overrun == true) {
         ESP_LOGW(TAG, "wav buffer overrun");
     }
 
-    #ifdef EDGE_IMPULSE_ENABLED
+    #ifdef ELOC_AI_ENABLED
 
     if (inference_buffer_overrun == true) {
         ESP_LOGW(TAG, "inference buffer overrun");
     }
 
-    #endif  // EDGE_IMPULSE_ENABLED
+    #endif  // ELOC_AI_ENABLED
 
     // Throttled to one warning per second: with a broken I2S clock every read clips and
     // the unthrottled warning floods the SD card log at >100 lines/s.

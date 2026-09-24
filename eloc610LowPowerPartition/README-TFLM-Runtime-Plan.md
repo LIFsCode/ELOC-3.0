@@ -21,7 +21,7 @@ message and duty cycle.
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Web app: device package, INT8 export, calibration, golden vectors | **Done**, deployed 2026-09-21 and verified on real jobs (see "Phase 0 status") |
-| **1** | **Firmware TFLM runtime, model compiled in** | **This plan** |
+| **1** | **Firmware TFLM runtime, model compiled in** | **Implemented 2026-09-24 (V1.79)**, PC-verified; hardware tests pending (see "Implementation status") |
 | 2 | Load the model from the SD card / push it from the app (no reflash) | Later; Phase 1 must not block it |
 | 3 | Field A/B against the Edge Impulse build, then retire `esp32dev-ei` | Later |
 
@@ -39,6 +39,52 @@ message and duty cycle.
 - **Multi-class:** one model can score several sounds (softmax). The package format supports it and
   the runtime must too. Rumbles probably need their own model (a different front-end), so Phase 1
   runs **one model at a time**.
+
+## Implementation status (2026-09-24)
+
+| Task | State |
+|---|---|
+| T0 toolchain | v1.3.4 + ESP-NN **v1.1.2** compile **unpatched** with GCC 8.4. The zeros invoke is the first case of `test_target_tflm`; **not yet run on hardware** |
+| T1 `ModelPackage` | Done. Also verifies the flatbuffer, and rejects packages whose `input_scale`/`window`/`layout` differ from spec v1 |
+| T2 `MelFrontend` | Done, native test green: quantized inputs **bit-identical** on all 9 golden records |
+| T3 `TflmClassifier` | Done; `test_target_tflm` builds. **Needs a run on hardware** for DSP/NN ms and `arena_used_bytes()` |
+| T4 `ElocDetector` + wiring | Done; both `esp32dev-ei` and `esp32dev-tflm` build |
+| T5 silence guard | Done (`AI_SILENCE_PEAK` 16) |
+| T6 status / CSV / identity | Done |
+| T7 hygiene | TFLM map has no Edge Impulse objects and one TFLM copy; sizes EI 1,797,776 B, TFLM 1,977,376 B (slot 0x7E0000). IRAM: TFLM uses 90 B less than EI |
+| T8 docs | `README-ai.md`, `CLAUDE.md`, memory-bank, `VERSIONS.md`, `lib/tflite-micro/ELOC_VENDOR.md`. Wiki edits prepared, pushed only with the user's OK |
+
+Where the implementation differs from this plan, and why:
+1. **`ElocDetector` lives in `lib/eloc_detector/`, not `lib/eloc_ml/`.** In `eloc_ml` it pulled
+   the whole firmware (config, sampler, LoRa...) into the on-target test build. `eloc_ml` is now
+   self-contained; `eloc_detector` is the glue. Both are in the EI env's `lib_ignore`.
+2. **Quantization rounds half to even** (`rintf`), not `roundf`. That is what NumPy does, and the
+   inputs match exactly instead of within ±1.
+3. **The full-scale sine misses the 1e-3 feature tolerance (1.6e-3).**
+   - Cause: the 1 kHz tone sits exactly on FFT bin 32, so with the Hann window the far bins are
+     empty up to int16 rounding noise, ~100 dB below the peak, right at the log floor. There float32
+     FFT round-off dominates, while the golden reference is float64-accurate (2.8e-7 from an exact
+     DFT).
+   - Measured: a full 512-point complex FFT gets 6.4e-4 at about twice the FFT cost, and real audio
+     is within 3.7e-6 either way. The quantized input is exact in every case.
+   - Kept the fast real FFT; that one record's feature tolerance is 2e-3. **Open for the user.**
+4. **The front-end's internal-RAM buffers (~12.6 KB) exist only while the AI task runs.** They are
+   allocated at task start, internal RAM first, PSRAM if short, and freed when it stops. The model,
+   arena, features and audio buffers are PSRAM from boot as planned. The reason is the Bluetooth
+   internal-heap sensitivity noted in `memory-bank/activeContext.md`.
+5. **base64 uses a small built-in decoder**, not `mbedtls_base64_decode`, so the native test runs
+   the same code as the device.
+6. **Aligned allocation is done by hand** (`MlAlloc.cpp`). `heap_caps_aligned_alloc()` pulls
+   ~1.5 KB of TLSF code into IRAM, and the EI build has only ~330 B of IRAM left, so the TFLM build
+   overflowed it.
+7. **`generic_unit_tests` now has `lib_ldf_mode = off`** and an explicit `lib_deps`. The dependency
+   finder pulled ESP-only libraries into the host build, so every native test failed before this.
+8. **The timer-wake CSV name is built after the model loads**, because the TFLM file name contains
+   the job id. One function, `buildInferenceResultFilename()`, builds it for both runtimes.
+9. **Label 0 may be `background`, `other` or `others`**, the names the EI path already treats as
+   non-target.
+10. **The TFLM task waits for audio with a 1 s timeout.** It notices a stop without audio, and a
+    restart waits for the old task to exit instead of running two.
 
 ## Phase 0 status (verified 2026-09-24)
 

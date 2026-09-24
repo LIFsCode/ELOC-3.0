@@ -62,20 +62,25 @@
 
 static const char *TAG = "main";
 
-#ifdef EDGE_IMPULSE_ENABLED
+#ifdef ELOC_AI_ENABLED
 
-    #include "EdgeImpulse.hpp"              // This file includes trumpet_inferencing.h
-    #include "edge-impulse-sdk/dsp/numpy_types.h"
-    #include "test_samples.h"
+    #include "ai_runtime.h"                 // AiRuntime: EdgeImpulse (esp32dev-ei) or ElocDetector (esp32dev-tflm)
 
-    EdgeImpulse edgeImpulse(I2S_DEFAULT_SAMPLE_RATE);
+    AiRuntime aiRuntime(I2S_DEFAULT_SAMPLE_RATE);
 
     String ei_results_filename;
+
+#endif
+
+#ifdef EDGE_IMPULSE_ENABLED
+
+    #include "edge-impulse-sdk/dsp/numpy_types.h"
+    #include "test_samples.h"
 
     // BUGME: this is rather crappy encapsulation.. signal_t requires non class function pointers
     //       but all EdgeImpulse stuff got encapsulated within a class, which does not match
     int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
-       return edgeImpulse.microphone_audio_signal_get_data(offset, length, out_ptr);
+       return aiRuntime.microphone_audio_signal_get_data(offset, length, out_ptr);
     }
 
 #endif
@@ -522,11 +527,48 @@ void start_sound_recording() {
     wav_writer.start_wav_write_task(getConfig().secondsPerFile);
 }
 
-#ifdef EDGE_IMPULSE_ENABLED
+#ifdef ELOC_AI_ENABLED
 
 bool inference_result_file_SD_available = false;
 auto save_ai_results_to_sd = true;
+
+#ifdef EDGE_IMPULSE_ENABLED
 auto print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
+#endif
+
+/**
+ * @brief Path of this session's inference results CSV
+ * @note  The only place the name is built: the file is created with it, and a duty-cycle timer wake
+ *        appends to the restored session's file with it, so the two cannot drift apart. The
+ *        "EI-results" prefix is what the web app's Model Results Comparison loads
+ *        (/EI-results.*\.csv$/i), for both runtimes:
+ *          Edge Impulse: EI-results-ID-<project id>-DEPLOY-VER-<deploy version>.csv
+ *          TFLite Micro: EI-results-TFLM-<model job id>.csv
+ */
+static String buildInferenceResultFilename() {
+    String filename = "/sdcard/eloc/";
+    filename += gSessionIdentifier;
+#if defined(EDGE_IMPULSE_ENABLED)
+    filename += "/EI-results-ID-";
+    filename += EI_CLASSIFIER_PROJECT_ID;
+    filename += "-DEPLOY-VER-";
+    filename += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
+#elif defined(ELOC_TFLM_ENABLED)
+    filename += "/EI-results-TFLM-";
+    filename += aiRuntime.model().jobId();
+#endif
+    filename += ".csv";
+    return filename;
+}
+
+/// Number of label columns in the results CSV
+static int inferenceResultColumns() {
+#if defined(EDGE_IMPULSE_ENABLED)
+    return EI_CLASSIFIER_NN_OUTPUT_COUNT;
+#elif defined(ELOC_TFLM_ENABLED)
+    return static_cast<int>(aiRuntime.get_label_count());
+#endif
+}
 
 /**
  * @brief Create file to save inference results
@@ -543,13 +585,7 @@ int create_inference_result_file_SD() {
         session_folder_created = createSessionFolder();
     }
 
-    ei_results_filename = "/sdcard/eloc/";
-    ei_results_filename += gSessionIdentifier;
-    ei_results_filename += "/EI-results-ID-";
-    ei_results_filename += EI_CLASSIFIER_PROJECT_ID;
-    ei_results_filename += "-DEPLOY-VER-";
-    ei_results_filename += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
-    ei_results_filename += ".csv";
+    ei_results_filename = buildInferenceResultFilename();
 
     if (1) {
         ESP_LOGI(TAG, "EI results filename: %s", ei_results_filename.c_str());
@@ -563,6 +599,7 @@ int create_inference_result_file_SD() {
 
     String file_string;
 
+#ifdef EDGE_IMPULSE_ENABLED
     // Possible other details to include in file
     if (0) {
         file_string += "EI Project ID, ";
@@ -574,13 +611,14 @@ int create_inference_result_file_SD() {
         file_string += "\nEI Project deploy version, ";
         file_string += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
     }
+#endif
 
     // Column headers
     file_string += "\n\nHour:Min:Sec Day, Month Date Year";
 
-    for (auto i = 0; i < EI_CLASSIFIER_NN_OUTPUT_COUNT; i++) {
+    for (auto i = 0; i < inferenceResultColumns(); i++) {
         file_string += " ,";
-        file_string += edgeImpulse.get_ei_classifier_inferencing_categories(i);
+        file_string += aiRuntime.get_ei_classifier_inferencing_categories(i);
     }
 
     file_string += "\n";
@@ -636,21 +674,109 @@ int save_inference_result_SD(String results_string) {
 }
 
 /**
+ * @brief What happens with one classified window, for both AI runtimes
+ *
+ * Threshold (strictly greater), start of a single recording, observation window, event count for
+ * LoRa, and the SD results CSV row. Runs on the AI task.
+ *
+ * @param labels  label names, index 0 = background
+ * @param values  per-label scores 0..1
+ * @param count   number of labels
+ */
+static void handleClassification(const char* const* labels, const float* values, size_t count,
+                                 int dspMs, int classificationMs, int anomalyMs) {
+    // Read on every window, so a threshold/observation-window change from the app applies to the
+    // next window without a reboot
+    auto inferenceConfig = getInferenceConfig();
+    float threshold = inferenceConfig.threshold / 100.0f; // Convert from 0-100 to 0.0-1.0
+
+    if (count > AI_LABEL_CAPACITY) {
+        count = AI_LABEL_CAPACITY;
+    }
+
+    ESP_LOGI(TAG, "(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
+            dspMs, classificationMs, anomalyMs);
+
+    String file_str;
+    const char* detectedLabels[AI_LABEL_CAPACITY];
+    float detectedValues[AI_LABEL_CAPACITY];
+    uint32_t numEventsDetected = 0;
+
+    for (size_t ix = 0; ix < count; ix++) {
+        ESP_LOGI(TAG, "    %s: %f", labels[ix], values[ix]);
+
+        // Build string to save to inference results file
+        file_str += ", ";
+        file_str += values[ix];
+
+        /**
+         * If target sound detected, check against new inference configuration
+         * Note: 'Target' sound is any sound that is not classified as 'background', 'other' or 'others'
+         * (a TFLM model's label 0 is always one of these, its package is rejected otherwise)
+         */
+
+        if ((strcmp(labels[ix], "background") != 0) &&
+            (strcmp(labels[ix], "other") != 0) &&
+            (strcmp(labels[ix], "others") != 0) &&
+            values[ix] > threshold) {
+
+            ESP_LOGI(TAG, "Detection above threshold: %s (%.3f > %.3f)",
+                    labels[ix], values[ix], threshold);
+
+            // Always save detections above threshold to CSV and start recording (immediate actions)
+            detectedLabels[numEventsDetected] = labels[ix];
+            detectedValues[numEventsDetected] = values[ix];
+            numEventsDetected++;
+
+            // Start recording immediately for every detection
+            if (wav_writer.wav_recording_in_progress == false &&
+                wav_writer.get_mode() == WAVFileWriter::Mode::single &&
+                sd_card.checkSDCard() == ESP_OK) {
+                start_sound_recording();
+            }
+
+            // Add detection to window and check if criteria are met for additional actions
+            uint32_t currentTime = timeObject.getEpoch();
+            aiRuntime.addDetectionToWindow(currentTime);
+
+            if (aiRuntime.checkDetectionCriteria(currentTime)) {
+                ESP_LOGI(TAG, "Detection criteria met - triggering additional actions");
+                aiRuntime.increment_detectedEvents();
+
+                // Clear detection window after successful detection
+                aiRuntime.clearDetectionWindow();
+            }
+        }
+    }
+
+    // Always update event info for LoRa messaging if any detections occurred
+    if (numEventsDetected > 0) {
+        aiRuntime.updateEventInfo(detectedLabels, detectedValues, numEventsDetected);
+    }
+
+    file_str += "\n";
+    // Save results to CSV if any detection above threshold occurred (not just LoRa criteria)
+    if (save_ai_results_to_sd == true &&
+        sd_card.checkSDCard() == ESP_OK &&
+        numEventsDetected > 0) {
+        save_inference_result_SD(file_str);
+    }
+}
+
+#ifdef EDGE_IMPULSE_ENABLED
+
+/**
  * @brief This callback allows a thread created in EdgeImpulse to
  *        run the inference. Required due to namespace issues, static implementations etc..
  */
 void ei_callback_func() {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
-    // Get inference configuration at function start
-    auto inferenceConfig = getInferenceConfig();
-    float threshold = inferenceConfig.threshold / 100.0f; // Convert from 0-100 to 0.0-1.0
-
     if (ai_run_enable == true &&
-        edgeImpulse.get_status() == EdgeImpulse::Status::running) {
-        
+        aiRuntime.get_status() == AiRuntime::Status::running) {
+
         ESP_LOGV(TAG, "Running inference");
-        bool m = edgeImpulse.microphone_inference_record();
+        bool m = aiRuntime.microphone_inference_record();
         // Blocking function - unblocks when buffer is full
         if (!m) {
             ESP_LOGE(TAG, "ERR: Failed to record audio...");
@@ -681,9 +807,9 @@ void ei_callback_func() {
                  heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
 
         #ifdef AI_CONTINUOUS_INFERENCE
-            EI_IMPULSE_ERROR r = edgeImpulse.run_classifier_continuous(&signal, &result);
+            EI_IMPULSE_ERROR r = aiRuntime.run_classifier_continuous(&signal, &result);
         #else
-            EI_IMPULSE_ERROR r = edgeImpulse.run_classifier(&signal, &result);
+            EI_IMPULSE_ERROR r = aiRuntime.run_classifier(&signal, &result);
         #endif  // AI_CONTINUOUS_INFERENCE
 
         ESP_LOGI(TAG, "Cycles taken to run inference = %d", (cpu_hal_get_cycle_count() - startCounter));
@@ -694,8 +820,6 @@ void ei_callback_func() {
             return;
         }
 
-        auto target_sound_detected = false;
-
         #ifdef AI_CONTINUOUS_INFERENCE
             if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))  // NOLINT
         #else
@@ -703,74 +827,14 @@ void ei_callback_func() {
             if (1)  // NOLINT
         #endif  //  AI_CONTINUOUS_INFERENCE
             {
-                ESP_LOGI(TAG, "(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
-                        result.timing.dsp, result.timing.classification, result.timing.anomaly);
-
-                String file_str;
-                String detectedSounds = "";
-                ei_impulse_result_classification_t detectedEvents[EI_CLASSIFIER_LABEL_COUNT];
-                uint32_t numEventsDetected = 0;
-
+                const char* labels[EI_CLASSIFIER_LABEL_COUNT];
+                float values[EI_CLASSIFIER_LABEL_COUNT];
                 for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
-                    ESP_LOGI(TAG, "    %s: %f", result.classification[ix].label, result.classification[ix].value);
-
-                    // Build string to save to inference results file
-                    file_str += ", ";
-                    file_str += result.classification[ix].value;
-
-                    /**
-                     * If target sound detected, check against new inference configuration
-                     * Note: 'Target' sound is any sound that is not classified as 'background', 'other' or 'others'
-                     */
-                    
-                    if ((strcmp(result.classification[ix].label, "background") != 0) &&
-                        (strcmp(result.classification[ix].label, "other") != 0) &&
-                        (strcmp(result.classification[ix].label, "others") != 0) &&
-                        result.classification[ix].value > threshold) {
-                        
-                        ESP_LOGI(TAG, "Detection above threshold: %s (%.3f > %.3f)", 
-                                result.classification[ix].label, result.classification[ix].value, threshold);
-                        
-                        // Always save detections above threshold to CSV and start recording (immediate actions)
-                        detectedEvents[numEventsDetected] = result.classification[ix];
-                        numEventsDetected++;
-                        
-                        // Start recording immediately for every detection
-                        if (wav_writer.wav_recording_in_progress == false &&
-                            wav_writer.get_mode() == WAVFileWriter::Mode::single &&
-                            sd_card.checkSDCard() == ESP_OK) {
-                            start_sound_recording();
-                        }
-                        
-                        // Add detection to window and check if criteria are met for additional actions
-                        uint32_t currentTime = timeObject.getEpoch();
-                        edgeImpulse.addDetectionToWindow(currentTime);
-                        
-                        if (edgeImpulse.checkDetectionCriteria(currentTime)) {
-                            ESP_LOGI(TAG, "Detection criteria met - triggering additional actions");
-                            edgeImpulse.increment_detectedEvents();
-                            target_sound_detected = true;
-                            
-                            // Clear detection window after successful detection
-                            edgeImpulse.clearDetectionWindow();
-                        }
-                    }
+                    labels[ix] = result.classification[ix].label;
+                    values[ix] = result.classification[ix].value;
                 }
-                
-                // Always update event info for LoRa messaging if any detections occurred
-                if (numEventsDetected > 0) {
-                    edgeImpulse.updateEventInfo(detectedEvents, numEventsDetected);
-                }
-
-                // ESP_LOGI(TAG, "detectedEvents = %d", edgeImpulse.get_detectedEvents());
-
-                file_str += "\n";
-                // Save results to CSV if any detection above threshold occurred (not just LoRa criteria)
-                if (save_ai_results_to_sd == true &&
-                    sd_card.checkSDCard() == ESP_OK &&
-                    numEventsDetected > 0) {
-                    save_inference_result_SD(file_str);
-                }
+                handleClassification(labels, values, EI_CLASSIFIER_LABEL_COUNT,
+                                     result.timing.dsp, result.timing.classification, result.timing.anomaly);
 
             #if EI_CLASSIFIER_HAS_ANOMALY == 1
                 ESP_LOGI(TAG, "    anomaly score: %f", result.anomaly);
@@ -785,7 +849,48 @@ void ei_callback_func() {
     ESP_LOGV(TAG, "Inference complete");
 }
 
-#endif
+static void (*const ai_callback_func)() = ei_callback_func;
+
+#endif  // EDGE_IMPULSE_ENABLED
+
+#ifdef ELOC_TFLM_ENABLED
+
+/**
+ * @brief Called by the ElocDetector AI task for every completed window
+ */
+void tflm_callback_func() {
+    ESP_LOGV(TAG, "Func: %s", __func__);
+
+    if (ai_run_enable == true &&
+        aiRuntime.get_status() == AiRuntime::Status::running) {
+
+        // Returns at once: the AI task only calls back when a window is complete
+        aiRuntime.microphone_inference_record();
+
+        float probs[AI_MAX_LABELS];
+        uint32_t dspMs = 0;
+        uint32_t nnMs = 0;
+        if (aiRuntime.classify_window(probs, dspMs, nnMs) != AiRuntime::WindowResult::Classified) {
+            // Silent window (silence guard) or classifier error: no detection, nothing written
+            return;
+        }
+
+        const uint32_t count = aiRuntime.get_label_count();
+        const char* labels[AI_MAX_LABELS];
+        for (uint32_t ix = 0; ix < count; ix++) {
+            labels[ix] = aiRuntime.get_ei_classifier_inferencing_categories(ix);
+        }
+        handleClassification(labels, probs, count, static_cast<int>(dspMs), static_cast<int>(nnMs), 0);
+    }
+
+    ESP_LOGV(TAG, "Inference complete");
+}
+
+static void (*const ai_callback_func)() = tflm_callback_func;
+
+#endif  // ELOC_TFLM_ENABLED
+
+#endif  // ELOC_AI_ENABLED
 
 /**
  * @brief Re-arm everything that lives on the SD card after a card was inserted at runtime
@@ -801,7 +906,7 @@ void handleSdCardRemounted() {
 
     // Nothing from the previous card exists here
     session_folder_created = false;
-    #ifdef EDGE_IMPULSE_ENABLED
+    #ifdef ELOC_AI_ENABLED
         inference_result_file_SD_available = false;
         save_ai_results_to_sd = true;
     #endif
@@ -886,19 +991,19 @@ void prepareCyclicDeepSleep() {
     const dutyCycleConfig_t& dcCfg = getDutyCycleConfig();
 
     // Sync detection count to RTC before sleep
-    #ifdef EDGE_IMPULSE_ENABLED
+    #ifdef ELOC_AI_ENABLED
     {
-        uint32_t thisWakeDetections = edgeImpulse.get_detectedEvents();
+        uint32_t thisWakeDetections = aiRuntime.get_detectedEvents();
         rtc_duty_cycle.totalDetections += thisWakeDetections;
         ESP_LOGI(TAG, "This wake detections: %u, total across cycles: %u",
             thisWakeDetections, rtc_duty_cycle.totalDetections);
     }
 
     // Stop AI inference if running
-    if (edgeImpulse.get_status() == EdgeImpulse::Status::running) {
+    if (aiRuntime.get_status() == AiRuntime::Status::running) {
         ESP_LOGI(TAG, "Stopping AI inference for sleep");
         ai_run_enable = false;
-        edgeImpulse.set_status(EdgeImpulse::Status::not_running);
+        aiRuntime.set_status(AiRuntime::Status::not_running);
         delay(100); // Give inference thread time to stop
     }
     #endif
@@ -1364,6 +1469,10 @@ void app_main(void) {
 
 #endif
 
+#ifdef ELOC_TFLM_ENABLED
+    ESP_LOGI(TAG, "TFLite Micro runtime enabled (model compiled in)");
+#endif
+
     // On timer wake (duty cycle), the RTC hardware maintains accurate time during deep sleep.
     // Only set build time on fresh boot — on timer wake, just set the internal reference
     // without calling settimeofday() which would reset the correct RTC time.
@@ -1507,25 +1616,13 @@ void app_main(void) {
 
     // On timer wake, restore session ID from RTC so all duty cycle wakes
     // share the same session folder and append to the same CSV file.
+    bool sessionRestored = false;
     if (gIsTimerWake && rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC
         && rtc_duty_cycle.sessionId[0] != '\0') {
         gSessionIdentifier = String(rtc_duty_cycle.sessionId);
         session_folder_created = true;  // Folder already exists from initial session
+        sessionRestored = true;
         ESP_LOGI(TAG, "Timer wake: restored session ID from RTC: %s", gSessionIdentifier.c_str());
-
-        #ifdef EDGE_IMPULSE_ENABLED
-        // Build the CSV filename so save_inference_result_SD() can append directly
-        // without calling create_inference_result_file_SD() which would overwrite with headers
-        ei_results_filename = "/sdcard/eloc/";
-        ei_results_filename += gSessionIdentifier;
-        ei_results_filename += "/EI-results-ID-";
-        ei_results_filename += EI_CLASSIFIER_PROJECT_ID;
-        ei_results_filename += "-DEPLOY-VER-";
-        ei_results_filename += EI_CLASSIFIER_PROJECT_DEPLOY_VERSION;
-        ei_results_filename += ".csv";
-        inference_result_file_SD_available = true;  // Skip header re-creation, just append
-        ESP_LOGI(TAG, "Timer wake: will append to existing CSV: %s", ei_results_filename.c_str());
-        #endif
     }
 
     // Setup persistent logging only if SD card is mounted
@@ -1560,6 +1657,28 @@ void app_main(void) {
     // Queue for AI requests
     rec_ai_evt_queue = xQueueCreate(10, sizeof(bool));
     xQueueReset(rec_ai_evt_queue);
+
+#ifdef ELOC_TFLM_ENABLED
+    // Load the model and allocate every AI buffer now, before LoRa and Bluetooth take their share of
+    // the heap; nothing is allocated per window later. Runs on a timer wake too, because AI resumes
+    // there (the load time is logged). A rejected model is logged and reported in status (aiError);
+    // AI then refuses to start, the rest of the firmware runs normally.
+    if (aiRuntime.loadModel()) {
+        aiRuntime.output_inferencing_settings();
+        aiRuntime.buffers_setup(aiRuntime.get_window_samples());
+    }
+#endif
+
+#ifdef ELOC_AI_ENABLED
+    if (sessionRestored) {
+        // Build the CSV filename so save_inference_result_SD() can append directly
+        // without calling create_inference_result_file_SD() which would overwrite with headers.
+        // Not before this point: the TFLM file name carries the job id of the loaded model.
+        ei_results_filename = buildInferenceResultFilename();
+        inference_result_file_SD_available = true;  // Skip header re-creation, just append
+        ESP_LOGI(TAG, "Timer wake: will append to existing CSV: %s", ei_results_filename.c_str());
+    }
+#endif
 
 
     ESP_LOGI(TAG, "Setup LoraWAN");
@@ -1702,12 +1821,12 @@ void app_main(void) {
 
 #ifdef EDGE_IMPULSE_ENABLED
 
-    auto s = edgeImpulse.get_aiModel();
+    auto s = aiRuntime.get_aiModel();
     ESP_LOGI(TAG, "Edge impulse model version: %s", s.c_str());
-    edgeImpulse.output_inferencing_settings();
+    aiRuntime.output_inferencing_settings();
 
     if (0) {
-        edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+        aiRuntime.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
         // TODO: This test now moved to unit test (test_target_edge-impulse) - could remove
 
         // Run stored audio samples through the model to test it
@@ -1736,7 +1855,7 @@ void app_main(void) {
             for (auto test_sample_count = 0, inference_buffer_count = 0; (test_sample_count < TEST_SAMPLE_LENGTH) &&
                     (inference_buffer_count < EI_CLASSIFIER_RAW_SAMPLE_COUNT); test_sample_count++) {
                 if (skip_current >= ei_skip_rate) {
-                    edgeImpulse.inference.buffers[0][inference_buffer_count++] = test_array[i][test_sample_count];
+                    aiRuntime.inference.buffers[0][inference_buffer_count++] = test_array[i][test_sample_count];
                     skip_current = 1;
                 } else {
                     skip_current++;
@@ -1745,11 +1864,11 @@ void app_main(void) {
 
             // Mark buffer as ready
             // Mark active buffer as inference.buffers[1], inference run on inactive buffer
-            edgeImpulse.inference.buf_select = 1;
-            edgeImpulse.inference.buf_count = 0;
-            edgeImpulse.inference.buf_ready = 1;
+            aiRuntime.inference.buf_select = 1;
+            aiRuntime.inference.buf_count = 0;
+            aiRuntime.inference.buf_ready = 1;
 
-            EI_IMPULSE_ERROR r = edgeImpulse.run_classifier(&signal, &result);
+            EI_IMPULSE_ERROR r = aiRuntime.run_classifier(&signal, &result);
             if (r != EI_IMPULSE_OK) {
                 ESP_LOGW(TAG, "ERR: Failed to run classifier (%d)", r);
                 return;
@@ -1772,13 +1891,13 @@ void app_main(void) {
         }
 
         // Free buffers as the buffer size for continuous & non-continuous differs
-        edgeImpulse.free_buffers();
+        aiRuntime.free_buffers();
     }
 
     #ifdef AI_CONTINUOUS_INFERENCE
-        edgeImpulse.buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
+        aiRuntime.buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
     #else
-        edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+        aiRuntime.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
     #endif  // AI_CONTINUOUS_INFERENCE
 
     #endif  // EDGE_IMPULSE_ENABLED
@@ -1811,7 +1930,7 @@ void app_main(void) {
         // writer up then.
         ESP_LOGE(TAG, "SD card not mounted, cannot create WAVFileWriter");
             wav_writer.set_mode(WAVFileWriter::Mode::disabled);  // Default is disabled anyway
-        #ifdef EDGE_IMPULSE_ENABLED
+        #ifdef ELOC_AI_ENABLED
             save_ai_results_to_sd = false;
         #endif
     }
@@ -1819,16 +1938,27 @@ void app_main(void) {
     #ifdef EDGE_IMPULSE_ENABLED
         #ifdef AI_CONTINUOUS_INFERENCE
             // Init static vars
-            edgeImpulse.run_classifier_init();
-            edgeImpulse.buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
+            aiRuntime.run_classifier_init();
+            aiRuntime.buffers_setup(EI_CLASSIFIER_SLICE_SIZE);
         #else
-            edgeImpulse.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
+            aiRuntime.buffers_setup(EI_CLASSIFIER_RAW_SAMPLE_COUNT);
         #endif  // AI_CONTINUOUS_INFERENCE
 
-        input.register_ei_inference(&edgeImpulse.getInference(), EI_CLASSIFIER_FREQUENCY);
-        // edgeImpulse.set_status(EdgeImpulse::Status::running);
-        // edgeImpulse.start_ei_thread(ei_callback_func);
+        input.register_ei_inference(&aiRuntime.getInference(), EI_CLASSIFIER_FREQUENCY);
+        // aiRuntime.set_status(AiRuntime::Status::running);
+        // aiRuntime.start_ei_thread(ei_callback_func);
+    #endif
 
+    #ifdef ELOC_TFLM_ENABLED
+        // The buffers were set up with the model; decimate from the I2S rate to the model's. Nothing
+        // is registered without a model (the sampler then skips inference), and start_ei_thread()
+        // refuses an I2S rate that is not a whole multiple of the model's.
+        if (aiRuntime.model_ready()) {
+            input.register_ei_inference(&aiRuntime.getInference(), aiRuntime.get_sample_rate());
+        }
+    #endif
+
+    #ifdef ELOC_AI_ENABLED
         // Auto-start AI on timer wake (duty cycle mode), but only if AI was enabled before
         // sleep. recordOn_detectOff duty-cycles audio recording with no AI, so don't spin it up.
         if (gIsTimerWake && getDutyCycleConfig().enable && rtc_duty_cycle.aiEnabled) {
@@ -1938,7 +2068,7 @@ void app_main(void) {
             start_sound_recording();
         }
 
-        #ifdef EDGE_IMPULSE_ENABLED
+        #ifdef ELOC_AI_ENABLED
 
         // Check for deferred AI start (non-blocking)
         // When AI mode is enabled via BT, the actual thread start is deferred by a few seconds
@@ -1953,16 +2083,21 @@ void app_main(void) {
 
         if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);
-            auto ei_status = (edgeImpulse.get_status() == EdgeImpulse::Status::running ? "running" : "not running");
-            ESP_LOGI(TAG, "EI current status = %s (%d)", ei_status, static_cast<int>(edgeImpulse.get_status()));
+            auto ei_status = (aiRuntime.get_status() == AiRuntime::Status::running ? "running" : "not running");
+            ESP_LOGI(TAG, "EI current status = %s (%d)", ei_status, static_cast<int>(aiRuntime.get_status()));
 
-            if (ai_run_enable == false && (edgeImpulse.get_status() == EdgeImpulse::Status::running)) {
+            if (ai_run_enable == false && (aiRuntime.get_status() == AiRuntime::Status::running)) {
                 ESP_LOGI(TAG, "Stopping EI thread");
-                edgeImpulse.set_status(EdgeImpulse::Status::not_running);
-            } else if (ai_run_enable == true && (edgeImpulse.get_status() == EdgeImpulse::Status::not_running)) {
+                aiRuntime.set_status(AiRuntime::Status::not_running);
+            } else if (ai_run_enable == true && (aiRuntime.get_status() == AiRuntime::Status::not_running)) {
                 ESP_LOGI(TAG, "Starting EI thread");
-                if (edgeImpulse.start_ei_thread(ei_callback_func) != ESP_OK) {
+                if (aiRuntime.start_ei_thread(ai_callback_func) != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to start EI thread");
+                    #ifdef ELOC_TFLM_ENABLED
+                        // No usable model, or the I2S rate does not fit it (status aiError says
+                        // which): report detection as off instead of pretending it runs
+                        ai_run_enable = false;
+                    #endif
                     // Should this be retried?
                     delay(500);
                 }
@@ -1973,7 +2108,7 @@ void app_main(void) {
         // Delay longer if not EI enabled
         delay(300);
 
-#endif  // EDGE_IMPULSE_ENABLED
+#endif  // ELOC_AI_ENABLED
 
 #ifdef USE_GPS
         // Self-configure the local timezone from a GPS fix (one-shot, app-set TZ wins), keep the

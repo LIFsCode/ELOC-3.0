@@ -1,6 +1,151 @@
+# TFLM runtime (`esp32dev-tflm`)
 
+The `esp32dev-tflm` build runs AI detection on **TensorFlow Lite Micro** directly, with no Edge
+Impulse code linked. It runs the **device model package** that ELOC Model Training in the web app
+builds after every training job. The format is `ELOC_management/DEVICE_MODEL_PACKAGE.md`, and the
+plan with every decision is `README-TFLM-Runtime-Plan.md`.
 
-# To build the ai 'branch'/ version of this project:
+For the field user nothing changes:
+- same Bluetooth commands;
+- same inference settings (`threshold`, `observationWindowS`, `requiredDetections`), still read on
+  every window, so a change from the app applies without a reboot;
+- same SD results CSV format, LoRa event message and duty cycle.
+
+`esp32dev-ei` below stays the default and the fallback build until the TFLM build has proved itself
+in the field (Phase 3 of the plan).
+
+## Build
+
+```bash
+pio run -e esp32dev-tflm
+```
+
+Do a **Full Clean** (`pio run -e esp32dev-tflm -t clean`) after replacing the model header, and
+when switching between `esp32dev-ei` and `esp32dev-tflm`.
+
+## Updating the model
+
+1. In the web app: Tools → ELOC Model Training → the experiment → **Download package**
+   (`eloc_device_package.zip`).
+2. Replace `lib/eloc_ml/model/eloc_model_data.h` with the one from the zip.
+3. Replace `test/fixtures/eloc_model.tflite` and `test/fixtures/eloc_golden_vectors.bin` from the
+   same zip. The native test checks that the header and the fixture are the same model.
+4. Full Clean, then build `esp32dev-tflm`.
+
+The model carries its whole configuration inside it: labels, sample rate, window, mel front-end and
+quantization. Nothing else in the firmware changes with the model. A model the firmware cannot run
+is rejected at boot with a readable reason. The reason is logged and shown in status
+`detection.aiError`, AI refuses to start, and everything else runs normally. Rejected models
+include:
+- a newer package format;
+- an unsupported operator;
+- more than `AI_MAX_LABELS` (8) labels;
+- overlapping or averaged windows.
+
+## Tests
+
+```bash
+# On the PC: package parser + mel front-end against the package's golden vectors
+pio test -e generic_unit_tests -f test_generic_mel_frontend
+
+# On the device: whole classifier on the golden vectors, with timings and memory.
+# First copy test/fixtures/eloc_golden_vectors.bin to the SD card root.
+pio test -e target_tflm_tests
+```
+
+The on-target test prints three things:
+- DSP and NN time per window at 240 MHz;
+- `arena_used_bytes()`;
+- internal and PSRAM heap before and after.
+
+It asserts the quantized model input within ±1 and the raw output within ±2 of the reference.
+
+## What the device reports
+
+Boot log (tag `ElocDetector`):
+- the model name, job id and creation date;
+- the load time;
+- the arena used and allocated;
+- the heap held while AI is off;
+- the recommended detection settings, marked "not applied".
+
+When AI starts, it logs:
+- the front-end buffers;
+- the decimation (e.g. `I2S 16000 Hz -> model 16000 Hz`);
+- the AI task's stack high-water mark after the first window.
+
+Status (`getStatus`, object `session.detection`):
+
+| Key | Meaning |
+|---|---|
+| `aiRuntime` | `"tflm"` (the Edge Impulse build reports `"ei"`) |
+| `aiModel` | model name from ELOC Model Training |
+| `aiModelId`, `aiModelCreated` | training job id and creation time |
+| `aiLabels` | label list, background first |
+| `aiModelDefaults` | the model's recommended `threshold` (0–100), `observationWindowS`, `requiredDetections` for its first target label. Shown only, never applied: the device's own inference config always wins |
+| `aiArenaUsed` | bytes of the tensor arena the model really uses |
+| `aiLastMs` | `{dsp, nn}` milliseconds of the last classified window |
+| `silentWindows` | windows skipped by the silence guard since boot |
+| `aiError` | why AI cannot run; empty when fine |
+
+`device.buildVariant` stays `"ei"` in the TFLM build. The app's variant guard therefore lets a
+unit switch between the two AI builds from the app's file picker.
+
+Other outputs:
+- **SD results CSV**: `EI-results-TFLM-<jobId>.csv` in the session folder, with the same header
+  style and rows as the EI build and one column per label. The `EI-results` prefix keeps the web
+  app's Model Results Comparison loading it.
+- **LoRa**: unchanged. Labels are truncated to 5 characters (`chainsaw` → `chain`).
+
+## Silence guard
+
+A window whose peak |sample| is at most `AI_SILENCE_PEAK` (16 LSB, about -66 dBFS) is not
+classified. It counts as no detection and adds to `silentWindows`, logged at most once a minute.
+It is a **dead-mic safety net and indicator**:
+- a muted or disconnected microphone is not scored, and shows up in status;
+- a model trained without silent audio can score digital silence as a detection (the first
+  chainsaw model scores 0.95 on it).
+
+The real fix for the second point is silent and low-level windows in every model's background
+training data, which is a web-app worker task.
+
+## Limits (Phase 1)
+
+- One model at a time, compiled in. Loading one from the SD card or pushing it from the app is
+  Phase 2; the loader already takes any memory buffer.
+- Back-to-back, non-overlapping windows with no score averaging, as the EI build runs today
+  (`AI_CONTINUOUS_INFERENCE` off).
+- The I2S sample rate must be a whole multiple of the model's (e.g. 16 or 32 kHz for a 16 kHz
+  model). The sampler keeps every Nth sample with no filter, which is exactly what the model was
+  trained on (`training_resampling: "firmware"`). Any other rate is refused at AI start, with the
+  reason in `aiError`.
+
+## Code map
+
+| Where | What |
+|---|---|
+| `lib/eloc_ml/` | Portable core, also built on the PC for the native test: `ModelPackage` (parse and validate the embedded config), `MelFrontend` + `RealFft` (spec v1 front-end, KissFFT), `TflmClassifier` (arena, op resolver, Invoke), `GoldenVectors`, `CompiledModel` (the only file that includes the model header) |
+| `lib/eloc_detector/` | `ElocDetector`: the AI task, audio buffers, silence guard, event counters. Same public names as `EdgeImpulse` |
+| `include/ai_runtime.h` | `AiRuntime` = `EdgeImpulse` or `ElocDetector`; the shared code uses `aiRuntime` |
+| `src/main.cpp` `handleClassification()` | Per-window detection rules shared by both runtimes: threshold, recording start, observation window, event count, CSV row |
+| `lib/tflite-micro/`, `lib/esp-nn/` | esp-tflite-micro v1.3.4 and ESP-NN v1.1.2, unchanged; see `lib/tflite-micro/ELOC_VENDOR.md` |
+
+The ops the firmware registers (`registerOps()` in `TflmClassifier.cpp`) must equal
+`SUPPORTED_OPS` in the training worker's `device_package.py`. The worker marks any model using
+another op as not firmware-ready, so change both or neither.
+
+Memory:
+- **PSRAM, from boot:** the model's arena, features and audio double buffer. Nothing is allocated
+  per window.
+- **Internal RAM (~12.6 KB), only while the AI task runs:** the FFT plan and per-frame buffers. It
+  falls back to PSRAM if internal RAM is short.
+- **AI task stack:** `AI_TASK_STACK_SIZE` (8 KB).
+
+---
+
+# Edge Impulse build (`esp32dev-ei`, current default and fallback)
+
+## To build the ai 'branch'/ version of this project:
 Enter the folder containing the project (e.g. cd ~/Documents/PlatformIO/Projects/eloc610LowPowerPartition)
 
 1. git checkout ai

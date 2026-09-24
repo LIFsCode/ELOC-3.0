@@ -1,5 +1,15 @@
 ﻿# Active Context
 
+## Planned next: TFLite Micro runtime (Edge Impulse replacement, Phase 1)
+
+Not started. Replaces the Edge Impulse library with a direct TensorFlow Lite Micro runtime.
+- It runs the INT8 "device model package" that the web app's ELOC Model Training tool builds after
+  every job. Phase 0 (web side) was deployed and verified on real jobs by 2026-09-24.
+- The implementation plan for another agent is **`README-TFLM-Runtime-Plan.md`**: tasks T0–T8,
+  verified toolchain facts (IDF 4.4.7 → esp-tflite-micro v1.3.4 is the last compatible tag; GCC 8.4
+  is the compile risk), fixtures, decisions and acceptance.
+- `esp32dev-ei` stays the default and the fallback build.
+
 ## Current Work Focus
 
 **Bluetooth unconnectable while recording — STILL OPEN (2026-08-04/05, V1.66 → V1.67).**

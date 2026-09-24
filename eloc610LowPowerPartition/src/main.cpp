@@ -1213,6 +1213,30 @@ static void manageGpsWhileAwake(bool& gpsTzApplied) {
         return;
     }
 
+    // Coverage survey running: hold the GPS powered for the whole session. A survey IS a position
+    // measurement — every sample has to carry where it was taken — so this is the one mode where
+    // the burst cadence below is actively wrong. Without this block the first fix satisfies the
+    // burst manager, which powers the module off ~40 s in for GPS_RESYNC_INTERVAL_S; TinyGPS++ then
+    // latches the last position (location.isValid() never goes false again), so every later point
+    // silently inherits it and a whole walked transect collapses onto one spot with hasFix still
+    // true. Survey mode is handheld and already bounded by surveyCfg.sessionTimeoutMin (2 h), and
+    // is exempt from duty-cycle sleep for the same reason — that exemption just never covered the
+    // GPS. Placed after the intruder block so theft tracking keeps its movement-gated power
+    // management if the two ever overlap; today they cannot, since a running survey suppresses
+    // knock detection entirely. On session end the still-powered GPS is adopted by the burst logic
+    // below via the powerOnUs==0 path, exactly as it is after a BT disconnect.
+    if (ElocLora::GetInstance().surveyIsActive()) {
+        if (!gps.isInitialized()) {
+            static int64_t lastSurveyInitUs = 0;
+            if (esp_timer_get_time() - lastSurveyInitUs > 10 * 1000000LL) {  // failed-init backoff
+                ESP_LOGI(TAG, "Survey active: powering GPS on for position logging");
+                lastSurveyInitUs = esp_timer_get_time();
+                gps.init();
+            }
+        }
+        return;
+    }
+
     // (2) Burst power management — skipped entirely (GPS left powered) when the interval is disabled.
     if (GPS_RESYNC_INTERVAL_S <= 0) {
         return;

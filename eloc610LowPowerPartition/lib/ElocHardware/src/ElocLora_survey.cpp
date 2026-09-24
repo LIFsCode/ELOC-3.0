@@ -54,6 +54,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <time.h>
 
 #include "ElocLora.hpp"
 #include "ElocConfig.hpp"
@@ -202,9 +203,18 @@ bool ElocLora::surveyBeginSession() {
         sd_card.releaseFs();
         return false;
     }
-    // Device local time (app setTime + GPS trim), matching the WAV and detection-CSV timestamps.
-    // Deliberately not labelled "utc" - this clock carries the configured timezone offset.
-    fputs("time,lat,lon,sats,kind,sf,fcnt,margin_db,gw_cnt,level,trigger\n", fp);
+    // UTC, not device local time. Local time is a rendering, and its offset can change DURING a
+    // session: the GPS derives a zone from longitude (which cannot know about DST, so it is an hour
+    // out for half the year in most of Europe) while the app pushes its own with setTime, and the
+    // two fight last-writer-wins. A survey that crosses one of those changes gets a column whose
+    // meaning silently shifts partway down the file. UTC never moves, and it is the same clock as
+    // TTN's received_at - so this column can finally be joined against the server records by time
+    // and not only by frame counter.
+    //
+    // The trailing "clock" column says which source last set the wall clock, because UTC being
+    // stable does not make it CORRECT: rows written before the first GPS sync or app setTime carry
+    // the firmware build time and look perfectly plausible. "build" marks those as untrustworthy.
+    fputs("utc,lat,lon,sats,kind,sf,fcnt,margin_db,gw_cnt,level,trigger,clock\n", fp);
     fclose(fp);
     sd_card.releaseFs();
 
@@ -312,21 +322,43 @@ void ElocLora::surveyWriteCsvRow(const char* kind, const char* trigger, bool has
         snprintf(pos, sizeof(pos), "%.6f,%.6f", lat, lng);
     }
 
+    // ISO-8601 UTC. getEpoch() is gettimeofday() seconds with no offset applied, unlike getTime(),
+    // which renders through getLocalTime() and therefore changes meaning whenever the zone does.
+    // The app's setTime carries an absolute epoch in "seconds" and the timezone separately, so the
+    // UTC written here is right even on a phone-set clock - only the presentation was ever wrong.
+    char utc[24] = "";
+    const time_t nowS = static_cast<time_t>(timeObject.getEpoch());
+    struct tm gm;
+    gmtime_r(&nowS, &gm);
+    strftime(utc, sizeof(utc), "%Y-%m-%dT%H:%M:%SZ", &gm);
+
+    // Which source last set the wall clock. Persisted in RTC, so it survives the duty-cycle wakes
+    // that a long survey sleeps through. "build" means nothing has set it this deployment and the
+    // timestamp on this row is firmware build time - plausible-looking and wrong.
+    const char* clockSrc = "build";
+    if (rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC) {
+        switch (rtc_duty_cycle.clockSource) {
+            case CLOCK_SRC_GPS: clockSrc = "gps"; break;
+            case CLOCK_SRC_APP: clockSrc = "app"; break;
+            default:            clockSrc = "build"; break;
+        }
+    }
+
     // A check with no answer writes empty margin/gwCnt/level fields on purpose: "we asked and
     // heard nothing" has to be distinguishable from "we never asked", both here and on the map.
     if ((strcmp(kind, "check") == 0) && answered) {
-        fprintf(fp, "%s,%s,%u,%s,%u,%u,%u,%u,%d,%s\n",
-                timeObject.getTime("%Y-%m-%d %H:%M:%S").c_str(), pos,
+        fprintf(fp, "%s,%s,%u,%s,%u,%u,%u,%u,%d,%s,%s\n",
+                utc, pos,
                 static_cast<unsigned>(sats),
                 kind, mSurveySF, fCnt,
                 mSurveyLastMargin, mSurveyLastGwCnt,
-                surveyLevelFromMargin(static_cast<int>(mSurveyLastMargin)), trigger);
+                surveyLevelFromMargin(static_cast<int>(mSurveyLastMargin)), trigger, clockSrc);
     } else {
-        fprintf(fp, "%s,%s,%u,%s,%u,%u,,,%s,%s\n",
-                timeObject.getTime("%Y-%m-%d %H:%M:%S").c_str(), pos,
+        fprintf(fp, "%s,%s,%u,%s,%u,%u,,,%s,%s,%s\n",
+                utc, pos,
                 static_cast<unsigned>(sats),
                 kind, mSurveySF, fCnt,
-                (strcmp(kind, "check") == 0) ? "0" : "", trigger);
+                (strcmp(kind, "check") == 0) ? "0" : "", trigger, clockSrc);
     }
 
     fclose(fp);
@@ -671,9 +703,12 @@ void ElocLora::surveyStatusJson(String& out) {
  *****************************************************************************************/
 
 /// Column indices in the survey CSV. Must track the header written by surveyBeginSession().
+/// CSV_CLOCK is appended last on purpose: every existing index keeps its position, so a session
+/// file written by an older firmware still parses here (surveySplitCsv just returns one field
+/// fewer, and every read below is already guarded on the field count).
 enum SurveyCsvCol {
     CSV_TIME = 0, CSV_LAT, CSV_LON, CSV_SATS, CSV_KIND, CSV_SF,
-    CSV_FCNT, CSV_MARGIN, CSV_GWCNT, CSV_LEVEL, CSV_TRIGGER,
+    CSV_FCNT, CSV_MARGIN, CSV_GWCNT, CSV_LEVEL, CSV_TRIGGER, CSV_CLOCK,
     CSV_COLS
 };
 

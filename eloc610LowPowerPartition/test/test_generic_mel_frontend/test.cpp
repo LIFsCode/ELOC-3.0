@@ -98,47 +98,79 @@ void test_compiled_model_matches_fixture() {
 }
 
 void test_package_loads() {
+    // Model-independent: whatever package the fixtures hold, its config must be self-consistent.
+    // (Replace the fixtures together with lib/eloc_ml/model/eloc_model_data.h; see README-ai.md.)
     ModelPackage pkg;
     bool ok = pkg.load(gModel.data, gModel.len);
     TEST_ASSERT_TRUE_MESSAGE(ok, pkg.error());
     TEST_ASSERT_EQUAL_STRING("", pkg.error());
 
-    TEST_ASSERT_EQUAL_STRING("SkRQW4hUFaXslHibnmv9", pkg.jobId());
-    TEST_ASSERT_EQUAL_STRING("ELOC experiment 2026-09-21", pkg.name());
-    TEST_ASSERT_EQUAL_STRING("2026-09-21T19:46:52Z", pkg.createdUtc());
-    TEST_ASSERT_EQUAL(2, pkg.labelCount());
-    TEST_ASSERT_EQUAL_STRING("background", pkg.label(0));
-    TEST_ASSERT_EQUAL_STRING("chainsaw", pkg.label(1));
-    TEST_ASSERT_TRUE(pkg.activation() == OutputActivation::Sigmoid);
-    TEST_ASSERT_EQUAL(1, pkg.outputCount());
-    TEST_ASSERT_EQUAL(16000, pkg.sampleRate());
-    TEST_ASSERT_EQUAL(16000, pkg.windowSamples());
-    TEST_ASSERT_EQUAL(56320, pkg.arenaEstimate());
-
     const FeatureConfig& f = pkg.features();
-    TEST_ASSERT_EQUAL(512, f.frameLength);
-    TEST_ASSERT_EQUAL(256, f.frameStep);
-    TEST_ASSERT_EQUAL(512, f.fftLength);
-    TEST_ASSERT_EQUAL(61, f.nFrames);
-    TEST_ASSERT_EQUAL(64, f.nMels);
-    TEST_ASSERT_TRUE(f.transform == Transform::Log);
-    TEST_ASSERT_EQUAL(1, f.bandStart[0]);
-    TEST_ASSERT_EQUAL(236, f.bandStart[63]);
-    TEST_ASSERT_EQUAL(20, f.bandLength[63]);
-    TEST_ASSERT_EQUAL(499, f.nWeights);  // sum of band_length
+    printf("model \"%s\" job %s created %s\n", pkg.name(), pkg.jobId(), pkg.createdUtc());
+    printf("  %u Hz, window %u, %u frames x %u mels (frame %u, step %u, FFT %u), %u outputs, arena est. %u\n",
+           static_cast<unsigned>(pkg.sampleRate()), static_cast<unsigned>(pkg.windowSamples()),
+           static_cast<unsigned>(f.nFrames), static_cast<unsigned>(f.nMels), static_cast<unsigned>(f.frameLength),
+           static_cast<unsigned>(f.frameStep), static_cast<unsigned>(f.fftLength),
+           static_cast<unsigned>(pkg.outputCount()), static_cast<unsigned>(pkg.arenaEstimate()));
+    for (uint32_t i = 0; i < pkg.labelCount(); i++) {
+        const DetectionDefaults& d = pkg.detectionDefaults(i);
+        printf("  label %u: %s", static_cast<unsigned>(i), pkg.label(i));
+        if (d.present) {
+            printf("  (recommends threshold %.2f, window %u s, %u detections)", d.threshold,
+                   static_cast<unsigned>(d.observationWindowS), static_cast<unsigned>(d.requiredDetections));
+        }
+        printf("\n");
+    }
 
-    TEST_ASSERT_FALSE(pkg.detectionDefaults(0).present);
-    const DetectionDefaults& d = pkg.detectionDefaults(1);
-    TEST_ASSERT_TRUE(d.present);
-    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.75f, d.threshold);
-    TEST_ASSERT_EQUAL(0, d.observationWindowS);
-    TEST_ASSERT_EQUAL(1, d.requiredDetections);
+    TEST_ASSERT_TRUE(strlen(pkg.jobId()) > 0);
+    TEST_ASSERT_TRUE(strlen(pkg.name()) > 0);
+    TEST_ASSERT_TRUE(pkg.labelCount() >= 2 && pkg.labelCount() <= AI_MAX_LABELS);
+    TEST_ASSERT_TRUE(pkg.outputCount() == pkg.labelCount() ||
+                     (pkg.outputCount() == 1 && pkg.labelCount() == 2 &&
+                      pkg.activation() == OutputActivation::Sigmoid));
+    TEST_ASSERT_TRUE(pkg.sampleRate() > 0 && pkg.windowSamples() > 0);
+    TEST_ASSERT_EQUAL(1 + (f.windowSamples - f.frameLength) / f.frameStep, f.nFrames);
+    TEST_ASSERT_TRUE((f.fftLength & (f.fftLength - 1)) == 0 && f.frameLength <= f.fftLength);
 
-    TEST_ASSERT_FLOAT_WITHIN(1e-9f, 0.035510119050741196f, pkg.inputQuant().scale);
-    TEST_ASSERT_EQUAL(-7, pkg.inputQuant().zeroPoint);
-    TEST_ASSERT_FLOAT_WITHIN(1e-9f, 0.00390625f, pkg.outputQuant().scale);
-    TEST_ASSERT_EQUAL(-128, pkg.outputQuant().zeroPoint);
+    uint32_t weights = 0;
+    for (uint32_t m = 0; m < f.nMels; m++) {
+        TEST_ASSERT_TRUE(f.bandStart[m] + f.bandLength[m] <= f.nBins());
+        weights += f.bandLength[m];
+    }
+    TEST_ASSERT_EQUAL(weights, f.nWeights);
+
+    TEST_ASSERT_FALSE(pkg.detectionDefaults(0).present);  // never for the background label
+    TEST_ASSERT_TRUE(pkg.inputQuant().scale > 0.0f && pkg.outputQuant().scale > 0.0f);
 }
+
+namespace {
+
+/// The same number with its last digit changed, so it keeps its length (61 -> 62, 512 -> 513)
+std::string otherNumber(uint32_t v) {
+    std::string s = std::to_string(v);
+    char& last = s.back();
+    last = last == '9' ? '8' : static_cast<char>(last + 1);
+    return s;
+}
+
+/// The same word with its last letter replaced ("log" -> "loq"), so it keeps its length
+std::string otherWord(const char* w) {
+    std::string s = w;
+    s.back() = s.back() == 'q' ? 'z' : 'q';
+    return s;
+}
+
+const char* transformName(Transform t) {
+    switch (t) {
+        case Transform::Linear: return "linear";
+        case Transform::Log: return "log";
+        case Transform::Pcen: return "pcen";
+        case Transform::PcenLog: return "pcen+log";
+    }
+    return "";
+}
+
+}  // namespace
 
 void test_package_rejects() {
     ModelPackage pkg;
@@ -159,31 +191,42 @@ void test_package_rejects() {
     TEST_ASSERT_FALSE(pkg.load(gModel.data, gModel.len / 2));
     printf("truncated: %s\n", pkg.error());
 
-    // Config edits, each the same length so the flatbuffer stays valid
-    struct Edit {
-        const char* from;
-        const char* to;
+    // Config edits built from the loaded model, each keeping its length so the flatbuffer stays
+    // valid. The embedded JSON is compact ("key":value, no spaces).
+    TEST_ASSERT_TRUE_MESSAGE(pkg.load(gModel.data, gModel.len), pkg.error());
+    const FeatureConfig& f = pkg.features();
+    const char* activation = pkg.activation() == OutputActivation::Sigmoid ? "sigmoid" : "softmax";
+    auto num = [](const char* key, uint32_t v) { return std::string("\"") + key + "\":" + std::to_string(v); };
+    auto numBad = [](const char* key, uint32_t v) { return std::string("\"") + key + "\":" + otherNumber(v); };
+    auto str = [](const char* key, const char* v) { return std::string("\"") + key + "\":\"" + v + "\""; };
+    auto strBad = [](const char* key, const char* v) {
+        return std::string("\"") + key + "\":\"" + otherWord(v) + "\"";
     };
-    const Edit edits[] = {
+
+    struct Edit {
+        std::string from;
+        std::string to;
+    };
+    const std::vector<Edit> edits = {
         {"\"format_version\":1", "\"format_version\":2"},
         {"\"eloc-model\"", "\"eloc-modex\""},
         {"\"spec_version\":1", "\"spec_version\":3"},
-        {"\"sigmoid\"", "\"sigmoix\""},
-        {"\"transform\":\"log\"", "\"transform\":\"lug\""},
-        {"\"fft_length\":512", "\"fft_length\":500"},
-        {"\"n_frames\":61", "\"n_frames\":60"},
+        {str("activation", activation), strBad("activation", activation)},
+        {str("transform", transformName(f.transform)), strBad("transform", transformName(f.transform))},
+        {num("fft_length", f.fftLength), numBad("fft_length", f.fftLength)},
+        {num("n_frames", f.nFrames), numBad("n_frames", f.nFrames)},
         {"\"average_count\":1", "\"average_count\":2"},
-        {"\"hop_samples\":16000", "\"hop_samples\":08000"},
-        {"\"labels\":[\"background\"", "\"labels\":[\"chainsaws!\""},
+        {num("hop_samples", f.windowSamples), numBad("hop_samples", f.windowSamples)},
+        {std::string("\"labels\":[\"") + pkg.label(0) + "\"", std::string("\"labels\":[\"") + otherWord(pkg.label(0)) + "\""},
         {"\"window\":\"hann_periodic\"", "\"window\":\"hamm_periodic\""},
     };
     for (const Edit& e : edits) {
         AlignedFile patched;
-        TEST_ASSERT_TRUE_MESSAGE(patchModel(gModel, patched, e.from, e.to), e.from);
-        TEST_ASSERT_FALSE_MESSAGE(pkg.load(patched.data, patched.len), e.to);
+        TEST_ASSERT_TRUE_MESSAGE(patchModel(gModel, patched, e.from.c_str(), e.to.c_str()), e.from.c_str());
+        TEST_ASSERT_FALSE_MESSAGE(pkg.load(patched.data, patched.len), e.to.c_str());
         TEST_ASSERT_FALSE(pkg.loaded());
         TEST_ASSERT_TRUE(strlen(pkg.error()) > 0);
-        printf("%-34s -> %s\n", e.to, pkg.error());
+        printf("%-34s -> %s\n", e.to.c_str(), pkg.error());
     }
 
     // And a good load afterwards still works

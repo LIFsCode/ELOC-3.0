@@ -264,8 +264,12 @@ I2SMEMSSampler ──(keep every i2s_rate/model_rate-th sample)──► inferen
 ```
 The model is loaded and validated at boot, before LoRa and Bluetooth (on a timer wake too). A
 rejected model leaves AI unable to start, with the reason in status `aiError`; the rest of the
-firmware runs normally. The front-end's per-frame buffers (~12.6 KB, internal RAM) exist only while
-the AI task runs. Everything else is PSRAM, allocated once.
+firmware runs normally. The front-end's per-frame buffers exist only while the AI task runs. Their
+size scales with the model's FFT: ~12.6 KB at FFT 512, ~24.9 KB at FFT 1024. They take internal RAM
+only while 24 KB of it stays free (`ELOC_ML_INTERNAL_RESERVE` in `MlAlloc.cpp`), FFT plan first,
+and spill to PSRAM beyond that. That reserve pays for the AI task's 8 KB stack and the SD driver's
+per-sector DMA bounce buffer, which it needs because the FATFS buffers are in PSRAM. Everything else
+is PSRAM, allocated once.
 
 ### Bluetooth Command Flow
 ```

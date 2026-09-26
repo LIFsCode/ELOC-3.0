@@ -58,15 +58,21 @@ bool MelFrontend::init(const FeatureConfig& cfg) {
     mCfg = cfg;
 
     const bool pcen = cfg.transform == Transform::Pcen || cfg.transform == Transform::PcenLog;
-    mWindow = mlAllocArray<float>(cfg.frameLength, MemKind::Fast);
+    // Most-touched first: when internal RAM is short (MlAlloc keeps a reserve for the rest of the
+    // firmware), the FFT plan's twiddles and scratch get what there is, and the rest goes to PSRAM
+    if (!mFft.init(cfg.fftLength)) {
+        release();
+        return false;
+    }
     mFftIn = mlAllocArray<float>(cfg.fftLength, MemKind::Fast);
     mFftOut = mlAllocArray<Complex>(cfg.nBins(), MemKind::Fast);
     mPower = mlAllocArray<float>(cfg.nBins(), MemKind::Fast);
+    mWindow = mlAllocArray<float>(cfg.frameLength, MemKind::Fast);
     if (pcen) {
         mPcenState = mlAllocArray<float>(cfg.nMels, MemKind::Fast);
     }
     if (mWindow == nullptr || mFftIn == nullptr || mFftOut == nullptr || mPower == nullptr ||
-        (pcen && mPcenState == nullptr) || !mFft.init(cfg.fftLength)) {
+        (pcen && mPcenState == nullptr)) {
         release();
         return false;
     }

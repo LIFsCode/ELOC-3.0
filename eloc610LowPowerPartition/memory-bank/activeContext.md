@@ -36,9 +36,26 @@ guide is the top section of `README-ai.md`. `esp32dev-ei` stays the shipped buil
   tolerance is 2e-3. Question for the user: accept, or pay for the complex FFT.
 - **Quantization rounds half to even** (`rintf`, like NumPy), not `roundf` as the plan said. The
   result is exact parity instead of ±1.
-- **Front-end working set (~12.6 KB, internal RAM) is held only while the AI task runs**, not from
-  boot. This is because of the Bluetooth internal-heap sensitivity (see Current Work Focus). The
-  model, arena, features and audio buffers are PSRAM, allocated at boot.
+- **Front-end working set is held only while the AI task runs**, not from boot. This is because of
+  the Bluetooth internal-heap sensitivity (see Current Work Focus). The model, arena, features and
+  audio buffers are PSRAM, allocated at boot.
+- **Internal-RAM reserve for the front-end (2026-09-26, on-bench finding, not yet re-tested).**
+  - Symptom: the first 2 s model (FFT 1024, front-end 24.9 KB vs 12.6 KB at FFT 512) broke SD
+    access as soon as AI started. `sdmmc_read_blocks`/`sdmmc_write_blocks failed (257)` =
+    `ESP_ERR_NO_MEM`. The SD log was then disabled for the rest of the session, the config backup
+    write failed, and the perf monitor's `Error getting real time stats` appeared.
+  - Cause: `MemKind::Fast` took internal RAM while any was left. After the front-end and the 8 KB
+    AI task stack, ~1 KB of internal RAM remained (from 34.7 KB while recording with BT connected).
+    With `CONFIG_FATFS_ALLOC_PREFER_EXTRAM`, every SD sector needs a 512 B internal DMA bounce
+    buffer (`sdmmc_cmd.c`).
+  - Fix: `MlAlloc` only places `Fast` memory internally while `ELOC_ML_INTERNAL_RESERVE` (24 KB)
+    stays free, PSRAM otherwise. `MelFrontend::init()` allocates the FFT plan first, so it gets
+    what internal RAM there is.
+  - Expected with that bench's numbers: the 1024 plan (~10.4 KB) internal, the rest PSRAM, ~15 KB
+    internal free after the task starts. DSP time rises from 61 ms per 2 s window, amount
+    unmeasured.
+  - To verify on hardware: start AI while recording with the app connected. Expect no
+    `diskio_sdmmc` errors, a `Front-end buffers` line of ~10.4 KB internal, and a `(DSP: …)` time.
 - **IRAM:** the EI build has ~330 B of IRAM left. `heap_caps_aligned_alloc()` pulled 1.5 KB of
   TLSF code into IRAM and overflowed it, so `MlAlloc` aligns by hand.
 - **GCC 8.4 ICE** ("insn does not satisfy its constraints") when the mel band sum was inlined; worked

@@ -220,7 +220,8 @@ esp_err_t ElocDetector::start_ei_thread(std::function<void()> _callback) {
     }
     mError[0] = '\0';
 
-    // Internal RAM when there is some, PSRAM otherwise (slower, but AI still runs)
+    // Internal RAM while MlAlloc's reserve stays free, PSRAM otherwise (slower, but AI still runs).
+    // The AI task's stack, created below, comes out of that reserve.
     const size_t internalBefore = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!mClassifier.resume()) {
         setError("Out of memory for the AI front-end buffers");

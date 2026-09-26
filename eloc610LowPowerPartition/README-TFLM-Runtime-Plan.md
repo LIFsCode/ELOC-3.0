@@ -68,10 +68,15 @@ Where the implementation differs from this plan, and why:
    - Measured: a full 512-point complex FFT gets 6.4e-4 at about twice the FFT cost, and real audio
      is within 3.7e-6 either way. The quantized input is exact in every case.
    - Kept the fast real FFT; that one record's feature tolerance is 2e-3. **Open for the user.**
-4. **The front-end's internal-RAM buffers (~12.6 KB) exist only while the AI task runs.** They are
-   allocated at task start, internal RAM first, PSRAM if short, and freed when it stops. The model,
-   arena, features and audio buffers are PSRAM from boot as planned. The reason is the Bluetooth
-   internal-heap sensitivity noted in `memory-bank/activeContext.md`.
+4. **The front-end's per-frame buffers exist only while the AI task runs.** They are ~12.6 KB at
+   FFT 512 and ~24.9 KB at FFT 1024. They are allocated at task start and freed when it stops. The
+   model, arena, features and audio buffers are PSRAM from boot as planned. The reason is the
+   Bluetooth internal-heap sensitivity noted in `memory-bank/activeContext.md`.
+   - They take internal RAM only while 24 KB of it stays free (`ELOC_ML_INTERNAL_RESERVE`), FFT
+     plan first, and PSRAM beyond that.
+   - Without that reserve, a 2 s / FFT 1024 model left ~1 KB of internal RAM once the AI task
+     stack was allocated. Every SD sector access then failed with `ESP_ERR_NO_MEM`, because the
+     FATFS buffers are PSRAM and the SD driver needs an internal 512 B DMA bounce buffer.
 5. **base64 uses a small built-in decoder**, not `mbedtls_base64_decode`, so the native test runs
    the same code as the device.
 6. **Aligned allocation is done by hand** (`MlAlloc.cpp`). `heap_caps_aligned_alloc()` pulls

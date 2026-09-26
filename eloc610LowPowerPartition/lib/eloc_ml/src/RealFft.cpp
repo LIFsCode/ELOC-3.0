@@ -22,7 +22,7 @@ bool RealFft::init(uint32_t n) {
     if (n < 4 || (n % 2) != 0) {
         return false;
     }
-    // Ask for the plan size first, then build the plan in our own (internal RAM) block so the
+    // Ask for the plan size first, then build the plan in our own (MemKind::Fast) block so the
     // transform itself never allocates
     size_t bytes = 0;
     kiss_fftr_alloc(static_cast<int>(n), 0, nullptr, &bytes);

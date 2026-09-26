@@ -19,7 +19,8 @@ enum class MemKind {
     /// PSRAM on the device; never falls back to internal RAM.
     Large,
     /// Small buffers touched for every frame (FFT plan and buffers, window table). Internal RAM on
-    /// the device, PSRAM if internal RAM is exhausted.
+    /// the device while ELOC_ML_INTERNAL_RESERVE (MlAlloc.cpp) stays free for the rest of the
+    /// firmware, PSRAM otherwise.
     Fast,
 };
 

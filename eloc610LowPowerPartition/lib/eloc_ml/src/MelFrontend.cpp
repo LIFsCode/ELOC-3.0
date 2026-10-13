@@ -134,9 +134,14 @@ void MelFrontend::compute(const int16_t* window, float* features) {
             w += len;
 
             if (pcen) {
-                // M[t] = s*M[t-1] + (1-s)*mel[t];  (mel / (eps + M)^gain + bias)^power - bias^power
+                // M[t] = s*M[t-1] + (1-s)*mel[t], from M[0] = mel[0] (start first_frame) or M[-1] = 0 (zero);
+                // then (mel / (eps + M)^gain + bias)^power - bias^power
                 float& state = mPcenState[m];
-                state = c.pcen.smoothing * state + oneMinusS * v;
+                if (t == 0 && c.pcen.startAtFirstFrame) {
+                    state = v;
+                } else {
+                    state = c.pcen.smoothing * state + oneMinusS * v;
+                }
                 const float denominator = expf(c.pcen.gain * logf(c.pcen.eps + state));
                 v = expf(c.pcen.power * logf(v / denominator + c.pcen.bias)) - biasPow;
             }

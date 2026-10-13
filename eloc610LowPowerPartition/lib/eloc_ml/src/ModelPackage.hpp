@@ -52,6 +52,8 @@ struct PcenParams {
     float bias = 2.0f;
     float power = 0.5f;
     float eps = 1e-6f;
+    /// features.pcen.start: true = "first_frame" (M[0] = mel[0]), false = "zero" (M[-1] = 0)
+    bool startAtFirstFrame = true;
 };
 
 /**

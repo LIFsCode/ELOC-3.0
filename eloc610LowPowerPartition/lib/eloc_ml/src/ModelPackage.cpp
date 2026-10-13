@@ -394,6 +394,15 @@ bool ModelPackage::parseConfig(const char* json, size_t jsonLen) {
             if (p.eps <= 0.0f || p.bias <= 0.0f) {
                 return fail("features.pcen eps and bias must be > 0");
             }
+            // Required: where the smoother starts changes the first second or so of every window
+            const char* start = pcen["start"] | "";
+            if (strcmp(start, "first_frame") == 0) {
+                p.startAtFirstFrame = true;
+            } else if (strcmp(start, "zero") == 0) {
+                p.startAtFirstFrame = false;
+            } else {
+                return fail("features.pcen.start \"%s\" must be first_frame or zero", start);
+            }
         }
         if (!getFloat(features["normalization"]["mean"], f.mean) ||
             !getFloat(features["normalization"]["divisor"], f.divisor) || f.divisor == 0.0f) {

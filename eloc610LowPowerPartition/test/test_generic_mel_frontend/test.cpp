@@ -5,7 +5,8 @@
  *   pio test -e generic_unit_tests -f test_generic_mel_frontend
  *
  * Fixtures: eloc_model.tflite and eloc_golden_vectors.bin from the same eloc_device_package.zip as
- * lib/eloc_ml/model/eloc_model_data.h. When the compiled-in model changes, replace both.
+ * lib/eloc_ml/model/eloc_model_data.h. When the compiled-in model changes, replace both, then
+ * rebuild the PCEN fixtures derived from them with test/fixtures/make_pcen_fixtures.py.
  */
 
 #include <math.h>
@@ -244,13 +245,16 @@ void test_quantize_rounds_half_to_even() {
     TEST_ASSERT_EQUAL_INT8_ARRAY(expected, out, 8);
 }
 
-void test_golden_vectors() {
+namespace {
+
+/// The front-end against a package's golden vectors (features within 1e-3, quantized input +-1)
+void checkGoldenVectors(const AlignedFile& model, const AlignedFile& goldenFile) {
     ModelPackage pkg;
-    TEST_ASSERT_TRUE_MESSAGE(pkg.load(gModel.data, gModel.len), pkg.error());
+    TEST_ASSERT_TRUE_MESSAGE(pkg.load(model.data, model.len), pkg.error());
     const FeatureConfig& f = pkg.features();
 
     GoldenVectors golden;
-    TEST_ASSERT_TRUE_MESSAGE(golden.parse(gGolden.data, gGolden.len), golden.error());
+    TEST_ASSERT_TRUE_MESSAGE(golden.parse(goldenFile.data, goldenFile.len), golden.error());
     const GoldenHeader& h = golden.header();
     TEST_ASSERT_EQUAL(f.windowSamples, h.nSamples);
     TEST_ASSERT_EQUAL(f.nFrames, h.nFrames);
@@ -303,6 +307,51 @@ void test_golden_vectors() {
            worstQuant);
 }
 
+}  // namespace
+
+void test_golden_vectors() {
+    checkGoldenVectors(gModel, gGolden);
+}
+
+// The compiled-in model is log-mel. These fixtures are the same model re-embedded with PCEN, once
+// per smoother start, with features from the worker's NumPy reference (test/fixtures/make_pcen_fixtures.py).
+void test_pcen_golden_vectors() {
+    struct Variant {
+        const char* start;
+        bool firstFrame;
+    };
+    const Variant variants[] = {{"first_frame", true}, {"zero", false}};
+    for (const Variant& v : variants) {
+        AlignedFile model;
+        AlignedFile golden;
+        std::string modelName = std::string("eloc_model_pcen_") + v.start + ".tflite";
+        std::string goldenName = std::string("eloc_golden_vectors_pcen_") + v.start + ".bin";
+        TEST_ASSERT_TRUE_MESSAGE(readFixture(modelName.c_str(), model), modelName.c_str());
+        TEST_ASSERT_TRUE_MESSAGE(readFixture(goldenName.c_str(), golden), goldenName.c_str());
+
+        ModelPackage pkg;
+        TEST_ASSERT_TRUE_MESSAGE(pkg.load(model.data, model.len), pkg.error());
+        TEST_ASSERT_TRUE(pkg.features().transform == Transform::Pcen);
+        TEST_ASSERT_EQUAL(v.firstFrame, pkg.features().pcen.startAtFirstFrame);
+        printf("PCEN start %s:\n", v.start);
+        checkGoldenVectors(model, golden);
+    }
+}
+
+void test_pcen_start_rejects() {
+    AlignedFile model;
+    TEST_ASSERT_TRUE(readFixture("eloc_model_pcen_zero.tflite", model));
+    ModelPackage pkg;
+    // An unknown start, and no start at all: both change every window's features, so both must fail
+    const char* edits[][2] = {{"\"start\":\"zero\"", "\"start\":\"zerq\""}, {"\"start\":\"zero\"", "\"stbrt\":\"zero\""}};
+    for (const auto& e : edits) {
+        AlignedFile patched;
+        TEST_ASSERT_TRUE_MESSAGE(patchModel(model, patched, e[0], e[1]), e[0]);
+        TEST_ASSERT_FALSE_MESSAGE(pkg.load(patched.data, patched.len), e[1]);
+        printf("%-34s -> %s\n", e[1], pkg.error());
+    }
+}
+
 int runUnityTests(void) {
     UNITY_BEGIN();
     RUN_TEST(test_fixtures_present);
@@ -311,6 +360,8 @@ int runUnityTests(void) {
     RUN_TEST(test_package_rejects);
     RUN_TEST(test_quantize_rounds_half_to_even);
     RUN_TEST(test_golden_vectors);
+    RUN_TEST(test_pcen_golden_vectors);
+    RUN_TEST(test_pcen_start_rejects);
     return UNITY_END();
 }
 

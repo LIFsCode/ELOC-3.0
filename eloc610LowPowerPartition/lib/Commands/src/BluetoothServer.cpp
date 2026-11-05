@@ -24,6 +24,7 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -183,6 +184,35 @@ void sendSettings() {
 }
 
 
+// BluetoothSerial mallocs one internal-RAM packet per write() and only reports a failed malloc
+// through the return value. Writing a whole payload at once needs a contiguous block as big as
+// the payload, so on low heap the payload vanished and the app got unparseable JSON. Small chunks
+// need only a small block each, and the TX task frees them as they go out.
+static const size_t BT_TX_CHUNK_SIZE = 256;
+static const int BT_TX_CHUNK_RETRIES = 25;
+static const TickType_t BT_TX_RETRY_DELAY = pdMS_TO_TICKS(20);
+
+static void btWriteInChunks(const String& text) {
+    const uint8_t* data = reinterpret_cast<const uint8_t*>(text.c_str());
+    size_t remaining = text.length();
+    int retries = 0;
+    while ((remaining > 0) && SerialBT.connected()) {
+        const size_t chunk = (remaining < BT_TX_CHUNK_SIZE) ? remaining : BT_TX_CHUNK_SIZE;
+        if (SerialBT.write(data, chunk) == chunk) {
+            data += chunk;
+            remaining -= chunk;
+            retries = 0;
+        } else if (++retries > BT_TX_CHUNK_RETRIES) {
+            ESP_LOGE(TAG, "BT write failed with %u bytes unsent, free internal heap %u",
+                     static_cast<unsigned>(remaining),
+                     static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
+            return;
+        } else {
+            vTaskDelay(BT_TX_RETRY_DELAY);
+        }
+    }
+}
+
 void bt_sendResponse(const CmdResponse& cmdResponse) {
     if (!gBluetoothEnabled)
         return;
@@ -199,7 +229,7 @@ void bt_sendResponse(const CmdResponse& cmdResponse) {
         SerialBT.print("\", \"cmd\" : \"");
         SerialBT.print(cmdResponse.getReturnValue().Cmd);
         SerialBT.print("\", \"payload\" : ");
-        SerialBT.print(cmdResponse.getReturnValue().Payload);
+        btWriteInChunks(cmdResponse.getReturnValue().Payload);
         SerialBT.println("}");
         SerialBT.print(BT_RESP_TERMINATION);
     }

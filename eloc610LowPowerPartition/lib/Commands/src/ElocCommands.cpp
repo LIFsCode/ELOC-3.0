@@ -409,7 +409,9 @@ void cmd_GetConfig(CmdParser *cmdParser) {
     }
     String& cfg = resp.getPayload(); // write directly to output buffer to avoid reallocation
     if (!printConfig(cfg, cfgType)) {
+        cfg.clear();
         resp.setError(ESP_ERR_NO_MEM, "Failed to serialize JSON config!");
+        return;
     }
     resp.setResultSuccess(cfg);
     return;

@@ -27,6 +27,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <esp_heap_caps.h>
 #include <unity.h>
 #include "ElocConfig.hpp"
 
@@ -68,11 +69,44 @@ void test_compiled_defaults() {
   TEST_ASSERT_FALSE(doc["mic"]["MicUseAPLL"].as<bool>());
 }
 
+// Regression: once internal RAM had no contiguous 4 KB block, printConfig returned true with "{}".
+void test_print_config_with_low_internal_heap() {
+  const uint32_t internalCaps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+  const size_t maxBlocks = 256;
+  static void* held[maxBlocks];
+  size_t heldCount = 0;
+
+  String configJson;
+  TEST_ASSERT_TRUE(configJson.reserve(3000));
+
+  while ((heap_caps_get_largest_free_block(internalCaps) >= 4096) && (heldCount < maxBlocks)) {
+    void* block = heap_caps_malloc(2048, internalCaps);
+    if (block == nullptr) {
+      break;
+    }
+    held[heldCount++] = block;
+  }
+  const size_t largestBlock = heap_caps_get_largest_free_block(internalCaps);
+  const bool printed = printConfig(configJson);
+  for (size_t i = 0; i < heldCount; i++) {
+    heap_caps_free(held[i]);
+  }
+
+  TEST_ASSERT_TRUE_MESSAGE(largestBlock < 4096, "Could not use up internal RAM");
+  TEST_ASSERT_TRUE(printed);
+  DynamicJsonDocument doc(3072);
+  TEST_ASSERT_FALSE(deserializeJson(doc, configJson));
+  TEST_ASSERT_TRUE(doc.containsKey("device"));
+  TEST_ASSERT_TRUE(doc.containsKey("config"));
+  TEST_ASSERT_TRUE(doc.containsKey("mic"));
+}
+
 int runUnityTests(void) {
   UNITY_BEGIN();
   RUN_TEST(test_init);
   RUN_TEST(test_default_node_name_format);
   RUN_TEST(test_compiled_defaults);
+  RUN_TEST(test_print_config_with_low_internal_heap);
   return UNITY_END();
 }
 

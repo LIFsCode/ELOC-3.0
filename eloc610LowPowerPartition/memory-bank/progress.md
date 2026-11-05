@@ -72,6 +72,7 @@ package from the web app's ELOC Model Training directly on TFLM, with no Edge Im
 - **Command protocol** via CmdParser for config, status, recording control, AI control
 - **Configurable timeout,** auto-off, enable-on-tapping (accelerometer)
 - **Runtime configuration** changes written to SD card/SPIFFS
+- **Low-heap `getConfig` and config saves** 🔨 fixed 2026-11-05 (V1.80), bench-tested, low-heap paths not forced: config JSON in PSRAM, errors instead of `{}`, chunked BT replies, stored config no longer overwritten on failure. See `activeContext.md`
 
 ### Firmware Update — 🔨 Built, hardware verification pending (2026-07-06, V1.47)
 - **SD updater fixed** (Phase 0): NULL-deref/error-handling bugs gone, date-comparison removed

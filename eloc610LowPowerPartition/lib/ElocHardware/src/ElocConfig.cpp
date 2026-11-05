@@ -22,6 +22,7 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #include <esp_log.h>
+#include <esp_heap_caps.h>
 
 #include "ArduinoJson.h"
 #include "WString.h"
@@ -712,11 +713,59 @@ void buildConfigFile(JsonDocument& doc, CfgType cfgType = CfgType::RUNTIME) {
     micInfo["MicChannel"]                  = toString(MicInfo.MicChannel);
 }
 
+// malloc() never reaches PSRAM on this build (CONFIG_SPIRAM_USE_CAPS_ALLOC), and with the AI runtime
+// up, internal RAM may not have a contiguous 4 KB block. Config JSON is short-lived and rarely built,
+// so PSRAM's slower access does not matter here.
+static void* configAlloc(size_t size) {
+    return heap_caps_malloc_prefer(size, 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, MALLOC_CAP_8BIT);
+}
+
+struct ConfigJsonAllocator {
+    void* allocate(size_t size) {
+        return configAlloc(size);
+    }
+    void deallocate(void* ptr) {
+        heap_caps_free(ptr);
+    }
+    void* reallocate(void* ptr, size_t newSize) {
+        return heap_caps_realloc_prefer(ptr, newSize, 2,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, MALLOC_CAP_8BIT);
+    }
+};
+using ConfigJsonDocument = BasicJsonDocument<ConfigJsonAllocator>;
+
+// Without memory ArduinoJson does not fail: it leaves an empty object that serializes to a
+// valid-looking "{}". Callers must get a failure instead, or that "{}" reaches the app as a
+// successful getConfig, or replaces the stored config.
+static bool buildCheckedConfig(ConfigJsonDocument& doc, CfgType cfgType) {
+    if (doc.capacity() == 0) {
+        ESP_LOGE(TAG, "No memory for the config JSON document!");
+        return false;
+    }
+    buildConfigFile(doc, cfgType);
+    if (doc.overflowed()) {
+        ESP_LOGE(TAG, "Config JSON document overflowed!");
+        return false;
+    }
+    return true;
+}
+
 bool printConfig(String& buf, CfgType cfgType/* = CfgType::RUNTIME*/) {
 
-    DynamicJsonDocument doc(JSON_DOC_SIZE);
-    buildConfigFile(doc, cfgType);
-    if (serializeJsonPretty(doc, buf) == 0) {
+    ConfigJsonDocument doc(JSON_DOC_SIZE);
+    if (!buildCheckedConfig(doc, cfgType)) {
+        return false;
+    }
+    // A String that cannot grow drops text without an error, which would produce cut-off JSON,
+    // so make the room first.
+    const size_t startLength = buf.length();
+    const size_t length = measureJsonPretty(doc);
+    if (!buf.reserve(startLength + length)) {
+        ESP_LOGE(TAG, "No memory for %u bytes of config text!", static_cast<unsigned>(length));
+        return false;
+    }
+    serializeJsonPretty(doc, buf);
+    if (buf.length() != (startLength + length)) {
         ESP_LOGE(TAG, "Failed serialize JSON config!");
         return false;
     }
@@ -725,19 +774,35 @@ bool printConfig(String& buf, CfgType cfgType/* = CfgType::RUNTIME*/) {
 
 bool writeConfigFile(const char* filename) {
 
+    // Everything that can run out of memory happens before fopen(): "w+" empties the file, so a
+    // failure after that point would lose the stored config and the device would come back on
+    // defaults at its next boot.
+    ConfigJsonDocument doc(JSON_DOC_SIZE);
+    if (!buildCheckedConfig(doc, CfgType::RUNTIME)) {
+        ESP_LOGE(TAG, "Leaving config file %s untouched", filename);
+        return false;
+    }
+    const size_t length = measureJsonPretty(doc);
+    char* text = static_cast<char*>(configAlloc(length + 1));
+    if (text == nullptr) {
+        ESP_LOGE(TAG, "No memory for config text, leaving config file %s untouched", filename);
+        return false;
+    }
+    serializeJsonPretty(doc, text, length + 1);
+
+    bool written = false;
     FILE *f = fopen(filename, "w+");
     if (f == NULL) {
         ESP_LOGE(TAG, "Failed to open config file %s!", filename);
-        return false;
-        // return;
+    } else {
+        written = (fwrite(text, 1, length, f) == length);
+        written = (fclose(f) == 0) && written;
+        if (!written) {
+            ESP_LOGE(TAG, "Failed to write config file %s!", filename);
+        }
     }
-
-    String buffer;
-    printConfig(buffer);
-    fprintf(f, "%s", buffer.c_str());
-    // BUGME: add scopeguard here to make sure file is closed
-    fclose(f);
-    return true;
+    heap_caps_free(text);
+    return written;
 }
 
 bool writeConfig() {

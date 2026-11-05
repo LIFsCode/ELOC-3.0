@@ -1,5 +1,46 @@
 ﻿# Active Context
 
+## getConfig and config saves on low heap: fixed 2026-11-05, V1.80, bench-tested, low-heap paths not forced
+
+Found while tracing blank config columns on the web Status Uploads page (paired with app 5.47).
+Malloc on this build never reaches PSRAM (`CONFIG_SPIRAM_USE_CAPS_ALLOC`), and `getConfig` could fail
+in three places once internal RAM was short. `getStatus` mostly escaped them: it uses a stack document
+and its payload is smaller.
+
+1. **JSON document (4 KB).** ArduinoJson does not fail without memory: it leaves an empty object, so
+   `getConfig` returned `"ecode": 0, "payload": {}`. Seen for real: a Sept 26 11:37 file on the Pixel 7a.
+   Low heap as the reason comes from reading the code; it was never caught live on a device.
+2. **Reply `String`.** A `String` that cannot grow drops text silently, giving cut-off JSON. The real
+   config is about 1.9 KB pretty-printed, so the 2 KB reserved in `CmdResponse` covers it today.
+3. **`BluetoothSerial::write`.** It mallocs one internal block per write and only reports failure through
+   the return value, so a one-shot payload write could vanish, leaving `"payload" : }`. The app cannot
+   parse that. This fits the 2026-11-05 11:25 ELOC_00247 run, where no `getConfig` reply was processed,
+   but that run's logs are gone, so it is a candidate and not a confirmed cause.
+
+**The sharper edge:** `writeConfigFile` opened the file with `w+` (which empties it) and ignored
+`printConfig` failing, so a low-heap `setConfig` could store `{}` and the device would come back on
+defaults at its next boot. Never observed; ELOC_00247's history cannot rule it in or out because the
+values checked match the defaults.
+
+**Fix:**
+- `ConfigJsonDocument` allocates PSRAM first, falling back to internal RAM.
+- `printConfig` fails on no memory, overflow or a short result, and `cmd_GetConfig` now returns that
+  error. It used to overwrite it with success straight away.
+- `writeConfigFile` builds its text in PSRAM before `fopen`, and checks `fwrite` and `fclose`.
+- `bt_sendResponse` sends the payload in 256-byte chunks with retries.
+
+**Still owed:**
+- Bench-tested on ELOC_00247 on 2026-11-05 with app 5.47: the V1.80 upload at 17:21 carried its config.
+  That test did not force low heap, so the failure paths themselves have not been exercised on hardware.
+- The new `test_print_config_with_low_internal_heap` has never run: `pio test -e
+  target_unit_selected_tests` fails while compiling `Battery.cpp`, because `config.h` includes
+  `lis3dh_types.h` and that env does not find `lib/Accel`. This is unrelated to this change. The fix
+  needs a `platformio.ini` edit, which forces a full rebuild of every env, so it was left alone.
+- `setConfig` can now return `ESP_ERR_FLASH_BASE` on low heap. In-memory values are already applied at
+  that point and persist on the next successful write.
+- Fleet context: of the last 500 uploads, 51 of 230 current-app starts/stops had no config. `{}` replies
+  never reach Firestore, so how many of those this fixes is unknown.
+
 ## TFLite Micro runtime (Edge Impulse replacement, Phase 1) — implemented 2026-09-24, V1.79, hardware pending
 
 New build env **`esp32dev-tflm`**. It runs the INT8 "device model package" that the web app's ELOC

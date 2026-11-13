@@ -125,6 +125,7 @@ private:
     uint32_t mRecordActiveSinceMs;   // millis() recording/detection last became active (arming delay)
     bool     mRecordWasActive;       // edge detection for the above
     bool     mCandidateNotifyPending;// one-shot: a candidate opened and owes a LoRa message
+    bool     mBuzzerTestHold = false;// true while the microphone self-test owns the buzzer
 
     bool mFwUpdateProcessing;
 
@@ -325,6 +326,26 @@ public:
     /// @brief Whether the siren is still sounding (false once it has timed out, alarm or not)
     inline bool isSirenActive() const {
         return mSirenActive;
+    }
+
+    /// @brief Hand the buzzer to the microphone self-test (lib/Commands/src/MicTest.cpp).
+    ///        While held, status beeps are dropped and handleSystemStatus() leaves the buzzer
+    ///        alone, so nothing but the test's own tones reaches the microphone. The knock and
+    ///        motion guards stay engaged exactly as for any other beep - the tones shake the
+    ///        LIS3DH like every buzzer sound does.
+    /// @note A status beep sequence that was running (e.g. the repeating low-battery beep) is
+    ///       cut and only comes back with the next status change.
+    /// @return false when an intruder candidate/alarm is up: the siren keeps the buzzer
+    bool acquireBuzzerForTest();
+
+    /// @brief Play a continuous tone, or silence with 0 Hz. Ignored unless the buzzer is held.
+    void testTone(unsigned int frequencyHz);
+
+    /// @brief Give the buzzer back. Starts the usual knock-guard settle time.
+    void releaseBuzzerForTest();
+
+    inline bool isBuzzerHeldForTest() const {
+        return mBuzzerTestHold;
     }
 
     /// @brief Whether the device has moved recently enough to still count as "on the way".

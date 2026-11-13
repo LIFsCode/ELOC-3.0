@@ -1,5 +1,56 @@
 ﻿# Active Context
 
+## Microphone self-test (`setMicTest` / `getMicTest`): Phase 1 implemented 2026-11-13, V1.81, branch `EDsteve/mic-test`, nothing hardware-tested
+
+Field mics fail from ants and humidity, and not all the same way: most output only pink noise, some
+record real sound but very faint, some crackle, a few are dead. Nothing mic-related left the device
+before, so a broken mic was only found when the SD card came back. The test plays tones on the
+on-board buzzer (MLT-8540H, same PCB as the mic) and measures what the mic hears, so it does not
+depend on the ambient sound. **Phase 1 returns raw numbers only, no verdict** - the thresholds are
+to come from a bench session on real broken mics. Plan, command reference, meaning of every result
+field and the bench procedure: `README-MicTest-Plan.md`.
+
+**What was built:**
+- `lib/audio_input/src/MicAnalyzer.hpp` - header-only analysis, no ESP code: level, DC, clipping,
+  stuck samples, octave spectrum + slope (pink = 0, white = +3 dB/oct), crackle count / crest /
+  kurtosis / dropouts on sample-to-sample steps, and per tone the rise in a +-5 % band with the
+  buzzer on versus off. Both sides of the rise use the **median** block: with the mean, a deaf but
+  crackling mic showed a rise it does not have, and a healthy one lost rise to crackles in the gaps.
+- `I2SMEMSSampler::set_raw_tap()` - hands the raw I2S words (before the `MicVolume2_pwr` shift) to
+  one listener; one pointer check per buffer when unused.
+- `lib/Commands/src/MicTest.{hpp,cpp}` - singleton with a short-lived task: waits for samples,
+  captures to a PSRAM buffer (~500 kB for the default 7.8 s) while it switches the buzzer, analyses
+  afterwards, saves `<node>_<yyyymmdd_hhmmss>.wav` (24-bit) + `.json` to `/sdcard/mictest/`.
+- `ElocSystem::acquireBuzzerForTest()` / `testTone()` / `releaseBuzzerForTest()` - status beeps are
+  dropped and `EasyBuzzer.update()` is skipped while held; the knock/motion guard stays engaged.
+- `main.cpp` - the I2S start condition also honours `MicTest::needsI2S()` (the main loop stays the
+  only owner of the driver), `setSampler(&input)` after `input.init()`, and no duty-cycle sleep
+  while a test is busy.
+- `test/test_generic_mic_analyzer` - 16 PC cases (healthy, deaf pink noise, faint, crackling, deaf
+  and crackling, dead, stuck, DC, clipping, off-pitch, dropouts, 8 kHz, truncated capture).
+
+**Decisions worth keeping:**
+- Asynchronous like `getLinkCheck`: about 10 s on the Bluetooth task would stall LEDs, LoRa and SPP.
+- Capture first, analyse afterwards: the I2S read task only copies, so a running recording is not
+  disturbed, and the same buffer becomes the WAV.
+- 200 ms are skipped after every buzzer switch: samples arrive up to ~130 ms late (DMA buffers).
+- `MicTest` gets the sampler by pointer from `main.cpp` instead of `extern I2SMEMSSampler input`,
+  so on-device test builds of `lib/Commands` do not gain another unresolved global.
+- The app needs no change for the bench session: Device Settings -> Advanced -> Command Line sends
+  both commands and shows the reply.
+
+**Still owed:**
+- Everything on hardware. First run: healthy unit, then tape over the mic port, then each broken mic
+  (procedure in the README). Open question that decides the design: **does a dead mic still show a
+  rise** because the buzzer's drive current reaches its output electrically?
+- I2S keeps running after a test on an idle device (as after a stopped recording) - there is no way
+  to end the read task yet.
+- A LoRa join beep during a test is not detected and spoils the tone numbers.
+- Wiki: `ELOC-3.0-App-Interface` does not list the two commands yet - held back until the branch is
+  merged and the result format has settled (Phase 2 adds the verdict).
+- Phases 2-5 in the README: thresholds + verdict, app "Mic check" screen, optional crackle counter
+  during recording / mic health over LoRa, optional clip to the phone.
+
 ## getConfig and config saves on low heap: fixed 2026-11-05, V1.80, bench-tested, low-heap paths not forced
 
 Found while tracing blank config columns on the web Status Uploads page (paired with app 5.47).

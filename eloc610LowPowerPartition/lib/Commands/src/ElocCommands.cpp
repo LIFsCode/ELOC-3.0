@@ -40,6 +40,7 @@
 #include "Battery.hpp"
 #include "BluetoothServer.hpp"
 #include "FwUpdateTransfer.hpp"
+#include "MicTest.hpp"
 #include "esp_ota_ops.h"
 #include "../../ElocHardware/src/config.h"
 #include "../../ElocHardware/src/ElocLora.hpp"
@@ -955,6 +956,102 @@ void cmd_GetLinkCheck(CmdParser *cmdParser) {
     resp.setResultSuccess("\"scheduled\"");
 }
 
+/****************************************************************************************
+ * Microphone self-test (see README-MicTest-Plan.md and MicTest.hpp)
+ ****************************************************************************************/
+
+/// Parse "1000,2700,4000" into the tone list. "0" (or "none") means a silent test.
+static bool parseMicTestFreqs(const char* text, MicTest::Params& params) {
+    params.numFreqs = 0;
+    if (!strcasecmp(text, "none") || !strcmp(text, "0")) {
+        return true;
+    }
+    const char* p = text;
+    while (*p != '\0') {
+        char* end = NULL;
+        long value = strtol(p, &end, 10);
+        if ((end == p) || (value < 1) || (value > 65535) || (params.numFreqs >= MicTest::MAX_FREQS)) {
+            return false;
+        }
+        params.freqs[params.numFreqs++] = static_cast<uint16_t>(value);
+        if (*end == ',') {
+            end++;
+        } else if (*end != '\0') {
+            return false;
+        }
+        p = end;
+    }
+    return params.numFreqs > 0;
+}
+
+/// Read an optional numeric argument; leaves `value` alone when the key is absent.
+static bool parseMicTestNumber(CmdParser* cmdParser, const char* key, long minVal, long maxVal, long& value) {
+    const char* text = cmdParser->getValueFromKey(key);
+    if (!text) {
+        return true;
+    }
+    char* end = NULL;
+    long parsed = strtol(text, &end, 10);
+    if ((end == text) || (*end != '\0') || (parsed < minVal) || (parsed > maxVal)) {
+        return false;
+    }
+    value = parsed;
+    return true;
+}
+
+void cmd_SetMicTest(CmdParser *cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    MicTest::Params params;  // the defaults
+
+    const char* freqs = cmdParser->getValueFromKey("freqs");
+    if (freqs && !parseMicTestFreqs(freqs, params)) {
+        resp.setError(ESP_ERR_INVALID_ARG, "freqs: up to 6 tones in Hz separated by commas, or 0 for a silent test");
+        return;
+    }
+    long reps = params.reps;
+    long onMs = params.onMs;
+    long gapMs = params.gapMs;
+    long silenceMs = params.silenceMs;
+    long save = params.save ? 1 : 0;
+    if (!parseMicTestNumber(cmdParser, "reps", 1, 5, reps) ||
+        !parseMicTestNumber(cmdParser, "onMs", 400, 3000, onMs) ||
+        !parseMicTestNumber(cmdParser, "gapMs", 300, 3000, gapMs) ||
+        !parseMicTestNumber(cmdParser, "silenceMs", 500, 10000, silenceMs) ||
+        !parseMicTestNumber(cmdParser, "save", 0, 1, save)) {
+        resp.setError(ESP_ERR_INVALID_ARG,
+                      "allowed: reps 1..5, onMs 400..3000, gapMs 300..3000, silenceMs 500..10000, save 0/1");
+        return;
+    }
+    params.reps = static_cast<uint8_t>(reps);
+    params.onMs = static_cast<uint16_t>(onMs);
+    params.gapMs = static_cast<uint16_t>(gapMs);
+    params.silenceMs = static_cast<uint16_t>(silenceMs);
+    params.save = (save != 0);
+
+    // Asynchronous, like getLinkCheck: the test takes about 10 s, and blocking the Bluetooth task
+    // that long stalls the status LEDs, the LoRa loop and the app link. The app polls getMicTest.
+    MicTest& micTest = MicTest::GetInstance();
+    String errMsg;
+    esp_err_t err = micTest.start(params, errMsg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "setMicTest refused: %s", errMsg.c_str());
+        resp.setError(err, errMsg.c_str());
+        return;
+    }
+    String& payload = resp.getPayload();
+    payload = "{\"state\":\"starting\",\"duration[ms]\":";
+    payload += micTest.plannedDurationMs();
+    payload += "}";
+    resp.setResultSuccess(payload);
+}
+
+void cmd_GetMicTest(CmdParser *cmdParser) {
+    CmdResponse& resp = CmdResponse::getInstance();
+    String& payload = resp.getPayload();
+    MicTest::GetInstance().statusJson(payload);
+    resp.setResultSuccess(payload);
+}
+
 void cmd_Reboot(CmdParser *cmdParser) {
     CmdResponse& resp = CmdResponse::getInstance();
     if (esp_err_t err = scheduleRestart(1000 * 1000)) {
@@ -973,6 +1070,11 @@ void cmd_SetFwUpdateBegin(CmdParser *cmdParser) {
     const char* meta = cmdParser->getValueFromKey("meta");
     if (!meta) {
         resp.setError(ESP_ERR_INVALID_ARG, "Missing key 'meta'");
+        return;
+    }
+    // The microphone self-test keeps I2S and the SD card busy for a few seconds
+    if (MicTest::GetInstance().isBusy()) {
+        resp.setError(ESP_ERR_INVALID_STATE, "microphone test is running - try again in a few seconds");
         return;
     }
     String errMsg;
@@ -1057,6 +1159,8 @@ bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     success &= cmdCallback.addCmd("setBattery", &cmd_SetBattery, "Set battery calibration values. Mode otions: \"clear\", \"add\", cal in the format {\"<esp meas voltage>\" : <real voltage>} e.g. setBattery#mode=add#cal={\"3.0\":3.1}");
     success &= cmdCallback.addCmd("getBattery", &cmd_GetBattery, "read the battery calibration or the raw (uncalibrated voltage). Mode options: \"raw\", \"cal\"");
 success &= cmdCallback.addCmd("getSdSpeedTest", &cmd_GetSdCardSpeedTest, "write and read a blocks (1k - 64k) of data to/from the sd card and check the speed. Additinoal option \"size\", size of overall file (default 512 kByte), -1 means file size = block size, e.g. getSdSpeedTest#size=524288");
+    success &= cmdCallback.addCmd("setMicTest", &cmd_SetMicTest, "Start the microphone self-test: buzzer tones are played and what the microphone hears is measured. Returns at once, the test takes about 10 s - poll getMicTest. Optional: freqs (Hz, comma separated, 0 = silent test without buzzer; default 1000,2700,4000), reps (2), onMs (600), gapMs (400), silenceMs (1500), save (1 = WAV + JSON to /sdcard/mictest), e.g. setMicTest#freqs=2700#reps=3");
+    success &= cmdCallback.addCmd("getMicTest", &cmd_GetMicTest, "Microphone self-test progress and last result as JSON: state (idle/starting/capturing/analysing/saving/done/error), then level, spectrum, crackle and per-tone rise in dB. Raw numbers, no verdict yet");
     success &= cmdCallback.addCmd("setFwUpdateBegin", &cmd_SetFwUpdateBegin, "Start a firmware transfer over BT. meta JSON: size, sha256, version, variant, chunkSize (default 4096, max 8192). Returns {resumeOffset, chunkSize} and switches the link to binary frame mode, e.g. setFwUpdateBegin#meta={\"size\":123456,\"sha256\":\"<64 hex>\",\"version\":\"1.23\",\"variant\":\"ei\",\"chunkSize\":4096}");
     success &= cmdCallback.addCmd("getFwUpdateStatus", &cmd_GetFwUpdateStatus, "Status of the staged firmware transfer: {state: idle/receiving/staged/error, bytesReceived, expectedSize, sha256}. Drives resume and app UI");
     success &= cmdCallback.addCmd("setFwUpdateAbort", &cmd_SetFwUpdateAbort, "Abort the current firmware transfer. Optional discard=true also deletes the partial file (otherwise it is kept for resume), e.g. setFwUpdateAbort#discard=true");

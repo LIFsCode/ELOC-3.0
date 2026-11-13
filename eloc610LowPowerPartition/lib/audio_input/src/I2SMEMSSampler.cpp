@@ -149,6 +149,13 @@ bool I2SMEMSSampler::register_ei_inference(inference_t *ext_inference, int ext_e
     return true;
 }
 
+void I2SMEMSSampler::set_raw_tap(i2s_raw_tap_fn_t fn, void *ctx) {
+    if (fn != nullptr) {
+        raw_tap_ctx.store(ctx);
+    }
+    raw_tap.store(fn);
+}
+
 int I2SMEMSSampler::read()
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
@@ -234,6 +241,12 @@ int I2SMEMSSampler::read()
     } else {
         if (bytes_read < sizeof(int32_t) * i2s_samples_to_read) {
             ESP_LOGW(TAG, "Partial I2S read");
+        }
+
+        // Microphone self-test: gets the untouched I2S words, before the volume shift below
+        i2s_raw_tap_fn_t tap = raw_tap.load();
+        if (tap != nullptr) {
+            tap(raw_samples, samples_read, raw_tap_ctx.load());
         }
 
         #ifdef VISUALIZE_WAVEFORM

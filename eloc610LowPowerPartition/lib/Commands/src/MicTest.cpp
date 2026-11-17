@@ -89,6 +89,9 @@ struct Report {
     uint8_t  numSkipped;
     mictest::Mark marks[mictest::MAX_MARKS];  ///< saved in the SD file, so a WAV can be re-analysed exactly
     uint8_t  numMarks;
+    mictest::Judgement runs[2];  ///< each run's own verdict
+    uint8_t  numRuns;            ///< runs so far; the numbers above are from the last one
+    mictest::Judgement verdict;  ///< over all runs so far
     char     time[32];
     char     wavPath[112];
     char     saveError[64];
@@ -148,6 +151,17 @@ uint32_t captureMs(const MicTest::Params& p) {
     return p.silenceMs + static_cast<uint32_t>(p.reps) * p.numFreqs * (static_cast<uint32_t>(p.onMs) + p.gapMs) + TAIL_MS;
 }
 
+/// The I2S clock delivered more than 5 % more or fewer samples than configured: the tones then
+/// land outside their bands and every number is unreliable.
+bool sampleRateOff(const Report& rep) {
+    if ((rep.sampleRate == 0) || (rep.sampleRateMeasured == 0)) {
+        return false;
+    }
+    const uint32_t tolerance = rep.sampleRate / 20;
+    return (rep.sampleRateMeasured > rep.sampleRate + tolerance) ||
+           (rep.sampleRateMeasured + tolerance < rep.sampleRate);
+}
+
 }  // namespace
 
 // Tones from the first bench test (ELOC_00247, 2026-11-17): 2700 and 4000 Hz reached the mic at
@@ -156,7 +170,7 @@ uint32_t captureMs(const MicTest::Params& p) {
 // yet measured directly.
 // gapMs 600: GUARD_OFF_MS (350) of every gap is skipped, which leaves 250 ms per gap for the
 // buzzer-off statistics.
-MicTest::Params::Params() : numFreqs(3), reps(2), onMs(600), gapMs(600), silenceMs(1500), save(true) {
+MicTest::Params::Params() : numFreqs(3), reps(2), onMs(600), gapMs(600), silenceMs(1500), save(true), confirm(true) {
     memset(freqs, 0, sizeof(freqs));
     freqs[0] = 2700;  // the MLT-8540H buzzer is loudest around here
     freqs[1] = 4000;
@@ -238,9 +252,10 @@ esp_err_t MicTest::start(const Params& params, String& errMsg) {
     mParams = p;
     sNumSkipped = numSkipped;
     memcpy(sSkipped, skipped, sizeof(sSkipped));
-    mPlannedMs = captureMs(p) + POST_PROCESS_MS +
-                 (mSampler->is_i2s_installed_and_started() ? 0 : (I2S_START_MS + MIC_SETTLE_MS));
+    mPlannedMs.store(captureMs(p) + POST_PROCESS_MS +
+                     (mSampler->is_i2s_installed_and_started() ? 0 : (I2S_START_MS + MIC_SETTLE_MS)));
     mStartUs = esp_timer_get_time();
+    mRun.store(1);
     mState.store(State::starting);
     mNeedsI2S.store(true);
 
@@ -292,6 +307,12 @@ void MicTest::onSamples(const int32_t* samples, size_t count) {
     mWritten.store(end);
 }
 
+void MicTest::stopCapture() {
+    mCapturing.store(false);
+    // The read task may be in the middle of its last copy
+    delayMs(100);
+}
+
 void MicTest::cleanup() {
     mCapturing.store(false);
     if (mSampler != nullptr) {
@@ -331,10 +352,9 @@ void MicTest::run() {
     strlcpy(rep.time, timeObject.getDateTime(false).c_str(), sizeof(rep.time));
     const String fileStamp = timeObject.getTime("%Y%m%d_%H%M%S");
 
-    ElocSystem& sys = ElocSystem::GetInstance();
     const Params& p = mParams;
-    ESP_LOGI(TAG, "Test %u: %u tone(s) x %u, on %u ms, gap %u ms, silence %u ms", rep.testId,
-             p.numFreqs, p.reps, p.onMs, p.gapMs, p.silenceMs);
+    ESP_LOGI(TAG, "Test %u: %u tone(s) x %u, on %u ms, gap %u ms, silence %u ms, confirm %u", rep.testId,
+             p.numFreqs, p.reps, p.onMs, p.gapMs, p.silenceMs, p.confirm ? 1 : 0);
 
     // ---- 1. samples arriving? ---------------------------------------------------------------
     // needsI2S() is already set, so the main loop starts I2S if nothing else has. The tap is
@@ -375,18 +395,54 @@ void MicTest::run() {
         return;
     }
 
-    // ---- 3. buzzer ---------------------------------------------------------------------------
+    // ---- 3. one run, and a second one to confirm whatever the first found -------------------
+    if (!runOnce(1, fileStamp)) {
+        return;
+    }
+    if (p.confirm && mictest::needsConfirmation(rep.runs[0])) {
+        ESP_LOGI(TAG, "Test %u: run 1 found \"%s\", running again to confirm", rep.testId,
+                 mictest::findingName(rep.runs[0].finding));
+        mPlannedMs.store(mPlannedMs.load() + captureMs(p) + POST_PROCESS_MS + mictest::GUARD_OFF_MS);
+        mRun.store(2);
+        if (!runOnce(2, fileStamp)) {
+            return;
+        }
+    }
+
+    cleanup();
+    heap_caps_free(mWorkspace);
+    mWorkspace = nullptr;
+    heap_caps_free(mBuf);
+    mBuf = nullptr;
+
+    char reason[256];
+    mictest::describe(rep.verdict, reason, sizeof(reason));
+    ESP_LOGI(TAG, "Test %u verdict after %u run(s): %s - %s", rep.testId, rep.numRuns,
+             mictest::verdictName(rep.verdict.verdict), reason);
+    mState.store(State::done);
+}
+
+bool MicTest::runOnce(uint8_t runNo, const String& fileStamp) {
+    Report& rep = sReport;
+    ElocSystem& sys = ElocSystem::GetInstance();
+    const Params& p = mParams;
+    const uint32_t fs = rep.sampleRate;
+
+    // ---- buzzer ------------------------------------------------------------------------------
+    // Held only while capturing, so an intruder alarm is never kept from its siren longer than
+    // one capture. A second run takes it again.
     if (p.numFreqs > 0) {
         if (!sys.acquireBuzzerForTest()) {
-            fail("intruder alarm is active and owns the buzzer");
-            return;
+            fail((runNo == 1) ? "intruder alarm is active and owns the buzzer"
+                              : "intruder alarm became active before the confirming run");
+            return false;
         }
         mBuzzerHeld = true;
         // Whatever beep was cut off must not ring into the silent part
         delayMs(mictest::GUARD_OFF_MS);
     }
 
-    // ---- 4. capture --------------------------------------------------------------------------
+    // ---- capture -----------------------------------------------------------------------------
     mictest::Mark marks[mictest::MAX_MARKS];
     size_t numMarks = 0;
     mWritten.store(0);
@@ -416,25 +472,30 @@ void MicTest::run() {
     delayMs(TAIL_MS);
 
     const uint32_t elapsedMs = static_cast<uint32_t>((esp_timer_get_time() - captureStartUs) / 1000);
-    cleanup();  // stops the capture, gives the buzzer back, waits out the last copy
+    stopCapture();
+    if (mBuzzerHeld) {
+        sys.releaseBuzzerForTest();
+        mBuzzerHeld = false;
+    }
     const uint32_t captured = mWritten.load();
     rep.capturedMs = static_cast<uint32_t>((static_cast<uint64_t>(captured) * 1000) / fs);
+    rep.sampleRateMeasured = 0;
     if ((mLastBlockUs > mFirstBlockUs) && (mLastBlockEnd > mFirstBlockEnd)) {
         rep.sampleRateMeasured = static_cast<uint32_t>(
             (static_cast<uint64_t>(mLastBlockEnd - mFirstBlockEnd) * 1000000ULL) /
             static_cast<uint64_t>(mLastBlockUs - mFirstBlockUs));
     }
-    ESP_LOGI(TAG, "Captured %u samples in %u ms (%u Hz measured, %u Hz configured)", captured,
+    ESP_LOGI(TAG, "Run %u: captured %u samples in %u ms (%u Hz measured, %u Hz configured)", runNo, captured,
              elapsedMs, rep.sampleRateMeasured, fs);
     if (captured < msToSamples(elapsedMs, fs) / 2) {
         char msg[128];
         snprintf(msg, sizeof(msg), "capture incomplete: %u samples in %u ms at %u Hz - I2S stopped delivering",
                  captured, elapsedMs, fs);
         fail(msg);
-        return;
+        return false;
     }
 
-    // ---- 5. analyse --------------------------------------------------------------------------
+    // ---- analyse -----------------------------------------------------------------------------
     mState.store(State::analysing);
     mictest::Segment segments[mictest::MAX_SEGMENTS];
     rep.numMarks = static_cast<uint8_t>(numMarks);
@@ -455,26 +516,27 @@ void MicTest::run() {
     const int64_t analyseStartUs = esp_timer_get_time();
     const bool ok = mictest::analyze(in, *static_cast<mictest::Workspace*>(mWorkspace), rep.result);
     ESP_LOGI(TAG, "Analysis took %u ms", static_cast<unsigned>((esp_timer_get_time() - analyseStartUs) / 1000));
-    heap_caps_free(mWorkspace);
-    mWorkspace = nullptr;
     if (!ok) {
         fail("capture too short to analyse");
-        return;
+        return false;
     }
 
-    // ---- 6. save -----------------------------------------------------------------------------
-    if (p.save) {
-        mState.store(State::saving);
-        snprintf(rep.wavPath, sizeof(rep.wavPath), "%s/%s_%s.wav", C_MICTEST_DIR,
-                 getDeviceInfo().nodeName.c_str(), fileStamp.c_str());
-        saveFiles(captured);
+    // ---- judge -------------------------------------------------------------------------------
+    mictest::Judgement j = mictest::judge(rep.result);
+    if ((j.finding != mictest::Finding::noSignal) && sampleRateOff(rep)) {
+        j.verdict = mictest::Verdict::repeat;
+        j.finding = mictest::Finding::clock;
+        j.value = static_cast<float>(rep.sampleRateMeasured);
+        j.limit = static_cast<float>(rep.sampleRate);
     }
-    heap_caps_free(mBuf);
-    mBuf = nullptr;
+    rep.runs[runNo - 1] = j;
+    rep.numRuns = runNo;
+    rep.verdict = (runNo == 1) ? j : mictest::combineRuns(rep.runs[0], j);
 
     const mictest::Result& res = rep.result;
-    ESP_LOGI(TAG, "Test %u done: noise %.1f dBFS, slope %.1f dB/oct, impulses %u, crest %.1f dB, stuckRun %u",
-             rep.testId, res.noiseDbfs, res.slopeDbPerOct, res.impulses, res.crestDb, res.stuckRun);
+    ESP_LOGI(TAG, "Run %u: %s (%s); noise %.1f dBFS, impulses %u, kurtosis %.1f, stuckRun %u", runNo,
+             mictest::verdictName(j.verdict), mictest::findingName(j.finding), res.noiseDbfs, res.impulses,
+             res.kurtosis, res.stuckRun);
     for (size_t t = 0; t < res.numTones; t++) {
         const mictest::ToneResult& tone = res.tones[t];
         if (tone.valid) {
@@ -484,7 +546,17 @@ void MicTest::run() {
             ESP_LOGW(TAG, "  %u Hz: not measured", tone.freqHz);
         }
     }
-    mState.store(State::done);
+
+    // ---- save --------------------------------------------------------------------------------
+    // Every run gets its own WAV + JSON; the second run's name ends in _run2
+    if (p.save) {
+        mState.store(State::saving);
+        rep.saveError[0] = '\0';
+        snprintf(rep.wavPath, sizeof(rep.wavPath), "%s/%s_%s%s.wav", C_MICTEST_DIR,
+                 getDeviceInfo().nodeName.c_str(), fileStamp.c_str(), (runNo > 1) ? "_run2" : "");
+        saveFiles(captured);
+    }
+    return true;
 }
 
 // 24-bit mono WAV of the capture plus the result as JSON beside it. A failure here never fails
@@ -622,17 +694,39 @@ void MicTest::buildResultJson(String& out, bool pretty, bool forFile) {
     doc["state"] = "done";
     doc["test"] = rep.testId;
     doc["time"] = rep.time;
+
+    // The headline first. "runs" lists each run's own finding; the numbers further down are from
+    // the last run. In the SD file of the first run the verdict covers that run only.
+    {
+        char reason[256];
+        mictest::describe(rep.verdict, reason, sizeof(reason));
+        const bool fault = (rep.verdict.verdict == mictest::Verdict::broken) ||
+                           (rep.verdict.verdict == mictest::Verdict::checkPort) ||
+                           (rep.verdict.verdict == mictest::Verdict::suspect);
+        if ((rep.numRuns > 1) && fault) {
+            strlcat(reason, " - found in both runs", sizeof(reason));
+        }
+        JsonObject verdict = doc.createNestedObject("verdict");
+        verdict["result"] = mictest::verdictName(rep.verdict.verdict);
+        verdict["finding"] = mictest::findingName(rep.verdict.finding);
+        verdict["reason"] = reason;  // copied into the document
+        if (rep.verdict.bestRiseDb > mictest::DB_FLOOR) {
+            verdict["bestRise[dB]"] = round1(rep.verdict.bestRiseDb);
+            verdict["background[dBFS]"] = round1(rep.verdict.backgroundDbfs);
+        }
+        JsonArray runs = verdict.createNestedArray("runs");
+        for (uint8_t i = 0; (i < rep.numRuns) && (i < 2); i++) {
+            runs.add(mictest::findingName(rep.runs[i].finding));
+        }
+    }
+
     doc["fs[Hz]"] = rep.sampleRate;
     doc["fsMeasured[Hz]"] = rep.sampleRateMeasured;
     doc["duration[ms]"] = rep.capturedMs;
     doc["i2sWasRunning"] = rep.i2sWasRunning;
     doc["micVolume2_pwr"] = rep.micVolume;
-    if (rep.sampleRate > 0) {
-        const uint32_t tolerance = rep.sampleRate / 20;
-        if ((rep.sampleRateMeasured > rep.sampleRate + tolerance) ||
-            (rep.sampleRateMeasured + tolerance < rep.sampleRate)) {
-            doc["warning"] = "measured sample rate is off - I2S clock problem, the other numbers are unreliable";
-        }
+    if (sampleRateOff(rep)) {
+        doc["warning"] = "measured sample rate is off - I2S clock problem, the other numbers are unreliable";
     }
 
     JsonObject level = doc.createNestedObject("level");
@@ -694,6 +788,7 @@ void MicTest::buildResultJson(String& out, bool pretty, bool forFile) {
         // the guard times the WAV can be run through MicAnalyzer.hpp again on a PC and give these
         // exact numbers - or new ones with other guard times, without testing the mic again.
         JsonObject analysis = doc.createNestedObject("analysis");
+        analysis["run"] = rep.numRuns;
         analysis["guardOn[ms]"] = mictest::GUARD_ON_MS;
         analysis["guardOff[ms]"] = mictest::GUARD_OFF_MS;
         analysis["leadSkip[ms]"] = mictest::LEAD_SKIP_MS;
@@ -749,15 +844,18 @@ void MicTest::statusJson(String& out) {
     }
     // running
     const uint32_t elapsedMs = static_cast<uint32_t>((esp_timer_get_time() - mStartUs) / 1000);
-    uint32_t progress = (mPlannedMs > 0) ? ((elapsedMs * 100) / mPlannedMs) : 0;
+    const uint32_t plannedMs = mPlannedMs.load();  // grows when a confirming run is added
+    uint32_t progress = (plannedMs > 0) ? ((elapsedMs * 100) / plannedMs) : 0;
     if (progress > 99) {
         progress = 99;
     }
     out = "{\"state\":\"";
     out += stateName(s);
-    out += "\",\"progress[%]\":";
+    out += "\",\"run\":";
+    out += static_cast<uint32_t>(mRun.load());
+    out += ",\"progress[%]\":";
     out += progress;
     out += ",\"remaining[ms]\":";
-    out += (elapsedMs < mPlannedMs) ? (mPlannedMs - elapsedMs) : 0;
+    out += (elapsedMs < plannedMs) ? (plannedMs - elapsedMs) : 0;
     out += "}";
 }

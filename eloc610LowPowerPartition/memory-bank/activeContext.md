@@ -1,6 +1,8 @@
 ﻿# Active Context
 
-## Microphone self-test (`setMicTest` / `getMicTest`): Phase 1 implemented 2026-11-13, V1.81, corrected V1.82 after one healthy-unit test, branch `EDsteve/mic-test`
+## Microphone self-test (`setMicTest` / `getMicTest`): Phase 1 V1.81 (2026-11-13), corrected V1.82, verdict V1.83 (2026-11-17), branch `EDsteve/mic-test`
+
+**2026-11-17, V1.83 - verdict (Phase 2).** Two more bench sessions on ELOC_00247 (normal / thumb on the port / unplugged; then 9 mics swapped in and judged blind: #6 and #7 broken with a rise of 7-15 dB against 59-75 dB healthy, #3's crackle was room noise, #9 was tissue on the port) and a forest simulation (the 2022 ELOC8 Sumatran recording mixed into the bench captures; 2022 files are `raw32 >> 11`, i.e. +30.1 dB) gave the limits. `judge()` in `MicAnalyzer.hpp` turns the numbers into ok / broken / checkPort / suspect / repeat, `combineRuns()` merges a confirming second run, `describe()` writes the reason. Decisions: the best tone's rise counts, not the median (forest noise covers some tones; the median false-alarmed 8-38 % in busy minutes); the user is told the test works best in a quiet place instead of being asked where it runs; a loud background is "repeat", never "broken"; the faint-mic (< 45 dB) and crackle checks only count in a quiet background; a fault is only reported if the second run shows it too. PC replay of the real code: the right verdict for all 9 bench mics, and never "broken" for a healthy mic in the forest. Details in the README's "Verdict".
 
 **2026-11-17, V1.82 - first bench test (ELOC_00247, believed healthy, indoors).** The WAV replayed through `MicAnalyzer.hpp` on the PC (native g++, switch marks rebuilt at the 1024-sample read granularity) reproduced the device JSON to 0.1 dB, so the device maths is right. Healthy reference: rise 67.6 dB at 2700 Hz, 64.1 dB at 4000 Hz, tone-band background -104 dBFS. Fixed: the 200 ms guard after switch-off let the fading tone count as crackle (3 false impulses, 3-24 by read phase), now `GUARD_OFF_MS` 350 + gap 600 ms; 1000 Hz dropped from the defaults (buzzer barely makes it), now 2700/4000/5400. Learned: the spectrum slope cannot flag "only pink noise" (-0.2 dB/oct on the healthy mic). The SD JSON now stores the switch marks, so future WAVs replay exactly. Details in the README's "Bench results". Still owed: taped port, broken mics, outdoors, the buzzer frequency map (`freqs=1500,2000,2700,3300,4000,5400#reps=1`).
 
@@ -8,9 +10,9 @@ Field mics fail from ants and humidity, and not all the same way: most output on
 record real sound but very faint, some crackle, a few are dead. Nothing mic-related left the device
 before, so a broken mic was only found when the SD card came back. The test plays tones on the
 on-board buzzer (MLT-8540H, same PCB as the mic) and measures what the mic hears, so it does not
-depend on the ambient sound. **Phase 1 returns raw numbers only, no verdict** - the thresholds are
-to come from a bench session on real broken mics. Plan, command reference, meaning of every result
-field and the bench procedure: `README-MicTest-Plan.md`.
+depend on the ambient sound. Phase 1 returned raw numbers only; V1.83 adds the verdict, with
+thresholds from real broken mics. Plan, command reference, the verdict rules, meaning of every
+result field and the bench procedure: `README-MicTest-Plan.md`.
 
 **What was built:**
 - `lib/audio_input/src/MicAnalyzer.hpp` - header-only analysis, no ESP code: level, DC, clipping,
@@ -42,15 +44,17 @@ field and the bench procedure: `README-MicTest-Plan.md`.
   both commands and shows the reply.
 
 **Still owed:**
-- Everything on hardware. First run: healthy unit, then tape over the mic port, then each broken mic
-  (procedure in the README). Open question that decides the design: **does a dead mic still show a
-  rise** because the buzzer's drive current reaches its output electrically?
+- On hardware: the V1.83 verdict and the confirming run. Then a second unit (is its buzzer as loud?
+  the limits come from ELOC_00247 alone), faint, hissing and crackling broken mics (none tested yet;
+  field recordings in `Broken Microphones ICS-43434`), and a test in the forest itself. The old open
+  question is answered: a broken mic shows only 7-15 dB of rise, no electrical feed-through.
 - I2S keeps running after a test on an idle device (as after a stopped recording) - there is no way
   to end the read task yet.
 - A LoRa join beep during a test is not detected and spoils the tone numbers.
 - Wiki: `ELOC-3.0-App-Interface` does not list the two commands yet - held back until the branch is
-  merged and the result format has settled (Phase 2 adds the verdict).
-- Phases 2-5 in the README: thresholds + verdict, app "Mic check" screen, optional crackle counter
+  merged and the result format has settled (the verdict is in since V1.83).
+- Phases 3-5 in the README: app "Mic check" screen (shows "works best in a quiet place" before
+  the test, then the verdict), optional crackle counter
   during recording / mic health over LoRa, optional clip to the phone.
 
 ## getConfig and config saves on low heap: fixed 2026-11-05, V1.80, bench-tested, low-heap paths not forced

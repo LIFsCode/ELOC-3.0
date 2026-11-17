@@ -1013,13 +1013,15 @@ void cmd_SetMicTest(CmdParser *cmdParser) {
     long gapMs = params.gapMs;
     long silenceMs = params.silenceMs;
     long save = params.save ? 1 : 0;
+    long confirm = params.confirm ? 1 : 0;
     if (!parseMicTestNumber(cmdParser, "reps", 1, 5, reps) ||
         !parseMicTestNumber(cmdParser, "onMs", 400, 3000, onMs) ||
         !parseMicTestNumber(cmdParser, "gapMs", 400, 3000, gapMs) ||
         !parseMicTestNumber(cmdParser, "silenceMs", 500, 10000, silenceMs) ||
-        !parseMicTestNumber(cmdParser, "save", 0, 1, save)) {
+        !parseMicTestNumber(cmdParser, "save", 0, 1, save) ||
+        !parseMicTestNumber(cmdParser, "confirm", 0, 1, confirm)) {
         resp.setError(ESP_ERR_INVALID_ARG,
-                      "allowed: reps 1..5, onMs 400..3000, gapMs 400..3000, silenceMs 500..10000, save 0/1");
+                      "allowed: reps 1..5, onMs 400..3000, gapMs 400..3000, silenceMs 500..10000, save 0/1, confirm 0/1");
         return;
     }
     params.reps = static_cast<uint8_t>(reps);
@@ -1027,8 +1029,9 @@ void cmd_SetMicTest(CmdParser *cmdParser) {
     params.gapMs = static_cast<uint16_t>(gapMs);
     params.silenceMs = static_cast<uint16_t>(silenceMs);
     params.save = (save != 0);
+    params.confirm = (confirm != 0);
 
-    // Asynchronous, like getLinkCheck: the test takes about 10 s, and blocking the Bluetooth task
+    // Asynchronous, like getLinkCheck: the test takes about 12 s, and blocking the Bluetooth task
     // that long stalls the status LEDs, the LoRa loop and the app link. The app polls getMicTest.
     MicTest& micTest = MicTest::GetInstance();
     String errMsg;
@@ -1159,8 +1162,8 @@ bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     success &= cmdCallback.addCmd("setBattery", &cmd_SetBattery, "Set battery calibration values. Mode otions: \"clear\", \"add\", cal in the format {\"<esp meas voltage>\" : <real voltage>} e.g. setBattery#mode=add#cal={\"3.0\":3.1}");
     success &= cmdCallback.addCmd("getBattery", &cmd_GetBattery, "read the battery calibration or the raw (uncalibrated voltage). Mode options: \"raw\", \"cal\"");
 success &= cmdCallback.addCmd("getSdSpeedTest", &cmd_GetSdCardSpeedTest, "write and read a blocks (1k - 64k) of data to/from the sd card and check the speed. Additinoal option \"size\", size of overall file (default 512 kByte), -1 means file size = block size, e.g. getSdSpeedTest#size=524288");
-    success &= cmdCallback.addCmd("setMicTest", &cmd_SetMicTest, "Start the microphone self-test: buzzer tones are played and what the microphone hears is measured. Returns at once, the test takes about 12 s - poll getMicTest. Optional: freqs (Hz, comma separated, 0 = silent test without buzzer; default 2700,4000,5400), reps (2), onMs (600), gapMs (600), silenceMs (1500), save (1 = WAV + JSON to /sdcard/mictest), e.g. setMicTest#freqs=2700#reps=3");
-    success &= cmdCallback.addCmd("getMicTest", &cmd_GetMicTest, "Microphone self-test progress and last result as JSON: state (idle/starting/capturing/analysing/saving/done/error), then level, spectrum, crackle and per-tone rise in dB. Raw numbers, no verdict yet");
+    success &= cmdCallback.addCmd("setMicTest", &cmd_SetMicTest, "Start the microphone self-test: buzzer tones are played and what the microphone hears is measured. Works best in a quiet place. Returns at once, the test takes about 12 s (about 24 s when a second run confirms a fault) - poll getMicTest. Optional: freqs (Hz, comma separated, 0 = silent test without buzzer; default 2700,4000,5400), reps (2), onMs (600), gapMs (600), silenceMs (1500), save (1 = WAV + JSON to /sdcard/mictest), confirm (1 = second run when the first finds anything), e.g. setMicTest#freqs=2700#reps=3");
+    success &= cmdCallback.addCmd("getMicTest", &cmd_GetMicTest, "Microphone self-test progress and last result as JSON: state (idle/starting/capturing/analysing/saving/done/error), then verdict (result ok/broken/checkPort/suspect/repeat with finding and reason) and the numbers behind it: level, spectrum, crackle and per-tone rise in dB");
     success &= cmdCallback.addCmd("setFwUpdateBegin", &cmd_SetFwUpdateBegin, "Start a firmware transfer over BT. meta JSON: size, sha256, version, variant, chunkSize (default 4096, max 8192). Returns {resumeOffset, chunkSize} and switches the link to binary frame mode, e.g. setFwUpdateBegin#meta={\"size\":123456,\"sha256\":\"<64 hex>\",\"version\":\"1.23\",\"variant\":\"ei\",\"chunkSize\":4096}");
     success &= cmdCallback.addCmd("getFwUpdateStatus", &cmd_GetFwUpdateStatus, "Status of the staged firmware transfer: {state: idle/receiving/staged/error, bytesReceived, expectedSize, sha256}. Drives resume and app UI");
     success &= cmdCallback.addCmd("setFwUpdateAbort", &cmd_SetFwUpdateAbort, "Abort the current firmware transfer. Optional discard=true also deletes the partial file (otherwise it is kept for resume), e.g. setFwUpdateAbort#discard=true");

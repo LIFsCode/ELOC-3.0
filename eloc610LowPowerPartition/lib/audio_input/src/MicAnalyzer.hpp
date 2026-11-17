@@ -29,8 +29,9 @@
  *
  * Takes one finished capture plus the list of when the buzzer was on, and returns raw numbers:
  * levels, an octave spectrum of the buzzer-off time, crackle statistics and, per buzzer tone, how
- * far the level at that pitch rose while the buzzer sounded. It gives no verdict - the thresholds
- * are still to be found on real broken microphones.
+ * far the level at that pitch rose while the buzzer sounded. judge() turns those numbers into a
+ * verdict (ok / broken / checkPort / suspect / repeat) with fixed limits from the bench sessions,
+ * and combineRuns() merges it with the verdict of a second, confirming run.
  *
  * Header-only and free of ESP/Arduino code on purpose, so test/test_generic_mic_analyzer can run
  * it on the PC. Samples are signed 24-bit values (the raw I2S word shifted right by 8), i.e.
@@ -44,6 +45,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <math.h>
+#include <stdio.h>
 #include <algorithm>
 
 namespace mictest {
@@ -118,6 +120,7 @@ struct ToneResult {
 
 struct Result {
     // whole capture
+    uint32_t samples;        ///< length of the capture
     float    peakDbfs;
     uint32_t clipped;        ///< samples at the 24-bit rails
     uint32_t stuckRun;       ///< longest run of identical consecutive samples
@@ -336,6 +339,7 @@ inline void toneBand(uint32_t freqHz, uint32_t sampleRate, size_t& lo, size_t& h
  */
 inline bool analyze(const Input& in, Workspace& ws, Result& out) {
     memset(&out, 0, sizeof(out));
+    out.samples = in.count;
     out.peakDbfs = DB_FLOOR;
     out.noiseDbfs = DB_FLOOR;
     out.dcDbfs = DB_FLOOR;
@@ -637,6 +641,269 @@ inline bool analyze(const Input& in, Workspace& ws, Result& out) {
     }
 
     return true;
+}
+
+// ================================================================================================
+// Verdict
+//
+// Limits from the bench sessions on ELOC_00247 (2026-11-17: seven healthy mics, two broken ones,
+// tissue and a thumb on the port, mic unplugged) and from an hour of real Sumatran forest noise
+// mixed into those captures. README-MicTest-Plan.md, "Bench results" and "In jungle noise", has
+// the numbers. The test is meant for a quiet place. In a loud one the limits still hold, but they
+// answer "repeat in a quiet place" rather than fail a good microphone.
+//
+// The "rise" of a tone is its signal-to-noise ratio: how far the beep stands above the background
+// in its own band. The best tone counts, because forest noise only ever covers some of them.
+// ================================================================================================
+
+static const float    NO_SIGNAL_DBFS   = -130.0f;  ///< buzzer-off noise below this is a few LSB at most
+static const float    BURIED_RISE_DB   = 30.0f;    ///< best tone. Healthy 59-75 (bench), >= 36.5 (loud forest); broken 7-15
+static const float    WEAK_RISE_DB     = 45.0f;    ///< best tone, quiet background only. Healthy >= 53.8
+static const float    QUIET_DBFS       = -90.0f;   ///< quietest tone-band background. Healthy -101..-106, broken -67..-77
+static const float    PRESSED_DBFS     = -22.0f;   ///< loudest tone. Healthy -30..-36, thumb on the port -11 / -17
+static const float    PORT_GAP_DB      = 18.0f;    ///< lowest minus highest tone level. Healthy 5-10, tissue 30
+static const float    PORT_MIN_RATIO   = 1.8f;     ///< the two tones must be at least this far apart in pitch
+static const float    DISTURBED_DBFS   = -45.0f;   ///< octave bands below 125 Hz. Healthy -80..-92, thumb -20..-38
+static const float    DISTURBED_TOP_HZ = 126.0f;   ///< highest band edge that counts as "below 125 Hz"
+static const uint32_t CRACKLE_IMPULSES = 10;       ///< healthy 0-6; room clicks gave 13 (#3)
+static const float    CRACKLE_KURTOSIS = 20.0f;    ///< healthy 0-6.5; room clicks gave 198
+
+enum class Verdict : uint8_t {
+    none,       ///< no verdict: no tone was measured (silent test)
+    ok,
+    broken,
+    checkPort,  ///< the mic hears, but its sound port seems blocked
+    suspect,    ///< probably a fault the limits cannot prove - listen to the recording
+    repeat,     ///< the conditions spoiled the test, not the mic
+};
+
+/// Why the verdict was given. Checked in this order; the first that applies decides.
+enum class Finding : uint8_t {
+    none,        ///< nothing wrong found
+    noTone,      ///< no tone measured
+    noSignal,    ///< constant or no output: unplugged, dead, broken connection
+    buried,      ///< the beeps are buried in noise: even the best tone's rise is below BURIED_RISE_DB
+    disturbed,   ///< loud low-frequency noise: the device was moved or touched
+    pressed,     ///< a beep far too loud: the port is pressed or sealed (a sealed cavity amplifies)
+    noisy,       ///< loud background: the place is not quiet, or the mic hisses
+    weak,        ///< quiet background, but the best tone's rise is below WEAK_RISE_DB: a faint mic
+    portDamped,  ///< the high tone much weaker than the low one: the port is blocked
+    crackle,     ///< clicks in the buzzer-off time
+    clock,       ///< set by the caller: the measured sample rate is off, the numbers are unreliable
+};
+
+struct Judgement {
+    Verdict verdict;
+    Finding finding;
+    float   value;           ///< the number behind the finding (dB, dBFS, a count or Hz)
+    float   limit;           ///< what it was compared with
+    float   bestRiseDb;      ///< DB_FLOOR without a measured tone
+    float   backgroundDbfs;  ///< quietest tone-band background; DB_FLOOR without a measured tone
+};
+
+inline const char* verdictName(Verdict v) {
+    switch (v) {
+        case Verdict::none:      return "none";
+        case Verdict::ok:        return "ok";
+        case Verdict::broken:    return "broken";
+        case Verdict::checkPort: return "checkPort";
+        case Verdict::suspect:   return "suspect";
+        case Verdict::repeat:    return "repeat";
+    }
+    return "unknown";
+}
+
+inline const char* findingName(Finding f) {
+    switch (f) {
+        case Finding::none:       return "ok";
+        case Finding::noTone:     return "noTone";
+        case Finding::noSignal:   return "noSignal";
+        case Finding::buried:     return "buried";
+        case Finding::disturbed:  return "disturbed";
+        case Finding::pressed:    return "pressed";
+        case Finding::noisy:      return "noisy";
+        case Finding::weak:       return "weak";
+        case Finding::portDamped: return "portDamped";
+        case Finding::crackle:    return "crackle";
+        case Finding::clock:      return "clock";
+    }
+    return "unknown";
+}
+
+namespace detail {
+
+inline Judgement makeJudgement(Verdict v, Finding f, float value, float limit, float best, float background) {
+    Judgement j;
+    j.verdict = v;
+    j.finding = f;
+    j.value = value;
+    j.limit = limit;
+    j.bestRiseDb = best;
+    j.backgroundDbfs = background;
+    return j;
+}
+
+/// How bad a fault verdict is, for combining two runs. Only broken / checkPort / suspect.
+inline int severity(Verdict v) {
+    switch (v) {
+        case Verdict::suspect:   return 1;
+        case Verdict::checkPort: return 2;
+        case Verdict::broken:    return 3;
+        default:                 return 0;
+    }
+}
+
+}  // namespace detail
+
+/**
+ * @brief The verdict for one analysed capture.
+ *
+ * The checks run in a fixed order and the first that applies decides:
+ * no signal, beeps buried in noise, handling noise, port pressed, loud background, faint mic,
+ * port blocked, crackle. The order matters: the faint-mic and crackle checks only count in a
+ * quiet background, which the loud-background check before them guarantees.
+ */
+inline Judgement judge(const Result& r) {
+    float best = DB_FLOOR;
+    float background = DB_FLOOR;
+    float loudest = DB_FLOOR;
+    const ToneResult* lowTone = NULL;
+    const ToneResult* highTone = NULL;
+    for (size_t t = 0; t < r.numTones; t++) {
+        const ToneResult& tone = r.tones[t];
+        if (!tone.valid) {
+            continue;
+        }
+        if ((lowTone == NULL) || (tone.riseDb > best)) {
+            best = tone.riseDb;
+        }
+        if ((lowTone == NULL) || (tone.offDbfs < background)) {
+            background = tone.offDbfs;
+        }
+        if ((lowTone == NULL) || (tone.onDbfs > loudest)) {
+            loudest = tone.onDbfs;
+        }
+        if ((lowTone == NULL) || (tone.freqHz < lowTone->freqHz)) {
+            lowTone = &tone;
+        }
+        if ((highTone == NULL) || (tone.freqHz > highTone->freqHz)) {
+            highTone = &tone;
+        }
+    }
+
+    // A dead line: the same value most of the time, or (with no buzzer-off time to judge) nothing
+    const bool constant = (r.samples > 0) && (r.stuckRun > r.samples / 2);
+    const bool silent = (r.offSamples > 0) && (r.noiseDbfs < NO_SIGNAL_DBFS);
+    if (constant || silent) {
+        return detail::makeJudgement(Verdict::broken, Finding::noSignal, r.noiseDbfs, NO_SIGNAL_DBFS, best, background);
+    }
+    if (lowTone == NULL) {
+        return detail::makeJudgement(Verdict::none, Finding::noTone, 0.0f, 0.0f, best, background);
+    }
+    if (best < BURIED_RISE_DB) {
+        return detail::makeJudgement(Verdict::broken, Finding::buried, best, BURIED_RISE_DB, best, background);
+    }
+
+    // Loudest octave band below 125 Hz (the lowest band if even that one reaches higher)
+    float lowFreq = r.bandDbfs[0];
+    for (size_t b = 1; b < NUM_BANDS; b++) {
+        if (r.bandEdgeHz[b + 1] > DISTURBED_TOP_HZ) {
+            break;
+        }
+        if (r.bandDbfs[b] > lowFreq) {
+            lowFreq = r.bandDbfs[b];
+        }
+    }
+    if (lowFreq > DISTURBED_DBFS) {
+        return detail::makeJudgement(Verdict::repeat, Finding::disturbed, lowFreq, DISTURBED_DBFS, best, background);
+    }
+    if (loudest > PRESSED_DBFS) {
+        return detail::makeJudgement(Verdict::repeat, Finding::pressed, loudest, PRESSED_DBFS, best, background);
+    }
+    if (background > QUIET_DBFS) {
+        return detail::makeJudgement(Verdict::repeat, Finding::noisy, background, QUIET_DBFS, best, background);
+    }
+    if (best < WEAK_RISE_DB) {
+        return detail::makeJudgement(Verdict::broken, Finding::weak, best, WEAK_RISE_DB, best, background);
+    }
+    if (static_cast<float>(highTone->freqHz) >= PORT_MIN_RATIO * static_cast<float>(lowTone->freqHz)) {
+        const float gap = lowTone->onDbfs - highTone->onDbfs;
+        if (gap > PORT_GAP_DB) {
+            return detail::makeJudgement(Verdict::checkPort, Finding::portDamped, gap, PORT_GAP_DB, best, background);
+        }
+    }
+    if ((r.impulses >= CRACKLE_IMPULSES) && (r.kurtosis >= CRACKLE_KURTOSIS)) {
+        return detail::makeJudgement(Verdict::suspect, Finding::crackle, static_cast<float>(r.impulses),
+                                     static_cast<float>(CRACKLE_IMPULSES), best, background);
+    }
+    return detail::makeJudgement(Verdict::ok, Finding::none, best, 0.0f, best, background);
+}
+
+/// True when a verdict should be confirmed by a second run: everything except ok and none.
+inline bool needsConfirmation(const Judgement& j) {
+    return (j.verdict != Verdict::ok) && (j.verdict != Verdict::none);
+}
+
+/**
+ * @brief Merge the verdict of a confirming second run into the first.
+ *
+ * A fault counts only if both runs show it. A microphone fault is there every time, while room
+ * noise comes and goes - one run of clicks or a door banging must not fail a good mic.
+ * - second run ok: ok, the first finding was not confirmed
+ * - either run "repeat": repeat (the second run's reason first) - the conditions spoiled it
+ * - two faults: the milder one, which both runs show at least
+ */
+inline Judgement combineRuns(const Judgement& first, const Judgement& second) {
+    if (!needsConfirmation(first)) {
+        return first;
+    }
+    if ((second.verdict == Verdict::ok) || (second.verdict == Verdict::none)) {
+        return second;
+    }
+    if (second.verdict == Verdict::repeat) {
+        return second;
+    }
+    if (first.verdict == Verdict::repeat) {
+        return first;
+    }
+    return (detail::severity(first.verdict) < detail::severity(second.verdict)) ? first : second;
+}
+
+/// One-line explanation of a verdict for the user, with its numbers. Returns snprintf's result.
+inline int describe(const Judgement& j, char* buf, size_t len) {
+    switch (j.finding) {
+        case Finding::none:
+            return snprintf(buf, len, "microphone OK: the beeps stand %.0f dB above the background", j.bestRiseDb);
+        case Finding::noTone:
+            return snprintf(buf, len, "no verdict: no beep was measured");
+        case Finding::noSignal:
+            return snprintf(buf, len, "no signal: the microphone sends a constant value - unplugged, dead or a broken connection");
+        case Finding::buried:
+            return snprintf(buf, len, "beeps buried in noise: the best beep is only %.0f dB above the background (limit %.0f) - "
+                            "the microphone is broken", j.value, j.limit);
+        case Finding::disturbed:
+            return snprintf(buf, len, "handling noise (%.0f dBFS below 125 Hz): the device was moved or touched - "
+                            "repeat without touching it", j.value);
+        case Finding::pressed:
+            return snprintf(buf, len, "a beep is far too loud (%.0f dBFS): something presses on or seals the mic port - "
+                            "repeat with the port free", j.value);
+        case Finding::noisy:
+            return snprintf(buf, len, "too noisy (background %.0f dBFS, limit %.0f): the place is not quiet or the microphone "
+                            "hisses - repeat in a quiet place; if it stays noisy, the microphone is broken", j.value, j.limit);
+        case Finding::weak:
+            return snprintf(buf, len, "faint microphone: in a quiet place the best beep is only %.0f dB above the background "
+                            "(limit %.0f)", j.value, j.limit);
+        case Finding::portDamped:
+            return snprintf(buf, len, "the high beep is %.0f dB weaker than the low one (limit %.0f): the mic port seems "
+                            "blocked - check it for dirt, ants or water", j.value, j.limit);
+        case Finding::crackle:
+            return snprintf(buf, len, "clicks heard (%.0f in the quiet parts): the microphone may crackle - "
+                            "listen to the recording", j.value);
+        case Finding::clock:
+            return snprintf(buf, len, "sample rate measured %.0f Hz instead of %.0f Hz: I2S clock problem, the numbers are "
+                            "unreliable - repeat", j.value, j.limit);
+    }
+    return snprintf(buf, len, "unknown");
 }
 
 }  // namespace mictest

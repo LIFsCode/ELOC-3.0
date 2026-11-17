@@ -36,13 +36,14 @@ class I2SMEMSSampler;
 /**
  * Microphone self-test (BT commands setMicTest / getMicTest, see README-MicTest-Plan.md).
  *
- * Plays tones on the on-board buzzer, records what the microphone hears and reports raw numbers:
+ * Plays tones on the on-board buzzer, records what the microphone hears and reports a verdict
+ * (ok / broken / checkPort / suspect / repeat, with the reason) plus the raw numbers behind it:
  * levels, an octave spectrum, crackle statistics and how far each tone rose above the background.
- * No verdict yet - the thresholds are to be found on real broken microphones.
  *
- * One test runs in its own short-lived task (about 10 s): it only copies samples while the
+ * One test runs in its own short-lived task (about 12 s): it only copies samples while the
  * buzzer plays, analyses them afterwards (lib/audio_input/src/MicAnalyzer.hpp), and can save the
- * capture as a WAV plus the result as JSON to /sdcard/mictest/.
+ * capture as a WAV plus the result as JSON to /sdcard/mictest/. When the first run finds anything,
+ * a second run follows at once and a fault is only reported if both runs show it.
  */
 class MicTest {
 public:
@@ -58,6 +59,7 @@ public:
         uint16_t gapMs;             ///< silence after each tone
         uint16_t silenceMs;         ///< silence before the first tone
         bool     save;              ///< write WAV + JSON to the SD card
+        bool     confirm;           ///< run a second time when the first run finds anything
         Params();                   ///< the defaults: 2700/4000/5400 Hz, twice, 600 ms on, 600 ms off
     };
 
@@ -77,9 +79,10 @@ public:
     /// @brief State, progress while running, and the last result or error.
     void statusJson(String& out);
 
-    /// @brief Rough time until the result is ready, for the reply to setMicTest.
+    /// @brief Rough time until the result is ready, for the reply to setMicTest. One run; a
+    ///        confirming second run adds about as much again.
     uint32_t plannedDurationMs() const {
-        return mPlannedMs;
+        return mPlannedMs.load();
     }
 
     /// @brief True while the test needs microphone data. The main loop starts I2S on this exactly
@@ -96,6 +99,9 @@ private:
 
     static void taskEntry(void* arg);
     void run();
+    /// @brief Capture, analyse and judge once, and save the files. False: failed, fail() was called.
+    bool runOnce(uint8_t runNo, const String& fileStamp);
+    void stopCapture();
     void fail(const char* msg);
     void cleanup();
 
@@ -111,7 +117,8 @@ private:
     std::atomic<bool> mNeedsI2S{false};
     Params mParams;
     uint32_t mTestCount = 0;
-    uint32_t mPlannedMs = 0;
+    std::atomic<uint32_t> mPlannedMs{0};
+    std::atomic<uint8_t> mRun{1};       ///< 1 or 2, for the progress report
     int64_t mStartUs = 0;
     bool mBuzzerHeld = false;
 

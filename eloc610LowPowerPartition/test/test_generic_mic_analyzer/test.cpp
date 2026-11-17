@@ -89,8 +89,11 @@ struct Scenario {
     double noiseRms = 1e-4;      // of full scale
     bool pinkNoise = false;
     double toneAmplitude = 0.01; // of full scale; 0 = a mic that hears nothing
+    std::vector<double> toneAmplitudes;  // per tone; overrides toneAmplitude when not empty
     double toneDetune = 1.0;     // actual pitch / nominal pitch
     double dc = 0.0;
+    double humAmplitude = 0.0;   // a steady sine over the whole capture ...
+    double humHz = 60.0;         // ... at this pitch (handling rumble, an insect chorus)
     uint32_t seed = 12345;
 };
 
@@ -150,7 +153,8 @@ Capture makeCapture(const Scenario& sc) {
     }
     for (uint32_t n = 0; n < total; n++) {
         const double w = rng.gauss();
-        x[n] = sc.dc + sc.noiseRms * (sc.pinkNoise ? pinkGain * pink.step(w) : w);
+        x[n] = sc.dc + sc.noiseRms * (sc.pinkNoise ? pinkGain * pink.step(w) : w) +
+               sc.humAmplitude * sin(kTwoPi * sc.humHz * n / fs);
     }
 
     uint32_t t = msToSamples(sc.silenceMs, fs);
@@ -163,14 +167,15 @@ Capture makeCapture(const Scenario& sc) {
             m.tone = static_cast<uint8_t>(i);
             cap.marks.push_back(m);
             const double f = sc.tones[i] * sc.toneDetune;
+            const double amp = sc.toneAmplitudes.empty() ? sc.toneAmplitude : sc.toneAmplitudes[i];
             const uint32_t stop = m.offIdx + latency;
             for (uint32_t n = m.onIdx + latency; (n < stop) && (n < total); n++) {
-                x[n] += sc.toneAmplitude * sin(kTwoPi * f * n / fs);
+                x[n] += amp * sin(kTwoPi * f * n / fs);
             }
             if (sc.tailTauMs > 0.0) {
                 const double tau = sc.tailTauMs * fs / 1000.0;
                 for (uint32_t n = stop; (n < stop + 12 * tau) && (n < total); n++) {
-                    x[n] += sc.toneAmplitude * exp(-static_cast<double>(n - stop) / tau) * sin(kTwoPi * f * n / fs);
+                    x[n] += amp * exp(-static_cast<double>(n - stop) / tau) * sin(kTwoPi * f * n / fs);
                 }
             }
             t = m.offIdx + msToSamples(sc.gapMs, fs);
@@ -574,6 +579,255 @@ void test_too_short_capture(void) {
     TEST_ASSERT_FALSE(r.tones[0].valid);
 }
 
+// ---- verdict -------------------------------------------------------------------------------------
+// Scenarios modelled on the bench measurements of 2026-11-17 (README-MicTest-Plan.md).
+
+namespace {
+
+double dbfsToAmp(double dbfs) {
+    return pow(10.0, dbfs / 20.0);
+}
+
+/// A healthy mic in a quiet room with the default tones: background about -105 dBFS in the
+/// 2700 Hz band, tones at -36 / -40 / -40 dBFS.
+Scenario benchScenario() {
+    Scenario sc;
+    sc.tones = {2700, 4000, 5400};
+    sc.noiseRms = 2e-5;
+    sc.toneAmplitudes = {dbfsToAmp(-36), dbfsToAmp(-40), dbfsToAmp(-40)};
+    return sc;
+}
+
+Judgement judgeCapture(const Capture& cap, Result& r) {
+    TEST_ASSERT_TRUE(run(cap, r));
+    return judge(r);
+}
+
+Judgement judgeScenario(const Scenario& sc) {
+    Result r;
+    return judgeCapture(makeCapture(sc), r);
+}
+
+Judgement made(Verdict v, Finding f) {
+    Judgement j;
+    memset(&j, 0, sizeof(j));
+    j.verdict = v;
+    j.finding = f;
+    return j;
+}
+
+}  // namespace
+
+void test_verdict_healthy(void) {
+    Result r;
+    const Judgement j = judgeCapture(makeCapture(benchScenario()), r);
+    TEST_ASSERT_EQUAL_STRING("ok", verdictName(j.verdict));
+    TEST_ASSERT_EQUAL_STRING("ok", findingName(j.finding));
+    TEST_ASSERT_FLOAT_WITHIN(3.0f, 69.0f, j.bestRiseDb);           // 2700 Hz: -36 over about -105
+    TEST_ASSERT_TRUE((j.backgroundDbfs < -100.0f) && (j.backgroundDbfs > -110.0f));
+    TEST_ASSERT_FALSE(needsConfirmation(j));
+}
+
+void test_verdict_no_signal(void) {
+    Capture cap = makeCapture(benchScenario());
+    std::fill(cap.samples.begin(), cap.samples.end(), 0);
+    Result r;
+    const Judgement j = judgeCapture(cap, r);
+    TEST_ASSERT_TRUE(j.verdict == Verdict::broken);
+    TEST_ASSERT_TRUE(j.finding == Finding::noSignal);
+}
+
+// Like #6 and #7: the beeps arrive about 28 dB down and the mic hisses about 28 dB louder
+void test_verdict_buried(void) {
+    Scenario sc = benchScenario();
+    sc.noiseRms = 5.2e-4;   // about -77 dBFS in the 2700 Hz band
+    sc.toneAmplitudes = {dbfsToAmp(-63), dbfsToAmp(-64), dbfsToAmp(-66)};
+    const Judgement j = judgeScenario(sc);
+    TEST_ASSERT_TRUE(j.verdict == Verdict::broken);
+    TEST_ASSERT_TRUE(j.finding == Finding::buried);
+    TEST_ASSERT_TRUE(j.bestRiseDb < BURIED_RISE_DB);
+    TEST_ASSERT_TRUE(j.bestRiseDb > 5.0f);
+}
+
+// A faint mic: normal self-noise, beeps 29 dB quieter - passes the 30 dB check, not the 45 dB one
+void test_verdict_weak(void) {
+    Scenario sc = benchScenario();
+    sc.toneAmplitudes = {dbfsToAmp(-65), dbfsToAmp(-69), dbfsToAmp(-69)};
+    const Judgement j = judgeScenario(sc);
+    TEST_ASSERT_TRUE(j.verdict == Verdict::broken);
+    TEST_ASSERT_TRUE(j.finding == Finding::weak);
+    TEST_ASSERT_TRUE((j.bestRiseDb >= BURIED_RISE_DB) && (j.bestRiseDb < WEAK_RISE_DB));
+}
+
+// A healthy mic in a loud place: the beeps are heard, the background is too loud to judge
+void test_verdict_noisy(void) {
+    Scenario sc = benchScenario();
+    sc.noiseRms = 3.7e-4;   // about -80 dBFS in the 2700 Hz band
+    const Judgement j = judgeScenario(sc);
+    TEST_ASSERT_TRUE(j.verdict == Verdict::repeat);
+    TEST_ASSERT_TRUE(j.finding == Finding::noisy);
+    TEST_ASSERT_TRUE(j.value > QUIET_DBFS);
+    TEST_ASSERT_TRUE(needsConfirmation(j));
+}
+
+// The same faint mic in that loud place is not called broken: weak is only judged when quiet
+void test_verdict_faint_in_noise_is_repeat(void) {
+    Scenario sc = benchScenario();
+    sc.noiseRms = 3.7e-4;
+    sc.toneAmplitudes = {dbfsToAmp(-40), dbfsToAmp(-44), dbfsToAmp(-44)};
+    const Judgement j = judgeScenario(sc);
+    TEST_ASSERT_TRUE(j.verdict == Verdict::repeat);
+    TEST_ASSERT_TRUE(j.finding == Finding::noisy);
+}
+
+// Insects drown the 5400 Hz beep alone (as in the forest from minute 7): still ok
+void test_verdict_one_tone_drowned_is_ok(void) {
+    Scenario sc = benchScenario();
+    sc.humAmplitude = dbfsToAmp(-50);
+    sc.humHz = 5450.0;
+    Result r;
+    const Judgement j = judgeCapture(makeCapture(sc), r);
+    TEST_ASSERT_TRUE(r.tones[2].riseDb < BURIED_RISE_DB);   // 5400 Hz is buried ...
+    TEST_ASSERT_TRUE(j.verdict == Verdict::ok);              // ... the other two are not
+}
+
+// Tissue on the port (#9): the higher the pitch, the more is lost
+void test_verdict_port_damped(void) {
+    Scenario sc = benchScenario();
+    sc.toneAmplitudes = {dbfsToAmp(-34), dbfsToAmp(-50), dbfsToAmp(-63)};
+    const Judgement j = judgeScenario(sc);
+    TEST_ASSERT_TRUE(j.verdict == Verdict::checkPort);
+    TEST_ASSERT_TRUE(j.finding == Finding::portDamped);
+    TEST_ASSERT_FLOAT_WITHIN(1.5f, 29.0f, j.value);
+}
+
+// Port damping needs two tones far enough apart in pitch
+void test_verdict_port_needs_wide_pitch_range(void) {
+    Scenario sc = benchScenario();
+    sc.tones = {2700, 4000};
+    sc.toneAmplitudes = {dbfsToAmp(-34), dbfsToAmp(-55)};
+    const Judgement j = judgeScenario(sc);
+    TEST_ASSERT_TRUE(j.verdict == Verdict::ok);
+}
+
+// A thumb on the port: the sealed cavity makes the buzzer louder
+void test_verdict_pressed(void) {
+    Scenario sc = benchScenario();
+    sc.toneAmplitudes = {dbfsToAmp(-11), dbfsToAmp(-23), dbfsToAmp(-35)};
+    const Judgement j = judgeScenario(sc);
+    TEST_ASSERT_TRUE(j.verdict == Verdict::repeat);
+    TEST_ASSERT_TRUE(j.finding == Finding::pressed);
+}
+
+// Handling the device: strong rumble below 125 Hz
+void test_verdict_disturbed(void) {
+    Scenario sc = benchScenario();
+    sc.humAmplitude = dbfsToAmp(-26);
+    sc.humHz = 50.0;
+    const Judgement j = judgeScenario(sc);
+    TEST_ASSERT_TRUE(j.verdict == Verdict::repeat);
+    TEST_ASSERT_TRUE(j.finding == Finding::disturbed);
+}
+
+// Clicks in a quiet room: suspect, not broken
+void test_verdict_crackle(void) {
+    Scenario sc = benchScenario();
+    Capture cap = makeCapture(sc);
+    const uint32_t first = msToSamples(200, sc.sampleRate);
+    const uint32_t spacing = msToSamples(80, sc.sampleRate);
+    for (uint32_t i = 0; i < 12; i++) {
+        cap.samples[first + i * spacing] += toS24(0.01);
+    }
+    Result r;
+    const Judgement j = judgeCapture(cap, r);
+    TEST_ASSERT_TRUE(j.verdict == Verdict::suspect);
+    TEST_ASSERT_TRUE(j.finding == Finding::crackle);
+    TEST_ASSERT_EQUAL_FLOAT(12.0f, j.value);
+}
+
+// A few clicks (healthy #8 had 6) are not enough
+void test_verdict_few_clicks_are_ok(void) {
+    Scenario sc = benchScenario();
+    Capture cap = makeCapture(sc);
+    const uint32_t first = msToSamples(200, sc.sampleRate);
+    const uint32_t spacing = msToSamples(80, sc.sampleRate);
+    for (uint32_t i = 0; i < 6; i++) {
+        cap.samples[first + i * spacing] += toS24(0.01);
+    }
+    Result r;
+    const Judgement j = judgeCapture(cap, r);
+    TEST_ASSERT_TRUE(j.verdict == Verdict::ok);
+}
+
+void test_verdict_silent_test(void) {
+    Scenario sc = benchScenario();
+    sc.tones.clear();
+    sc.toneAmplitudes.clear();
+    Capture cap = makeCapture(sc);
+    Result r;
+    Judgement j = judgeCapture(cap, r);
+    TEST_ASSERT_TRUE(j.verdict == Verdict::none);
+    TEST_ASSERT_TRUE(j.finding == Finding::noTone);
+    TEST_ASSERT_FALSE(needsConfirmation(j));
+
+    // a dead line is still recognised without any tone
+    std::fill(cap.samples.begin(), cap.samples.end(), 0);
+    j = judgeCapture(cap, r);
+    TEST_ASSERT_TRUE(j.finding == Finding::noSignal);
+}
+
+void test_combine_runs(void) {
+    const Judgement ok = made(Verdict::ok, Finding::none);
+    const Judgement buried = made(Verdict::broken, Finding::buried);
+    const Judgement weak = made(Verdict::broken, Finding::weak);
+    const Judgement port = made(Verdict::checkPort, Finding::portDamped);
+    const Judgement crackle = made(Verdict::suspect, Finding::crackle);
+    const Judgement noisy = made(Verdict::repeat, Finding::noisy);
+    const Judgement touched = made(Verdict::repeat, Finding::disturbed);
+
+    // nothing to confirm
+    TEST_ASSERT_TRUE(combineRuns(ok, buried).finding == Finding::none);
+    // a fault the second run does not show is not reported (room clicks, #3)
+    TEST_ASSERT_TRUE(combineRuns(crackle, ok).verdict == Verdict::ok);
+    TEST_ASSERT_TRUE(combineRuns(buried, ok).verdict == Verdict::ok);
+    // the same fault twice
+    TEST_ASSERT_TRUE(combineRuns(buried, buried).finding == Finding::buried);
+    TEST_ASSERT_TRUE(combineRuns(weak, buried).verdict == Verdict::broken);
+    // two different faults: the milder one, which both runs show at least
+    TEST_ASSERT_TRUE(combineRuns(buried, crackle).finding == Finding::crackle);
+    TEST_ASSERT_TRUE(combineRuns(port, buried).finding == Finding::portDamped);
+    TEST_ASSERT_TRUE(combineRuns(buried, port).finding == Finding::portDamped);
+    // spoiled conditions in either run: repeat, the second run's reason first
+    TEST_ASSERT_TRUE(combineRuns(buried, noisy).finding == Finding::noisy);
+    TEST_ASSERT_TRUE(combineRuns(touched, buried).finding == Finding::disturbed);
+    TEST_ASSERT_TRUE(combineRuns(noisy, touched).finding == Finding::disturbed);
+    TEST_ASSERT_TRUE(combineRuns(touched, ok).verdict == Verdict::ok);
+
+    TEST_ASSERT_FALSE(needsConfirmation(ok));
+    TEST_ASSERT_FALSE(needsConfirmation(made(Verdict::none, Finding::noTone)));
+    TEST_ASSERT_TRUE(needsConfirmation(crackle));
+    TEST_ASSERT_TRUE(needsConfirmation(noisy));
+    TEST_ASSERT_TRUE(needsConfirmation(buried));
+}
+
+void test_describe_every_finding(void) {
+    const Finding all[] = {Finding::none, Finding::noTone, Finding::noSignal, Finding::buried,
+                           Finding::disturbed, Finding::pressed, Finding::noisy, Finding::weak,
+                           Finding::portDamped, Finding::crackle, Finding::clock};
+    char buf[256];
+    for (size_t i = 0; i < sizeof(all) / sizeof(all[0]); i++) {
+        Judgement j = made(Verdict::broken, all[i]);
+        j.value = -123.4f;
+        j.limit = 45.0f;
+        j.bestRiseDb = 60.0f;
+        const int n = describe(j, buf, sizeof(buf));
+        TEST_ASSERT_TRUE(n > 10);
+        TEST_ASSERT_TRUE(n < static_cast<int>(sizeof(buf)));   // never cut off
+        TEST_ASSERT_TRUE(strcmp(findingName(all[i]), "unknown") != 0);
+    }
+    TEST_ASSERT_EQUAL_STRING("checkPort", verdictName(Verdict::checkPort));
+}
+
 int runUnityTests(void) {
     UNITY_BEGIN();
     RUN_TEST(test_healthy_mic);
@@ -594,6 +848,22 @@ int runUnityTests(void) {
     RUN_TEST(test_build_segments_separate_off_guard);
     RUN_TEST(test_truncated_capture);
     RUN_TEST(test_too_short_capture);
+    RUN_TEST(test_verdict_healthy);
+    RUN_TEST(test_verdict_no_signal);
+    RUN_TEST(test_verdict_buried);
+    RUN_TEST(test_verdict_weak);
+    RUN_TEST(test_verdict_noisy);
+    RUN_TEST(test_verdict_faint_in_noise_is_repeat);
+    RUN_TEST(test_verdict_one_tone_drowned_is_ok);
+    RUN_TEST(test_verdict_port_damped);
+    RUN_TEST(test_verdict_port_needs_wide_pitch_range);
+    RUN_TEST(test_verdict_pressed);
+    RUN_TEST(test_verdict_disturbed);
+    RUN_TEST(test_verdict_crackle);
+    RUN_TEST(test_verdict_few_clicks_are_ok);
+    RUN_TEST(test_verdict_silent_test);
+    RUN_TEST(test_combine_runs);
+    RUN_TEST(test_describe_every_finding);
     return UNITY_END();
 }
 

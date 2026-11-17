@@ -2,8 +2,9 @@
 """
 ELOC Firmware Auto-Flasher (All-in-One)
 ----------------------------------------
-Flashes bootloader, partition table, firmware, and NVS in a single esptool command.
-Only one download mode entry needed.
+Flashes bootloader, partition table, NVS, OTA data, and firmware in a single esptool command.
+Only one download mode entry needed. The OTA data reset makes the device boot the new firmware
+in partition0 even if an earlier SD/app update had left it running from partition1.
 
 Additionally:
 - Increments the serial number in nvs.csv
@@ -51,6 +52,7 @@ class AutoFlasher:
         self.partitions_bin_path = os.path.join(build_dir, 'partitions.bin')
         self.firmware_bin_path = os.path.join(build_dir, 'firmware.bin')
         self.nvs_bin_path = os.path.join(build_dir, 'nvs.bin')
+        self.ota_data_bin_path = os.path.join(build_dir, 'ota_data_initial.bin')
 
     @staticmethod
     def detect_com_ports() -> list:
@@ -323,22 +325,28 @@ class AutoFlasher:
             raise RuntimeError(f"Config partition erase failed with return code: {return_code}")
         print("Configuration partition erased; compiled defaults will be created on first boot.")
 
-    def flash_all_in_one(self):
+    def flash_images(self) -> list:
         """
-        Flash bootloader, partition table, NVS, and firmware in one esptool command.
-        The caller has already prompted for download mode, allowing an optional SPIFFS erase first.
-        """
-        # Validate that all files exist
-        for path in [
-            self.bootloader_bin_path,
-            self.partitions_bin_path,
-            self.nvs_bin_path,
-            self.firmware_bin_path
-        ]:
-            if not os.path.exists(path):
-                raise FileNotFoundError(f"Required binary not found: {path}")
+        (offset, path) of every image written to the device, in flash order.
 
-        # Single esptool command with all offsets and files
+        otadata is written with PlatformIO's empty ota_data_initial.bin, as PlatformIO's own upload
+        does. Without it a device whose last SD/app update left it on partition1 keeps booting
+        that old image, although the new firmware was written to partition0.
+        Partition offsets come from the same table partitions.bin is built from.
+        """
+        nvs_offset, _ = self.get_partition_region('nvs')
+        otadata_offset, _ = self.get_partition_region('otadata')
+        app_offset, _ = self.get_partition_region('partition0')
+        return [
+            (0x1000, self.bootloader_bin_path),
+            (0x8000, self.partitions_bin_path),
+            (nvs_offset, self.nvs_bin_path),
+            (otadata_offset, self.ota_data_bin_path),
+            (app_offset, self.firmware_bin_path),
+        ]
+
+    def build_flash_command(self) -> list:
+        """The single esptool command that writes all images."""
         flash_command = [
             sys.executable,
             '-m', 'esptool',
@@ -346,12 +354,22 @@ class AutoFlasher:
             '--port', self.port,
             '--baud', str(self.baud_rate),
             'write_flash',
-            # offset, file
-            '0x1000',   self.bootloader_bin_path,
-            '0x8000',   self.partitions_bin_path,
-            '0x9000',   self.nvs_bin_path,
-            '0x10000',  self.firmware_bin_path
         ]
+        for offset, path in self.flash_images():
+            flash_command += [hex(offset), path]
+        return flash_command
+
+    def flash_all_in_one(self):
+        """
+        Flash bootloader, partition table, NVS, OTA data, and firmware in one esptool command.
+        The caller has already prompted for download mode, allowing an optional SPIFFS erase first.
+        """
+        flash_command = self.build_flash_command()
+
+        # Validate that all files exist
+        for _, path in self.flash_images():
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"Required binary not found: {path}")
 
         print("\nFlashing all binaries...")
         process = subprocess.Popen(
@@ -365,7 +383,7 @@ class AutoFlasher:
         if return_code != 0:
             raise RuntimeError(f"Flashing all images failed with return code: {return_code}")
 
-        print("Successfully flashed bootloader, partition table, NVS, and firmware!")
+        print("Successfully flashed bootloader, partition table, NVS, OTA data, and firmware!")
 
     def run(self):
         """Main execution flow."""

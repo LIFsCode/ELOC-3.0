@@ -67,6 +67,38 @@ class AutoFlasherTests(unittest.TestCase):
             flasher = make_flasher(temp_dir)
             self.assertEqual((0xFD0000, 0x30000), flasher.get_partition_region("spiffs"))
 
+    def test_flash_command_resets_otadata(self):
+        # Uses the project's real partition table: the offsets must be the ones the device uses.
+        flasher = make_flasher(str(PROJECT_DIR))
+        command = flasher.build_flash_command()
+        pairs = command[command.index("write_flash") + 1:]
+        images = dict(zip(pairs[0::2], (Path(p).name for p in pairs[1::2])))
+
+        self.assertEqual({
+            "0x1000": "bootloader.bin",
+            "0x8000": "partitions.bin",
+            "0x9000": "nvs.bin",
+            "0xe000": "ota_data_initial.bin",
+            "0x10000": "firmware.bin",
+        }, images)
+        self.assertIn(str(Path(".pio") / "build" / "esp32dev-ei"), pairs[7])
+
+    def test_missing_ota_data_image_stops_before_flashing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            Path(temp_dir, "elocPartitions.csv").write_text(
+                (PROJECT_DIR / "elocPartitions.csv").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            flasher = make_flasher(temp_dir)
+            build_dir = Path(temp_dir) / ".pio" / "build" / "esp32dev-ei"
+            build_dir.mkdir(parents=True)
+            for name in ("bootloader.bin", "partitions.bin", "nvs.bin", "firmware.bin"):
+                (build_dir / name).write_bytes(b"\xff")
+
+            with self.assertRaises(FileNotFoundError) as raised:
+                flasher.flash_all_in_one()
+            self.assertIn("ota_data_initial.bin", str(raised.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,13 +23,19 @@ The NVS.bin is not programmed into the device from within the standard VS Code w
 
 To program the initial NVS information in a fabric new ELOC device use the flashNVSonly.py script or use the following command from espidf python:
 ```bash
-python -m esptool write_flash 0x9000 .\.pio\build\esp32dev\nvs.bin
+python -m esptool write_flash 0x9000 .\.pio\build\esp32dev-ei\nvs.bin
 ```
+
+Writing `nvs.bin` replaces the whole partition, including the LoRaWAN DevNonces the firmware stores in
+the `lorawan` namespace. A device that keeps its devEUI and is already registered on TTN then gets its
+joins refused until the used DevNonces are reset in the TTN console.
 
 A script to automate production provisioning is in the root folder as `AutoFlasher.py`. It increments
 the NVS serial and derives the device name from its last five digits (`250700250` becomes
-`ELOC_00250`), generates fresh LoRaWAN keys,
-builds and flashes the images, and records successful flashes in `keyfile.csv`. Existing SPIFFS config
+`ELOC_00250`), generates fresh LoRaWAN keys, builds, and flashes bootloader, partition table, NVS,
+OTA data (`ota_data_initial.bin`) and firmware in one esptool run. The OTA data reset matters on a
+device that was updated before: without it, a device left on `partition1` by its last SD/app update
+would keep booting that old image. Successful flashes are recorded in `keyfile.csv`. Existing SPIFFS config
 is preserved by default; pass `--factory-reset-config` when a production reflash must erase it and
 recreate the requested compiled defaults. More information can be found in the Wiki:
 https://github.com/LIFsCode/ELOC-3.0/wiki/Firmware-Update-&-Initial-Flashing-with-NVS#initial-flashing-including-nvs

@@ -196,10 +196,11 @@ Two namespaces:
 # Standard firmware upload
 pio run -t upload
 
-# Flash NVS only (initial device provisioning)
-python -m esptool write_flash 0x9000 .\.pio\build\esp32dev\nvs.bin
+# Flash NVS only (initial device provisioning; also wipes the stored LoRaWAN DevNonces)
+python -m esptool write_flash 0x9000 .\.pio\build\esp32dev-ei\nvs.bin
 
-# Auto-flash tool for batch provisioning
+# Auto-flash tool for batch provisioning: new serial + LoRa keys, then bootloader, partitions,
+# NVS, ota_data_initial.bin (resets the boot slot to partition0) and firmware in one esptool run
 python AutoFlasher.py
 ```
 

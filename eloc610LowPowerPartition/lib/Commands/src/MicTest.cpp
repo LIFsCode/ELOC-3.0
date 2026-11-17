@@ -58,12 +58,9 @@ static_assert(MicTest::MAX_FREQS == mictest::MAX_TONES, "tone limits differ");
 
 namespace {
 
-/// Skipped after every buzzer switch. A sample reaches the capture up to ~130 ms after the
-/// microphone picked it up (one DMA buffer filling plus one being read), so the switch marks run
-/// ahead of the sound; the rest is margin for the buzzer starting and stopping.
-const uint32_t GUARD_MS = 200;
-/// Skipped at the very start of the capture.
-const uint32_t LEAD_SKIP_MS = 100;
+// The guard times around the buzzer switches (mictest::GUARD_ON_MS / GUARD_OFF_MS /
+// LEAD_SKIP_MS) live in MicAnalyzer.hpp, beside the analysis that depends on them.
+
 /// Recorded after the last gap so its samples are all in.
 const uint32_t TAIL_MS = 300;
 /// The main loop starts I2S within about 1.5 s of being asked; be generous.
@@ -90,6 +87,8 @@ struct Report {
     int      micVolume;
     uint16_t skipped[MicTest::MAX_FREQS];
     uint8_t  numSkipped;
+    mictest::Mark marks[mictest::MAX_MARKS];  ///< saved in the SD file, so a WAV can be re-analysed exactly
+    uint8_t  numMarks;
     char     time[32];
     char     wavPath[112];
     char     saveError[64];
@@ -151,11 +150,17 @@ uint32_t captureMs(const MicTest::Params& p) {
 
 }  // namespace
 
-MicTest::Params::Params() : numFreqs(3), reps(2), onMs(600), gapMs(400), silenceMs(1500), save(true) {
+// Tones from the first bench test (ELOC_00247, 2026-11-17): 2700 and 4000 Hz reached the mic at
+// -36 / -40 dBFS. 1000 Hz, the first default, came out at -79 dBFS, with most of its sound in the
+// 3 kHz harmonic. 5400 Hz is inferred from the 2700 Hz tone's own 2nd harmonic (-43 dBFS) and not
+// yet measured directly.
+// gapMs 600: GUARD_OFF_MS (350) of every gap is skipped, which leaves 250 ms per gap for the
+// buzzer-off statistics.
+MicTest::Params::Params() : numFreqs(3), reps(2), onMs(600), gapMs(600), silenceMs(1500), save(true) {
     memset(freqs, 0, sizeof(freqs));
-    freqs[0] = 1000;
-    freqs[1] = 2700;  // the MLT-8540H buzzer is loudest around here
-    freqs[2] = 4000;
+    freqs[0] = 2700;  // the MLT-8540H buzzer is loudest around here
+    freqs[1] = 4000;
+    freqs[2] = 5400;
 }
 
 void MicTest::setSampler(I2SMEMSSampler* sampler) {
@@ -194,9 +199,9 @@ esp_err_t MicTest::start(const Params& params, String& errMsg) {
         errMsg = "use up to 6 tones and reps 1..5";
         return ESP_ERR_INVALID_ARG;
     }
-    if ((params.onMs < 400) || (params.onMs > 3000) || (params.gapMs < 300) || (params.gapMs > 3000) ||
+    if ((params.onMs < 400) || (params.onMs > 3000) || (params.gapMs < 400) || (params.gapMs > 3000) ||
         (params.silenceMs < 500) || (params.silenceMs > 10000)) {
-        errMsg = "allowed: onMs 400..3000, gapMs 300..3000, silenceMs 500..10000";
+        errMsg = "allowed: onMs 400..3000, gapMs 400..3000, silenceMs 500..10000";
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -219,8 +224,8 @@ esp_err_t MicTest::start(const Params& params, String& errMsg) {
     }
     // A buzzer-on stretch must hold at least two analysis blocks after the guard time
     if ((p.numFreqs > 0) &&
-        (msToSamples(p.onMs - GUARD_MS, fs) < (mictest::FFT_N + mictest::FFT_HALF))) {
-        const uint32_t needMs = GUARD_MS + ((mictest::FFT_N + mictest::FFT_HALF) * 1000 + fs - 1) / fs;
+        (msToSamples(p.onMs - mictest::GUARD_ON_MS, fs) < (mictest::FFT_N + mictest::FFT_HALF))) {
+        const uint32_t needMs = mictest::GUARD_ON_MS + ((mictest::FFT_N + mictest::FFT_HALF) * 1000 + fs - 1) / fs;
         errMsg = String("onMs too short for ") + fs + " Hz sample rate, use at least " + needMs;
         return ESP_ERR_INVALID_ARG;
     }
@@ -378,7 +383,7 @@ void MicTest::run() {
         }
         mBuzzerHeld = true;
         // Whatever beep was cut off must not ring into the silent part
-        delayMs(GUARD_MS);
+        delayMs(mictest::GUARD_OFF_MS);
     }
 
     // ---- 4. capture --------------------------------------------------------------------------
@@ -432,8 +437,12 @@ void MicTest::run() {
     // ---- 5. analyse --------------------------------------------------------------------------
     mState.store(State::analysing);
     mictest::Segment segments[mictest::MAX_SEGMENTS];
-    const size_t numSegments = mictest::buildSegments(marks, numMarks, captured, msToSamples(GUARD_MS, fs),
-                                                      msToSamples(LEAD_SKIP_MS, fs), segments,
+    rep.numMarks = static_cast<uint8_t>(numMarks);
+    memcpy(rep.marks, marks, numMarks * sizeof(mictest::Mark));
+    const size_t numSegments = mictest::buildSegments(marks, numMarks, captured,
+                                                      msToSamples(mictest::GUARD_ON_MS, fs),
+                                                      msToSamples(mictest::GUARD_OFF_MS, fs),
+                                                      msToSamples(mictest::LEAD_SKIP_MS, fs), segments,
                                                       mictest::MAX_SEGMENTS);
     mictest::Input in;
     in.samples = mBuf;
@@ -567,7 +576,7 @@ void MicTest::saveFiles(uint32_t sampleCount) {
         String jsonPath = rep.wavPath;
         jsonPath.replace(".wav", ".json");
         String json;
-        buildResultJson(json, true);
+        buildResultJson(json, true, true);
         fp = fopen(jsonPath.c_str(), "w");
         if (fp == nullptr) {
             snprintf(rep.saveError, sizeof(rep.saveError), "cannot open JSON file (errno %d)", errno);
@@ -599,7 +608,7 @@ void MicTest::saveFiles(uint32_t sampleCount) {
     }
 }
 
-void MicTest::buildResultJson(String& out, bool pretty) {
+void MicTest::buildResultJson(String& out, bool pretty, bool forFile) {
     const Report& rep = sReport;
     const mictest::Result& res = rep.result;
     out = "";
@@ -680,6 +689,32 @@ void MicTest::buildResultJson(String& out, bool pretty) {
         doc["saveError"] = rep.saveError;
     }
 
+    if (forFile) {
+        // Only in the SD file, to keep the Bluetooth reply short. With the switch positions and
+        // the guard times the WAV can be run through MicAnalyzer.hpp again on a PC and give these
+        // exact numbers - or new ones with other guard times, without testing the mic again.
+        JsonObject analysis = doc.createNestedObject("analysis");
+        analysis["guardOn[ms]"] = mictest::GUARD_ON_MS;
+        analysis["guardOff[ms]"] = mictest::GUARD_OFF_MS;
+        analysis["leadSkip[ms]"] = mictest::LEAD_SKIP_MS;
+        JsonArray params = analysis.createNestedArray("freqs[Hz]");
+        for (uint8_t i = 0; i < mParams.numFreqs; i++) {
+            params.add(mParams.freqs[i]);
+        }
+        analysis["reps"] = mParams.reps;
+        analysis["onMs"] = mParams.onMs;
+        analysis["gapMs"] = mParams.gapMs;
+        analysis["silenceMs"] = mParams.silenceMs;
+        // [onIdx, offIdx, tone index]: the sample index at each switch
+        JsonArray marks = analysis.createNestedArray("marks");
+        for (uint8_t i = 0; i < rep.numMarks; i++) {
+            JsonArray m = marks.createNestedArray();
+            m.add(rep.marks[i].onIdx);
+            m.add(rep.marks[i].offIdx);
+            m.add(rep.marks[i].tone);
+        }
+    }
+
     if (doc.overflowed()) {
         ESP_LOGE(TAG, "Result JSON exceeded its %u byte document - fields are missing!",
                  static_cast<unsigned>(doc.capacity()));
@@ -695,7 +730,7 @@ void MicTest::statusJson(String& out) {
     const State s = mState.load();
     switch (s) {
         case State::done:
-            buildResultJson(out, false);
+            buildResultJson(out, false, false);
             return;
         case State::error: {
             StaticJsonDocument<384> doc;

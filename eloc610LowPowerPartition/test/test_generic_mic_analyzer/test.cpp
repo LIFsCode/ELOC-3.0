@@ -81,9 +81,11 @@ struct Scenario {
     uint32_t reps = 2;
     uint32_t silenceMs = 1500;
     uint32_t onMs = 600;
-    uint32_t gapMs = 400;
+    uint32_t gapMs = 600;        // the firmware default since V1.82
     uint32_t tailMs = 300;
     uint32_t latencyMs = 80;     // the sound reaches the capture this long after the mark
+    double tailTauMs = 0.0;      // > 0: the tone fades out exponentially after it stops, as the
+                                 // buzzer and the room do (ELOC_00247: ~30 ms time constant)
     double noiseRms = 1e-4;      // of full scale
     bool pinkNoise = false;
     double toneAmplitude = 0.01; // of full scale; 0 = a mic that hears nothing
@@ -111,11 +113,13 @@ int32_t toS24(double x) {
     return static_cast<int32_t>(v);
 }
 
-void rebuildSegments(Capture& cap) {
+void rebuildSegments(Capture& cap, uint32_t guardOffMs = GUARD_OFF_MS) {
     cap.segments.assign(MAX_SEGMENTS, Segment());
     const size_t n = buildSegments(cap.marks.data(), cap.marks.size(),
                                    static_cast<uint32_t>(cap.samples.size()),
-                                   msToSamples(200, cap.sampleRate), msToSamples(100, cap.sampleRate),
+                                   msToSamples(GUARD_ON_MS, cap.sampleRate),
+                                   msToSamples(guardOffMs, cap.sampleRate),
+                                   msToSamples(LEAD_SKIP_MS, cap.sampleRate),
                                    cap.segments.data(), cap.segments.size());
     cap.segments.resize(n);
 }
@@ -159,8 +163,15 @@ Capture makeCapture(const Scenario& sc) {
             m.tone = static_cast<uint8_t>(i);
             cap.marks.push_back(m);
             const double f = sc.tones[i] * sc.toneDetune;
-            for (uint32_t n = m.onIdx + latency; (n < m.offIdx + latency) && (n < total); n++) {
+            const uint32_t stop = m.offIdx + latency;
+            for (uint32_t n = m.onIdx + latency; (n < stop) && (n < total); n++) {
                 x[n] += sc.toneAmplitude * sin(kTwoPi * f * n / fs);
+            }
+            if (sc.tailTauMs > 0.0) {
+                const double tau = sc.tailTauMs * fs / 1000.0;
+                for (uint32_t n = stop; (n < stop + 12 * tau) && (n < total); n++) {
+                    x[n] += sc.toneAmplitude * exp(-static_cast<double>(n - stop) / tau) * sin(kTwoPi * f * n / fs);
+                }
             }
             t = m.offIdx + msToSamples(sc.gapMs, fs);
         }
@@ -335,6 +346,37 @@ void test_deaf_and_crackling_mic(void) {
     }
 }
 
+// The buzzer does not stop dead: on ELOC_00247 the 2700 Hz tone took until ~240 ms after its
+// switch-off mark to fade into the background, and with the original 200 ms guard the fading
+// tone was counted as crackle. A quiet room (low step noise, as measured) makes it visible.
+void test_buzzer_tail_is_not_crackle(void) {
+    Scenario sc;
+    sc.tones = {2700, 4000};
+    sc.noiseRms = 2e-5;         // step noise like the bench recording
+    sc.toneAmplitude = 0.0158;  // -36 dBFS, as measured at 2700 Hz
+    sc.latencyMs = 90;
+    sc.tailTauMs = 30.0;
+    Capture cap = makeCapture(sc);
+
+    // With the old guard the tail reaches into the analysed buzzer-off time ...
+    rebuildSegments(cap, 200);
+    Result old;
+    TEST_ASSERT_TRUE(run(cap, old));
+    TEST_ASSERT_TRUE(old.impulses > 0);
+
+    // ... with the current one it does not
+    rebuildSegments(cap);
+    Result r;
+    TEST_ASSERT_TRUE(run(cap, r));
+    assertAllFinite(r);
+    TEST_ASSERT_EQUAL_UINT32(0, r.impulses);
+    TEST_ASSERT_FLOAT_WITHIN(0.3f, 0.0f, r.kurtosis);
+    TEST_ASSERT_TRUE(r.crestDb < 16.0f);
+    for (size_t t = 0; t < r.numTones; t++) {
+        TEST_ASSERT_FLOAT_WITHIN(1.0f, -36.0f, r.tones[t].onDbfs);
+    }
+}
+
 // Spikes that fall into a buzzer-on stretch are not counted: only buzzer-off time is searched.
 void test_tone_itself_is_not_crackle(void) {
     Scenario sc;
@@ -460,7 +502,7 @@ void test_build_segments(void) {
     marks[0].onIdx = 24000; marks[0].offIdx = 33600; marks[0].tone = 0;
     marks[1].onIdx = 40000; marks[1].offIdx = 49600; marks[1].tone = 1;
     Segment seg[MAX_SEGMENTS];
-    size_t n = buildSegments(marks, 2, 60000, 3200, 1600, seg, MAX_SEGMENTS);
+    size_t n = buildSegments(marks, 2, 60000, 3200, 3200, 1600, seg, MAX_SEGMENTS);
     TEST_ASSERT_EQUAL(5, n);
     // silence, tone 0, gap, tone 1, tail
     TEST_ASSERT_EQUAL_UINT32(1600, seg[0].begin);  TEST_ASSERT_EQUAL_UINT32(24000, seg[0].end);  TEST_ASSERT_EQUAL_INT8(-1, seg[0].tone);
@@ -470,13 +512,33 @@ void test_build_segments(void) {
     TEST_ASSERT_EQUAL_UINT32(52800, seg[4].begin); TEST_ASSERT_EQUAL_UINT32(60000, seg[4].end);  TEST_ASSERT_EQUAL_INT8(-1, seg[4].tone);
 
     // capture stopped in the middle of the second tone: nothing may reach past the end
-    n = buildSegments(marks, 2, 45000, 3200, 1600, seg, MAX_SEGMENTS);
+    n = buildSegments(marks, 2, 45000, 3200, 3200, 1600, seg, MAX_SEGMENTS);
     TEST_ASSERT_EQUAL(4, n);
     TEST_ASSERT_EQUAL_UINT32(45000, seg[3].end);
     for (size_t i = 0; i < n; i++) {
         TEST_ASSERT_TRUE(seg[i].end <= 45000);
         TEST_ASSERT_TRUE(seg[i].begin < seg[i].end);
     }
+}
+
+void test_build_segments_separate_off_guard(void) {
+    Mark marks[2];
+    marks[0].onIdx = 24000; marks[0].offIdx = 33600; marks[0].tone = 0;
+    marks[1].onIdx = 40000; marks[1].offIdx = 49600; marks[1].tone = 1;
+    Segment seg[MAX_SEGMENTS];
+    size_t n = buildSegments(marks, 2, 60000, 3200, 5600, 1600, seg, MAX_SEGMENTS);
+    TEST_ASSERT_EQUAL(5, n);
+    TEST_ASSERT_EQUAL_UINT32(27200, seg[1].begin);   // on: 3200 after its mark
+    TEST_ASSERT_EQUAL_UINT32(39200, seg[2].begin);   // off: 5600 after its mark
+    TEST_ASSERT_EQUAL_UINT32(43200, seg[3].begin);
+    TEST_ASSERT_EQUAL_UINT32(55200, seg[4].begin);
+
+    // an off guard longer than the gap leaves no buzzer-off stretch between the tones
+    n = buildSegments(marks, 2, 60000, 3200, 8000, 1600, seg, MAX_SEGMENTS);
+    TEST_ASSERT_EQUAL(4, n);
+    TEST_ASSERT_EQUAL_INT8(0, seg[1].tone);
+    TEST_ASSERT_EQUAL_INT8(1, seg[2].tone);
+    TEST_ASSERT_EQUAL_UINT32(57600, seg[3].begin);
 }
 
 // A capture cut short reports the missing tone as not measured instead of inventing a value.
@@ -519,6 +581,7 @@ int runUnityTests(void) {
     RUN_TEST(test_faint_mic);
     RUN_TEST(test_crackling_mic);
     RUN_TEST(test_deaf_and_crackling_mic);
+    RUN_TEST(test_buzzer_tail_is_not_crackle);
     RUN_TEST(test_tone_itself_is_not_crackle);
     RUN_TEST(test_dead_mic);
     RUN_TEST(test_stuck_at_constant);
@@ -528,6 +591,7 @@ int runUnityTests(void) {
     RUN_TEST(test_dropouts);
     RUN_TEST(test_sample_rate_8k);
     RUN_TEST(test_build_segments);
+    RUN_TEST(test_build_segments_separate_off_guard);
     RUN_TEST(test_truncated_capture);
     RUN_TEST(test_too_short_capture);
     return UNITY_END();

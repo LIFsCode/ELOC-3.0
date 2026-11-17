@@ -198,7 +198,8 @@ map, the app's live readout and measure-here button, wiki pages.
 **First bench items:** confirm `setADR(false)` suppresses the `ADRACKReq` back-off across 64+ unanswered
 uplinks, and that `getMacLinkCheckAns()` returns a sensible margin/gwCnt against a real gateway.
 
-### Microphone self-test — 🔨 Built, PC tests green, nothing hardware-tested (2026-11-13, V1.81, branch `EDsteve/mic-test`)
+### Microphone self-test — 🔨 Built, one healthy-unit bench test, broken mics pending (V1.81 2026-11-13, corrected V1.82 2026-11-17, branch `EDsteve/mic-test`)
+- **V1.82 (2026-11-17):** after the first bench test on ELOC_00247: 350 ms guard after buzzer switch-off (the fading tone counted as crackle), default gap 600 ms, default tones 2700/4000/5400 Hz (1000 Hz was useless), switch marks saved in the SD JSON. Healthy reference: rise ~65 dB at 2700/4000 Hz in a quiet room.
 - **`setMicTest` / `getMicTest`** (Phase 1 of `README-MicTest-Plan.md`): plays buzzer tones after a
   silent stretch, captures the raw 24-bit samples (before the gain shift) to PSRAM and reports raw
   numbers - level, DC, clipping, stuck samples, octave spectrum + slope, crackle count / crest /

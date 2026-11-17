@@ -58,7 +58,7 @@ public:
         uint16_t gapMs;             ///< silence after each tone
         uint16_t silenceMs;         ///< silence before the first tone
         bool     save;              ///< write WAV + JSON to the SD card
-        Params();                   ///< the defaults: 1000/2700/4000 Hz, twice, 600 ms on, 400 ms off
+        Params();                   ///< the defaults: 2700/4000/5400 Hz, twice, 600 ms on, 600 ms off
     };
 
     inline static MicTest& GetInstance() {
@@ -102,7 +102,8 @@ private:
     static void tapEntry(const int32_t* samples, size_t count, void* ctx);
     void onSamples(const int32_t* samples, size_t count);
 
-    void buildResultJson(String& out, bool pretty);
+    /// @param forFile also add the switch marks and analysis settings (SD file only)
+    void buildResultJson(String& out, bool pretty, bool forFile);
     void saveFiles(uint32_t sampleCount);
 
     I2SMEMSSampler* mSampler = nullptr;

@@ -68,8 +68,19 @@ static const float TONE_TOLERANCE  = 0.05f;          ///< tone band = +-5 % arou
 static const float IMPULSE_FACTOR  = 8.0f;           ///< a step this many times the typical one is a crackle
 static const float DROPOUT_FACTOR  = 0.1f;           ///< a sub-block this far below the typical one is a dropout
 
+/**
+ * How much of the capture to skip around the buzzer switches, in ms. Measured on ELOC_00247
+ * (2026-11-17, README-MicTest-Plan.md "Bench results"): a switch is heard 64-90 ms after its mark,
+ * and after switching off the sound takes until about 240 ms after the mark to fade into the
+ * background. With 200 ms after switch-off the fading tone counted as crackle - 3 to 24 false
+ * impulses depending on the I2S read phase. 300 ms gave none at any phase; 350 keeps a margin.
+ */
+static const uint32_t GUARD_ON_MS  = 200;            ///< skipped after the buzzer is switched on
+static const uint32_t GUARD_OFF_MS = 350;            ///< skipped after the buzzer is switched off
+static const uint32_t LEAD_SKIP_MS = 100;            ///< skipped at the very start of the capture
+
 /// One buzzer tone as the test task played it. Sample indices are the capture's write position
-/// at the moment the buzzer was switched, so they run up to ~130 ms ahead of the sound.
+/// at the moment the buzzer was switched, so they run ahead of the sound (64-90 ms on the bench).
 struct Mark {
     uint32_t onIdx;
     uint32_t offIdx;
@@ -168,16 +179,18 @@ inline bool toneUsable(uint32_t freqHz, uint32_t sampleRate) {
 /**
  * @brief Turn the buzzer switch marks into the stretches that are safe to analyse.
  *
- * Every stretch starts `guard` samples after its switch (capture latency plus the buzzer settling)
- * and ends at the next switch, where the samples already captured are all from before it.
+ * Every stretch starts a guard time after its switch and ends at the next switch, where the
+ * samples already captured are all from before it. The guard covers the capture latency plus the
+ * buzzer settling, and after switching off also the tone fading away, which takes longer.
  *
  * @param endIdx   number of captured samples
- * @param guard    samples to skip after each switch
+ * @param guardOn  samples to skip after the buzzer is switched on
+ * @param guardOff samples to skip after the buzzer is switched off
  * @param leadSkip samples to skip at the very start of the capture
  * @return number of segments written
  */
-inline size_t buildSegments(const Mark* marks, size_t numMarks, uint32_t endIdx, uint32_t guard,
-                            uint32_t leadSkip, Segment* out, size_t maxOut) {
+inline size_t buildSegments(const Mark* marks, size_t numMarks, uint32_t endIdx, uint32_t guardOn,
+                            uint32_t guardOff, uint32_t leadSkip, Segment* out, size_t maxOut) {
     size_t n = 0;
     uint32_t offBegin = leadSkip;
     for (size_t i = 0; i <= numMarks; i++) {
@@ -195,7 +208,7 @@ inline size_t buildSegments(const Mark* marks, size_t numMarks, uint32_t endIdx,
         if (i == numMarks) {
             break;
         }
-        uint32_t onBegin = marks[i].onIdx + guard;
+        uint32_t onBegin = marks[i].onIdx + guardOn;
         uint32_t onEnd = (marks[i].offIdx < endIdx) ? marks[i].offIdx : endIdx;
         if ((onBegin < onEnd) && (n < maxOut)) {
             out[n].begin = onBegin;
@@ -203,7 +216,7 @@ inline size_t buildSegments(const Mark* marks, size_t numMarks, uint32_t endIdx,
             out[n].tone = static_cast<int8_t>(marks[i].tone);
             n++;
         }
-        offBegin = marks[i].offIdx + guard;
+        offBegin = marks[i].offIdx + guardOff;
     }
     return n;
 }

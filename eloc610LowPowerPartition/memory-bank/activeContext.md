@@ -1,6 +1,8 @@
 ﻿# Active Context
 
-## Microphone self-test (`setMicTest` / `getMicTest`): Phase 1 implemented 2026-11-13, V1.81, branch `EDsteve/mic-test`, nothing hardware-tested
+## Microphone self-test (`setMicTest` / `getMicTest`): Phase 1 implemented 2026-11-13, V1.81, corrected V1.82 after one healthy-unit test, branch `EDsteve/mic-test`
+
+**2026-11-17, V1.82 - first bench test (ELOC_00247, believed healthy, indoors).** The WAV replayed through `MicAnalyzer.hpp` on the PC (native g++, switch marks rebuilt at the 1024-sample read granularity) reproduced the device JSON to 0.1 dB, so the device maths is right. Healthy reference: rise 67.6 dB at 2700 Hz, 64.1 dB at 4000 Hz, tone-band background -104 dBFS. Fixed: the 200 ms guard after switch-off let the fading tone count as crackle (3 false impulses, 3-24 by read phase), now `GUARD_OFF_MS` 350 + gap 600 ms; 1000 Hz dropped from the defaults (buzzer barely makes it), now 2700/4000/5400. Learned: the spectrum slope cannot flag "only pink noise" (-0.2 dB/oct on the healthy mic). The SD JSON now stores the switch marks, so future WAVs replay exactly. Details in the README's "Bench results". Still owed: taped port, broken mics, outdoors, the buzzer frequency map (`freqs=1500,2000,2700,3300,4000,5400#reps=1`).
 
 Field mics fail from ants and humidity, and not all the same way: most output only pink noise, some
 record real sound but very faint, some crackle, a few are dead. Nothing mic-related left the device

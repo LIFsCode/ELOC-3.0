@@ -960,7 +960,7 @@ void cmd_GetLinkCheck(CmdParser *cmdParser) {
  * Microphone self-test (see README-MicTest-Plan.md and MicTest.hpp)
  ****************************************************************************************/
 
-/// Parse "1000,2700,4000" into the tone list. "0" (or "none") means a silent test.
+/// Parse "2700,4000,5400" into the tone list. "0" (or "none") means a silent test.
 static bool parseMicTestFreqs(const char* text, MicTest::Params& params) {
     params.numFreqs = 0;
     if (!strcasecmp(text, "none") || !strcmp(text, "0")) {
@@ -1015,11 +1015,11 @@ void cmd_SetMicTest(CmdParser *cmdParser) {
     long save = params.save ? 1 : 0;
     if (!parseMicTestNumber(cmdParser, "reps", 1, 5, reps) ||
         !parseMicTestNumber(cmdParser, "onMs", 400, 3000, onMs) ||
-        !parseMicTestNumber(cmdParser, "gapMs", 300, 3000, gapMs) ||
+        !parseMicTestNumber(cmdParser, "gapMs", 400, 3000, gapMs) ||
         !parseMicTestNumber(cmdParser, "silenceMs", 500, 10000, silenceMs) ||
         !parseMicTestNumber(cmdParser, "save", 0, 1, save)) {
         resp.setError(ESP_ERR_INVALID_ARG,
-                      "allowed: reps 1..5, onMs 400..3000, gapMs 300..3000, silenceMs 500..10000, save 0/1");
+                      "allowed: reps 1..5, onMs 400..3000, gapMs 400..3000, silenceMs 500..10000, save 0/1");
         return;
     }
     params.reps = static_cast<uint8_t>(reps);
@@ -1159,7 +1159,7 @@ bool initCommands(CmdAdvCallback<MAX_COMMANDS>& cmdCallback) {
     success &= cmdCallback.addCmd("setBattery", &cmd_SetBattery, "Set battery calibration values. Mode otions: \"clear\", \"add\", cal in the format {\"<esp meas voltage>\" : <real voltage>} e.g. setBattery#mode=add#cal={\"3.0\":3.1}");
     success &= cmdCallback.addCmd("getBattery", &cmd_GetBattery, "read the battery calibration or the raw (uncalibrated voltage). Mode options: \"raw\", \"cal\"");
 success &= cmdCallback.addCmd("getSdSpeedTest", &cmd_GetSdCardSpeedTest, "write and read a blocks (1k - 64k) of data to/from the sd card and check the speed. Additinoal option \"size\", size of overall file (default 512 kByte), -1 means file size = block size, e.g. getSdSpeedTest#size=524288");
-    success &= cmdCallback.addCmd("setMicTest", &cmd_SetMicTest, "Start the microphone self-test: buzzer tones are played and what the microphone hears is measured. Returns at once, the test takes about 10 s - poll getMicTest. Optional: freqs (Hz, comma separated, 0 = silent test without buzzer; default 1000,2700,4000), reps (2), onMs (600), gapMs (400), silenceMs (1500), save (1 = WAV + JSON to /sdcard/mictest), e.g. setMicTest#freqs=2700#reps=3");
+    success &= cmdCallback.addCmd("setMicTest", &cmd_SetMicTest, "Start the microphone self-test: buzzer tones are played and what the microphone hears is measured. Returns at once, the test takes about 12 s - poll getMicTest. Optional: freqs (Hz, comma separated, 0 = silent test without buzzer; default 2700,4000,5400), reps (2), onMs (600), gapMs (600), silenceMs (1500), save (1 = WAV + JSON to /sdcard/mictest), e.g. setMicTest#freqs=2700#reps=3");
     success &= cmdCallback.addCmd("getMicTest", &cmd_GetMicTest, "Microphone self-test progress and last result as JSON: state (idle/starting/capturing/analysing/saving/done/error), then level, spectrum, crackle and per-tone rise in dB. Raw numbers, no verdict yet");
     success &= cmdCallback.addCmd("setFwUpdateBegin", &cmd_SetFwUpdateBegin, "Start a firmware transfer over BT. meta JSON: size, sha256, version, variant, chunkSize (default 4096, max 8192). Returns {resumeOffset, chunkSize} and switches the link to binary frame mode, e.g. setFwUpdateBegin#meta={\"size\":123456,\"sha256\":\"<64 hex>\",\"version\":\"1.23\",\"variant\":\"ei\",\"chunkSize\":4096}");
     success &= cmdCallback.addCmd("getFwUpdateStatus", &cmd_GetFwUpdateStatus, "Status of the staged firmware transfer: {state: idle/receiving/staged/error, bytesReceived, expectedSize, sha256}. Drives resume and app UI");

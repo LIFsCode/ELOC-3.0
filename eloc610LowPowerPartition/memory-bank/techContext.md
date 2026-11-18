@@ -53,6 +53,7 @@ IRAM, so even calling a new heap function (e.g. `heap_caps_aligned_alloc`, +1.5 
 `lib/eloc_ml/src/MlAlloc.cpp` aligns by hand for that reason.
 
 ### Pre-build Scripts
+- `tools/skip_arduino_tick_check.py` — Sets `ARDUINO_SKIP_TICK_CHECK`, without which the Arduino core refuses to build at the 100 Hz tick (V1.84+)
 - `tools/patch_fatfs_exfat.py` — Patches `FF_FS_EXFAT 0 → 1` in the packaged IDF FatFs `ffconf.h` to enable exFAT (see below)
 - `tools/genVersion.py` — Generates version.h with build timestamp
 - `tools/genNVS.py` — Compiles nvs.csv into nvs.bin for NVS partition
@@ -62,6 +63,11 @@ IRAM, so even calling a new heap function (e.g. `heap_caps_aligned_alloc`, +1.5 
 Key settings managed via `sdkconfig.defaults`:
 - Power management enabled (`CONFIG_PM_ENABLE`)
 - FreeRTOS tickless idle (`CONFIG_FREERTOS_USE_TICKLESS_IDLE`)
+- **FreeRTOS tick 100 Hz** (`CONFIG_FREERTOS_HZ=100`, V1.84+; was 1000). Fewer CPU frequency switches
+  keep the DFS timer skew at ~5 % in recording-only mode. A tick is 10 ms: use `pdMS_TO_TICKS()`,
+  never raw tick counts, and remember Arduino `delay()` rounds down (`delay(5)` does not wait).
+  `src/main.cpp` has its own `delay()` that waits at least one tick. The generated `sdkconfig.<env>`
+  files keep their own value, so a change here must be made there too (or delete them).
 - Long filenames on FAT filesystem
 - SPI RAM enabled
 

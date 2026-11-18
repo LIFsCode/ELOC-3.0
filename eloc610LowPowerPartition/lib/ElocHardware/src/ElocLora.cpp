@@ -30,6 +30,7 @@
 #include "esp_log.h"
 #include <driver/rtc_io.h>
 #include <esp_pm.h>
+#include <esp_timer.h>
 #include <esp_mac.h>
 #include <esp_system.h>
 
@@ -117,10 +118,53 @@ static RecState calcRecordingState() {
 // for development purposes you can use all zeros - see wiki for details
 #define RADIOLIB_LORAWAN_JOIN_EUI  0x0000000000000000
 
+/**
+ * @brief RadioLib HAL whose delay() waits exactly as long as it is asked to.
+ *
+ * RadioLib's own ArduinoHal::delay() is Arduino's delay(), i.e. vTaskDelay(ms / portTICK_PERIOD_MS).
+ * That is only exact while one tick is one millisecond. At a slower tick it rounds down to whole
+ * ticks and returns up to one tick early, and a delay shorter than a tick does not wait at all.
+ * RadioLib's LoRaWAN layer cannot take that: it sleeps for exactly the time on air and then gives
+ * the radio only scanGuard (10 ms) to report TX done, and it times the receive windows the same
+ * way. Seen on the first 100 Hz bench build (2026-11-16): four of six join attempts ended in
+ * RADIOLIB_ERR_TX_TIMEOUT (-5) about 220 ms in, with the radio still transmitting.
+ *
+ * So: sleep in whole ticks for as long as that cannot overshoot, then wait out the rest against
+ * esp_timer, the clock RadioLib's millis() runs on as well. With LoRa enabled the CPU frequency
+ * is fixed (see ElocSystem::pm_configure()), so that clock is not skewed here.
+ *
+ * Every build runs at 100 Hz since V1.84 (sdkconfig.defaults). Verified on hardware 2026-11-17
+ * against a real EU868 gateway: two OTAA joins, then a heartbeat and three event uplinks across
+ * 632 duty-cycle wakes, each answered by a downlink, and not one -5. Should the tick ever go
+ * back to 1000 Hz, the stock delay() is exact again and is used as is.
+ */
+class ElocRadioHal : public ArduinoHal {
+  public:
+    ElocRadioHal(SPIClass& spi, SPISettings spiSettings) : ArduinoHal(spi, spiSettings) {}
+
+    void delay(RadioLibTime_t ms) override {
+#if (CONFIG_FREERTOS_HZ == 1000)
+        ::delay(ms);
+#else
+        const int64_t endUs = esp_timer_get_time() + static_cast<int64_t>(ms) * 1000;
+        const int64_t tickUs = 1000000 / CONFIG_FREERTOS_HZ;
+        // vTaskDelay(n) returns on the n-th tick from now, i.e. after anything between n-1 and n
+        // tick periods but never later, so asking for the whole ticks that remain cannot overshoot.
+        const int64_t wholeTicks = (endUs - esp_timer_get_time()) / tickUs;
+        if (wholeTicks > 0) {
+            vTaskDelay(static_cast<TickType_t>(wholeTicks));
+        }
+        // Under two tick periods are left: wait them out on the clock itself
+        while (esp_timer_get_time() < endUs) {
+        }
+#endif
+    }
+};
+
 ElocLora::ElocLora(/* args */):
     mInitDone(false),
-    loraSPI(VSPI), 
-    radio (new Module(PIN_LORA_CS, PIN_LORA_DIO1, PIN_LORA_RST, PIN_LORA_BUSY, loraSPI, loraSpiSettings)),
+    loraSPI(VSPI),
+    radio (new Module(new ElocRadioHal(loraSPI, loraSpiSettings), PIN_LORA_CS, PIN_LORA_DIO1, PIN_LORA_RST, PIN_LORA_BUSY)),
     // create the LoRaWAN node
     //BUGME: handle subband correct for US915 (need to be 2)
     node(&radio, &Region, subBand)
@@ -286,7 +330,9 @@ void debug(bool failed, const __FlashStringHelper* message, int state, bool halt
     msg += state;
     msg += ")";
     ESP_LOGE("RADIOLIB_DBG", "%s", msg.c_str());
-    while(halt) { delay(1); }
+    // One tick, not delay(1): delay() rounds down to whole ticks, so below 1000 Hz it would not
+    // block at all and this would spin instead of park.
+    while(halt) { vTaskDelay(1); }
   }
 }
 

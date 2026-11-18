@@ -416,6 +416,15 @@ reapply from there to resurrect it. See `activeContext.md` for the removal detai
   `lib/Accel`/`lib/CPPANALOGIO_Battery`/`platformio.ini` LDF config.
 
 ### Desired Improvements
+- [ ] **Recording-only power: bring frequency scaling back (~7 mA of ~32)** — made standard as
+  **V1.84** (committed 2026-11-18 on `EDsteve/Patrol`; tick 100 Hz for every build, recording-only scales 10..80 MHz on the APLL;
+  this exact build not yet flashed). Bench test since 2026-11-16. Scaling 10/80 MHz with APLL measured ~27 → ~20 mA baseline on V1.3, with
+  the known timer skew (tick +23 %, `esp_timer` +43 %). Two test builds exist, `esp32dev-ei-dfs1000`
+  (control) and `esp32dev-ei-dfs100` (tick 100 Hz), both behind `PM_TEST_RECORDING_DFS`. First bench
+  run: at 100 Hz the skew drops to ~+6 % / +3 % and the baseline to ~16 mA (1000 Hz: ~22 mA, fixed
+  80 MHz: ~27 mA). Overnight `recordOn_detectOn` + duty cycle + LoRa run (2026-11-17, 632 wakes) was
+  clean: no reset, file names within ~2 s of GPS, LoRa joins, uplinks and downlinks work at 100 Hz.
+  Owed: GPS sync during record-only scaling, a record-only overnight soak. See `activeContext.md`.
 - [ ] **LoRa Event Cooldown** — Phase 2 of duty cycle (reduce LoRa msgs to ~10-15/day)
 - [ ] Migrate from Bluetooth Classic to BLE for power savings
 - [ ] Add mutex/semaphore guards to all shared task variables

@@ -376,32 +376,28 @@ esp_err_t ElocSystem::pm_configure() {
             cfg.min_freq_mhz = 240;
             break;
         case PmProfile::RECORDING_LOW_POWER:
-            // min = max, i.e. DFS OFF. This used to be min 10 (min 20 at >= 30 kHz, see
-            // https://github.com/LIFsCode/ELOC-3.0/issues/30), but scaling APB between 10 and
-            // 80 MHz corrupts BOTH software time bases on this chip, by different amounts:
+            // Scaling 10..80 MHz (RECORDING_ONLY_DFS in project_config.h). Sample rates
+            // >= 30 kHz need a faster APB bus, which follows the min CPU clock:
+            // https://github.com/LIFsCode/ELOC-3.0/issues/30
             //
-            //   esp_timer  (TG0 LACT, divided from APB)  ran ~41 % fast
-            //   FreeRTOS tick (CCOUNT -> every ESP_LOGx timestamp)  ran ~23 % fast
-            //
-            // Both are rescaled on every frequency switch by esp_pm's on_freq_update(), via
-            // different correction paths, which is how they end up disagreeing with each other.
-            // Measured over a 2-day recordOn_detectOff run and cross-checked against the WAV
-            // filename timestamps, which come from the DFS-immune RTC slow clock: the audio
-            // itself was real-time to 0.03 %, so only the timers were wrong.
-            //
-            // The audio is unaffected either way (I2S runs off the APLL, which DFS never
-            // touches), but the skew is not cosmetic:
-            //   - anything scheduled off esp_timer fires ~41 % early. The GPS acquisition
-            //     window is the one that hurts: on a duty-cycle timer wake this profile is
-            //     applied in setup (main.cpp), BEFORE the GPS time-sync wait and long before
-            //     I2S installs, so a nominal 30 s becomes ~21 s real and the patient 180 s
-            //     cold-start window becomes ~128 s — below the ~30-35 s a cold GNSS fix needs.
-            //   - every log timestamp is wrong, so the SD log can't be used for timing analysis.
-            //
-            // Cost of min = max is only the idle dip from 80 down to 10 MHz; the large win
-            // (80 instead of 240 MHz) is kept. Revisit only with a DFS-immune time base.
+            // History, because the skew is the price: scaling APB makes BOTH software time
+            // bases run fast, since esp_pm's on_freq_update() rescales them on every switch,
+            // late and by different paths. At a 1000 Hz tick that was esp_timer ~41 % and the
+            // FreeRTOS tick ~23 % fast, which cut the duty-cycle GPS wait (esp_timer, and this
+            // profile already governs it: main.cpp applies it in setup) from 30 s to ~21 s, so
+            // V1.59 - V1.83 pinned this profile at 80 MHz. The tick is now 100 Hz, 10x fewer
+            // switches: +5.5 % / +3.2 % measured, so the GPS wait is ~28.5 s and the skew is
+            // tolerable. Audio, WAV length and file names come from the APLL and the RTC slow
+            // clock and are not affected. main.cpp starts I2S on the APLL in this mode,
+            // without which the I2S driver pins APB at 80 MHz anyway.
             cfg.max_freq_mhz = 80;
+#if !defined(RECORDING_ONLY_DFS)
+#error "RECORDING_ONLY_DFS is defined in include/project_config.h"
+#elif RECORDING_ONLY_DFS
+            cfg.min_freq_mhz = (getMicInfo().MicSampleRate >= 30000) ? 20 : 10;
+#else
             cfg.min_freq_mhz = 80;
+#endif
             break;
         case PmProfile::CONFIG_DEFAULT:
         default:

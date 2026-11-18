@@ -70,7 +70,12 @@ loop via `updatePmProfileFromRecordingMode()`):
 - any AI detection mode (`recordOn_detectOn`, `recordOff_detectOn`, `recordOnEvent`) → fixed **240 MHz**
   (min = max, DFS off);
 - recording-only without AI and without LoRa (`recordOn_detectOff`) → **min 10 / max 80 MHz**
-  (min raised to 20 for sample rates ≥ 30 kHz, see issue #30);
+  (min raised to 20 for sample rates ≥ 30 kHz, see issue #30). V1.59 - V1.83 pinned this at a fixed
+  80 MHz because scaling skewed the timers; since V1.84 the FreeRTOS tick is 100 Hz, which shrinks the
+  skew to a few percent, and scaling is back (`RECORDING_ONLY_DFS` in `project_config.h`). In this
+  mode I2S is installed on the APLL whatever `mic.MicUseAPLL` says, at ≥ 16 kHz, since on the PLL the
+  driver pins the clock at 80 MHz. The choice is made when I2S installs and holds until it is
+  uninstalled (deep sleep, reboot);
 - no mode active (or recording-only with LoRa enabled) → the configured `cpu*` values
   (`CONFIG_DEFAULT` profile; the LoRa min=max override still applies).
 

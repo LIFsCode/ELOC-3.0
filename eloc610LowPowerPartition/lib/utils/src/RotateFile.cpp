@@ -180,7 +180,9 @@ bool RotateFile::makeDirectory() {
 }
 
 bool RotateFile::open() {
-    if( xSemaphoreTake( mSemaphore, ( TickType_t ) 10 ) == pdTRUE ) {
+    // 100 ms: the old raw 10 ticks were 10 ms at a 1000 Hz tick and are 100 ms at today's 100 Hz,
+    // which is what the 100 Hz soak ran with
+    if( xSemaphoreTake( mSemaphore, pdMS_TO_TICKS(100) ) == pdTRUE ) {
         ON_SCOPE_EXIT(SemaphoreGive, mSemaphore);
         makeDirectory();
         _fp = fopen(mFilename.c_str(), "a+");

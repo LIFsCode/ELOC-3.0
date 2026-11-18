@@ -1,5 +1,167 @@
 ﻿# Active Context
 
+## Recording-only power: CPU scaling back on a 100 Hz tick (bench test 2026-11-16/17, made standard as V1.84, committed 2026-11-18)
+
+**V1.84 = the bench result made standard** (committed to `EDsteve/Patrol` 2026-11-18 along with the merged mic test; built, not yet
+flashed): `CONFIG_FREERTOS_HZ=100` in `sdkconfig.defaults` and in the local generated
+`sdkconfig.<env>` files (gitignored; an existing one keeps its own value, so edit it too);
+`tools/skip_arduino_tick_check.py` in `[options].extra_scripts` and in the three test envs;
+`RECORDING_ONLY_DFS 1` in `project_config.h` replaces `PM_TEST_RECORDING_DFS` (min 10/20 in
+`RECORDING_LOW_POWER`); `i2sUseApllForCurrentMode()` in `main.cpp` installs I2S on the APLL in
+recording-only mode (wav on, AI off, LoRa off, >= 16 kHz) and otherwise follows `MicUseAPLL`, via the
+new `I2SMEMSSampler::set_use_apll()`; LIS3DH start-up wait, battery `avgIntervalMs` and the
+`RotateFile::open()` mutex wait converted from raw ticks to ms (kept at what the 100 Hz soak ran
+with). Removed: the two `esp32dev-ei-dfs*` envs, `dfs100.sdkconfig.defaults`, the skew log line and
+the test banner. The bench builds and the flag named in the paragraphs below no longer exist.
+**Still owed on V1.84 itself:** flash and smoke-test `esp32dev-ei` (log shows `I2S clock source:
+APLL (recording-only, CPU scaling)` and `Applying PM profile RECORDING_LOW_POWER: CPU max 80 MHz,
+min 10 MHz`); a recording-only duty-cycle overnight run on the APLL; GPS sync while scaling on a unit
+with a fix; firmware update from the app; `esp32dev-tflm` on hardware. Wiki: the Settings page has it (CPU clock table, APLL row).
+
+**Overnight run, 2026-11-16 20:14 -> 2026-11-17 13:50** (`esp32dev-ei-dfs100` built 19:57 with the
+LoRa HAL fix, ELOC_00190, session `test_1794856473474`, `recordOn_detectOn`, duty cycle 60 s sleep /
+30 s awake, 16 kHz, APLL on, LoRa EU868 on, GPS on; SD log read back 2026-11-17): 632 timer wakes,
+boot numbers 1..632 with no gap, every wake ended in deep sleep, no panic, no reset. 633 WAV files,
+every header matches its file size, 29.6-30.7 s each (35.3-35.7 s on the three wakes that sent an
+event uplink). File name vs the log's boot clock plus uptime: -0.77..+0.56 s on all 632 wakes;
+file-to-file spacing vs (awake time + 60 s timer + next boot time): mean +0.07 s, sd 0.43, worst
++2.25 s. GPS synced 15 times, about hourly; the RTC was off by -0.8..+1.8 s at each sync (whole-second
+resolution both ends), so file names stay within ~2 s of GPS time. AI: 27-35 inferences per 30 s
+wake, DSP ~55 ms, classification ~128 ms, no overrun and no slow inference in any timer wake (the
+~600 ms ones and the start-up overruns are only in the two Bluetooth-connected setup boots, where
+`AI_MAX_PERF` is deferred and the CPU sits at 80 MHz, as designed). Skew in AI mode +/-0.2 % (fixed
+240 MHz). Rate meter 16003-16031 Hz on all 632 wakes, so **no APLL 8x-rate fault in 632 deep-sleep
+wakes with APLL on**. **LoRa at 100 Hz works against a real gateway:** two OTAA joins in the setup
+boots (RSSI -57/-54 dBm, one earlier `NO_JOIN_ACCEPT` straight after a scheduled restart), heartbeat
+uplink with an RX1 downlink, three event uplinks overnight each followed by a downlink, session
+restored from RTC on every wake, not one -5. One `Reset reason: 7` (RTC WDT, no panic) during the
+Bluetooth setup before the run: the same reset is in the SD logs of V1.45 and V1.50, so not new.
+Side finding, not tick related: 73 of 74 wakes that tried for a GPS resync timed out (30 s each,
+indoor bench), adding ~30 s awake per try. Still not shown: GPS time sync while scaling is engaged
+(record-only, 80 MHz max, on a unit with a fix).
+
+**Result of the first bench run** (ELOC_00190, V1.81 test builds, `recordOn_detectOff`, 16 kHz, APLL
+on, Bluetooth down, ~4-5 min each; currents read off the scope grid, +/- 2 mA):
+
+| | fixed 80 MHz | scaling, tick 1000 Hz | scaling, tick 100 Hz |
+|---|---|---|---|
+| Baseline current | ~27 mA (V1.3, same unit) | ~22 mA | ~16 mA |
+| `esp_timer` vs RTC | 0 | +44.5 .. +45.4 % | +5.4 .. +6.2 % |
+| FreeRTOS tick vs RTC | 0 | +25.3 % | +3.1 .. +3.6 % |
+| `I2S measured sample rate` | 16012-16023 Hz | 16017-16023 Hz | 16008-16016 Hz |
+
+So the skew does follow the tick rate (10x fewer ticks, ~8x less skew; the rest is other
+interrupts), and the slower tick also saves more current, because at 1000 Hz the CPU spends much of
+its time bouncing between 10 and 80 MHz (visible at 10 ms/div as a 15-37 mA band against a thin
+line with one small spike per 10 ms). In the 100 Hz build Bluetooth connected and took setTime,
+setConfig and setRecordMode normally, SD writes were normal (11-19 ms, worst 43 ms), and the only
+`wav buffer overrun` is the one every build logs at recording start. The serial console is garbled
+in stretches in both builds once scaling engages (known, cosmetic). This unit got no GPS fix in
+either run (`sats=0` from the first second), so GPS sync under scaling is **not** shown yet.
+
+**75-minute record-only run of `esp32dev-ei-dfs100`** (same unit, session `test_1794849024119`,
+SD log read back 2026-11-16): the first WAV holds exactly 3600.000 s of audio (115,200,000 data
+bytes) and the next file name is 3601 s later (`18-10-26` -> `19-10-27`), so wall clock and audio
+agree to under 1 s per hour, the RTC's own drift. Rate meter average over 889 windows: 15996.6 Hz
+(-0.02 %). Skew over 458 windows: `esp_timer` avg +5.5 % (max 6.7), tick avg +3.2 % (max 3.9). No
+reset, no overrun after the start-up one, heap flat. Two GPS bursts, still no fix on this unit.
+Note for reading any log: one rate window in 13 reads ~15814 Hz in **every** build, fixed 80 MHz
+included. It is the meter, not lost audio: reads are 1024 samples, DMA buffers 1023, so every
+~65 s one read waits an extra buffer.
+
+**LoRa does not work at 100 Hz as it stands (found on the same build).** Six join attempts: four
+`RADIOLIB_ERR_TX_TIMEOUT` (-5) about 220 ms in, two `NO_JOIN_ACCEPT` (-1116, the bench has no
+AS923-2 gateway). Cause of the -5: `LoRaWANNode::transmitUplink()` sleeps for the time on air with
+`hal->delay()` and then allows only `scanGuard` = 10 ms for the TX-done line
+(`LoRaWAN.cpp:1433-1441`). Arduino `delay()` is `vTaskDelay(ms / portTICK_PERIOD_MS)`: at 100 Hz it
+rounds down to whole ticks and ends up to one tick early, so the radio is still transmitting when
+the guard expires. The receive windows are opened through the same `sleepDelay()`, so they were
+up to a tick early as well. **Fix written 2026-11-16, not yet run on hardware:** `ElocRadioHal` in
+`ElocLora.cpp`, an `ArduinoHal` whose `delay()` sleeps the whole ticks that cannot overshoot and
+waits out the rest on `esp_timer`; it also repairs the sub-10 ms delays (reset pulse) that were
+zero-length. At `CONFIG_FREERTOS_HZ=1000` it compiles to the stock `::delay()`, so normal builds
+keep their field-proven timing. Join, uplink and RX-window timing need a gateway to verify.
+
+**Zero-length waits fixed the same day** (all neutral at 1000 Hz): the `delay(1)` wait loop in
+`microphone_inference_record()` (`EdgeImpulse.cpp`, `ElocDetector.cpp`) and the halt loop in
+`ElocLora.cpp` are now `vTaskDelay(1)`, and `delay()` in `main.cpp` waits at least one tick for
+any non-zero value.
+
+**Still owed before this becomes the real firmware** (LoRa, AI and duty cycle at 100 Hz were shown
+by the overnight run above): GPS time sync during record-only scaling on a unit that gets a fix; a
+record-only overnight soak (temperature swing); a fixed-80 trace on V1.81 itself (dfs100 build with
+APLL off gives it). `Battery.cpp` passes `avgIntervalMs` to `vTaskDelay()` as raw ticks: inert at
+the default 0, but convert it with `pdMS_TO_TICKS` in the permanent change. Design
+point for the permanent version: scaling needs APLL, AI modes do not, and APLL is what had the
+8x-rate fault after a deep-sleep wake, so switch APLL on only for the recording-only profile.
+
+**Question:** can recording-only get its ~7 mA back from CPU frequency scaling (DFS) without the
+timer skew that made V1.59 pin `RECORDING_LOW_POWER` at 80 MHz? Uncommitted, in the working tree of
+branch `EDsteve/mic-test`. Normal builds are unchanged: everything sits behind
+`PM_TEST_RECORDING_DFS` (`project_config.h`, default 0).
+
+**Measured today on V1.3 (ELOC_00190, `recordOn_detectOff`, 16 kHz, Bluetooth down):**
+
+| | APLL off (fixed 80 MHz) | APLL on, min 10 MHz |
+|---|---|---|
+| Baseline current (scope, 28 mA/div) | ~27 mA | ~20 mA |
+| Log time for 5 s of audio | 4.99 s | 6.14 s (tick +23 %) |
+| `esp_timer` per 5000 ticks (task table) | 5.00 s | 5.80 s (`esp_timer` +43 % vs audio) |
+
+Same numbers as the V1.59 finding (+23 % / +41 %), reproduced in one 100 s log. SD write bursts
+(one 12 kB WAV buffer every 384 ms, ~5-6 mA averaged) are the same in both. The 30 s Bluetooth
+timeout fired after ~24 s real. Audio, WAV length and file names stay correct.
+
+**Three things keep scaling off during recording today**, all needed to undo it: the profile pins
+80/80, default `cpuMinFrequencyMHZ` is 80, and default `MicUseAPLL` is false. The last one matters
+on its own: IDF's I2S driver holds its PM lock for the whole of `i2s_read()` (the read task sits
+there with `portMAX_DELAY`), and without APLL that lock is `ESP_PM_APB_FREQ_MAX`.
+
+**Working theory for the skew (from the IDF 4.4.7 source, not bench-proven):** esp_pm switches the
+clock on every idle<->busy transition. On the way up, `rtc_clk_cpu_freq_to_pll_mhz()` ends in
+`rtc_clk_wait_for_slow_cycle()` (up to one RTC slow-clock period, ~30 us with `INT_8MD256`) and only
+then does `do_switch()` call `on_freq_update()`, so for that wait the LACT divider and CCOMPARE are
+still set for 10 MHz while APB runs at 80: both clocks count 8x fast. On the way down the rescale
+comes before the switch, same direction. `CONFIG_FREERTOS_HZ=1000` on two cores is ~2000 such
+switches per second; 2000 x ~30 us x 7 is ~40 %. If that is right the skew is proportional to the
+tick rate.
+
+**The two bench builds** (both = `esp32dev-ei` + `-DPM_TEST_RECORDING_DFS=1`):
+- `esp32dev-ei-dfs1000` - tick 1000 Hz as shipped. The control.
+- `esp32dev-ei-dfs100` - tick 100 Hz via `dfs100.sdkconfig.defaults`
+  (`board_build.cmake_extra_args = -DSDKCONFIG_DEFAULTS=...`).
+
+With the flag on, `RECORDING_LOW_POWER` is 10/80 MHz again (20 at >= 30 kHz), a boot line says
+`PM TEST BUILD ... tick N Hz`, and the main loop logs every ~10 s
+`PM test: clock skew vs RTC over X s: esp_timer +a %, FreeRTOS tick +b %` (reference:
+`esp_rtc_get_time_us()`, read as +/- 0.3 %). Both built clean 2026-11-16; the generated
+`sdkconfig.esp32dev-ei-dfs100` has `CONFIG_FREERTOS_HZ=100`.
+
+**Bench procedure:** flash, set `"MicUseAPLL": true` (a warning is logged if it is off), start
+`recordOn_detectOff`, wait for the Bluetooth timeout so the profile applies
+(`Applying PM profile RECORDING_LOW_POWER: CPU max 80 MHz, min 10 MHz`), then take the scope trace
+and the serial log. Compare the skew line and the baseline between the two builds, and check
+`I2S measured sample rate` stays ~16000 Hz.
+
+**Why the project is at 1000 Hz, found while doing this:** the Arduino core's `CMakeLists.txt`
+aborts unless `CONFIG_FREERTOS_HZ` is 1000 (`delay()` is `vTaskDelay(ms / portTICK_PERIOD_MS)`, so
+at 100 Hz a `delay()` under 10 ms does not wait at all). `tools/dfs100_skip_arduino_tick_check.py`
+sets `ARDUINO_SKIP_TICK_CHECK` for the dfs100 env only. This firmware's own code is tick-rate clean
+(`pdMS_TO_TICKS` throughout); the exposure is in Arduino libraries.
+
+**Before 100 Hz could ever ship** (none of it done): re-validate Bluetooth SPP and above all
+LoRaWAN (RadioLib times its RX windows with Arduino `delay()`), AI modes, and the `delay(1)` /
+`delay(5)` calls that become zero-length; `Battery.cpp` passes `avgIntervalMs` to `vTaskDelay()` as
+raw ticks (inert at the default 0). APLL also brings back the 8x-rate fault class after a deep-sleep
+wake (re-apply fix in place, never soaked). User's priority, stated 2026-11-16: recordings and file
+names must be accurate; the GPS window and Bluetooth timeout may be somewhat off.
+
+**If the tick rate does not shrink the skew:** fall back to a fixed lower clock for recording
+(no switching, so no skew), which needs the max frequency validation relaxed below 80 and the clock
+raised before every Bluetooth start. Independent of all this and unmeasured: larger SD writes, a
+less eager log `fsync` (every 5 lines today, and the perf-monitor table is 17 lines every 5 s), and
+`radio.sleep()` for the SX1262, which is never called.
+
 ## Microphone self-test (`setMicTest` / `getMicTest`): Phase 1 V1.81 (2026-11-13), corrected V1.82, verdict V1.83 (2026-11-17), branch `EDsteve/mic-test`
 
 **2026-11-17, V1.83 - verdict (Phase 2).** Two more bench sessions on ELOC_00247 (normal / thumb on the port / unplugged; then 9 mics swapped in and judged blind: #6 and #7 broken with a rise of 7-15 dB against 59-75 dB healthy, #3's crackle was room noise, #9 was tissue on the port) and a forest simulation (the 2022 ELOC8 Sumatran recording mixed into the bench captures; 2022 files are `raw32 >> 11`, i.e. +30.1 dB) gave the limits. `judge()` in `MicAnalyzer.hpp` turns the numbers into ok / broken / checkPort / suspect / repeat, `combineRuns()` merges a confirming second run, `describe()` writes the reason. Decisions: the best tone's rise counts, not the median (forest noise covers some tones; the median false-alarmed 8-38 % in busy minutes); the user is told the test works best in a quiet place instead of being asked where it runs; a loud background is "repeat", never "broken"; the faint-mic (< 45 dB) and crackle checks only count in a quiet background; a fault is only reported if the second run shows it too. PC replay of the real code: the right verdict for all 9 bench mics, and never "broken" for a healthy mic in the forest. Details in the README's "Verdict".

@@ -182,7 +182,9 @@ bool ElocDetector::microphone_inference_record(void) {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
     while (inference.buf_ready == 0) {
-        delay(1);
+        // One tick, not delay(1): delay() rounds down to whole ticks, so below 1000 Hz a 1 ms
+        // delay does not block at all and this loop would spin at the AI task's priority.
+        vTaskDelay(1);
     }
     inference.buf_ready = 0;
     return true;

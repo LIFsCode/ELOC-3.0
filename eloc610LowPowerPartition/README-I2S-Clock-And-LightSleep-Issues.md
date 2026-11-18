@@ -11,9 +11,9 @@ was broken were the two software clocks used to measure it. See Problem 3.
 
 | | Status |
 |---|---|
-| Problem 1 — I2S runs 8× too fast after a deep-sleep wake | Root-caused, two fixes, needs a long soak |
+| Problem 1 — I2S runs 8× too fast after a deep-sleep wake | Root-caused, two fixes; Fix B soaked over 632 wakes with APLL on (2026-11-17) |
 | Problem 2 — RTCWDT reboots from automatic light sleep | Root-caused; light sleep now disabled and clamped |
-| Problem 3 — DFS corrupts `esp_timer` **and** the FreeRTOS tick | **RESOLVED** — DFS removed from the low-power paths |
+| Problem 3 — DFS corrupts `esp_timer` **and** the FreeRTOS tick | **RESOLVED** — DFS removed in V1.59; back for recording-only in V1.84 with a 100 Hz tick (skew ~5 %) |
 
 ---
 
@@ -248,6 +248,30 @@ CPU_CLK/APB_CLK. The only way to lose samples is DMA overrun, which logs `wav bu
 
 Cost: only the idle dip from 80 down to 10 MHz. The 80-vs-240 MHz win is kept.
 
+### Follow-up (V1.84): scaling is back for recording-only, with a 100 Hz tick
+
+The "idle dip" turned out to be worth ~7 mA of ~27 (V1.3 on ELOC_00190, 2026-11-16, scope). The
+skew is not a fixed property of DFS: every up-switch waits for an RTC slow-clock edge before
+`on_freq_update()` rescales the timers, so the error grows with the number of switches per second,
+which follows the tick rate. Measured on the same unit, `recordOn_detectOff`, 16 kHz, APLL on:
+
+| | fixed 80 MHz | scaling, tick 1000 Hz | scaling, tick 100 Hz |
+|---|---|---|---|
+| Baseline current | ~27 mA | ~22 mA | ~16 mA |
+| `esp_timer` vs RTC | 0 | +44.5 .. +45.4 % | +5.5 % avg (max 6.7) |
+| FreeRTOS tick vs RTC | 0 | +25.3 % | +3.2 % avg (max 3.9) |
+
+A 75-minute run at 100 Hz put exactly 3600.000 s of audio in the first file and the next file name
+3601 s later. So V1.84 sets `CONFIG_FREERTOS_HZ=100` for every build (with
+`tools/skip_arduino_tick_check.py`, because the Arduino core insists on 1000 Hz for its `delay()`),
+restores min 10 / 20 MHz in `RECORDING_LOW_POWER` (`RECORDING_ONLY_DFS`), and installs I2S on the
+APLL in recording-only mode whatever `MicUseAPLL` says (on the PLL the driver pins APB at 80 MHz, see
+Fix A). The GPS wait now runs ~5 % short (30 s nominal ≈ 28.5 s), which a fix can live with. With LoRa
+enabled nothing changes: `pm_configure()` still forces min = max. LoRa at 100 Hz needed an exact
+`delay()` for RadioLib (`ElocRadioHal` in `ElocLora.cpp`). The overnight `recordOn_detectOn` run with
+duty cycle, LoRa and APLL on (632 wakes, 2026-11-17) showed no reset, file names within ~2 s of GPS,
+working joins, uplinks and downlinks, and no 8× fault: that is the long soak Problem 1 was waiting for.
+
 ### This closes a two-year-old open question
 
 Issue [#77](https://github.com/LIFsCode/ELOC-3.0/issues/77) ("Recording time value is off", closed
@@ -330,8 +354,9 @@ rather than what was requested.
 1. **Hardware-verify V1.59** in `recordOn_detectOff`. Expect `CPU max 80 MHz, min 80 MHz, light sleep
    off`, a steady `I2S measured sample rate: ~16000 Hz` with no rate errors, a real number in
    `WorstCase`, and no console garbling.
-2. **Soak APLL=true + the Problem 1 re-apply** over many duty cycles; every wake should log
-   `I2S measured sample rate: ~16000 Hz`.
+2. ~~**Soak APLL=true + the Problem 1 re-apply** over many duty cycles~~ — done 2026-11-17: 632
+   duty-cycle wakes in `recordOn_detectOn` with APLL on, rate meter 16003-16031 Hz on every one.
+   Recording-only duty cycle on the APLL (the V1.84 default) still wants its own overnight run.
 3. **Root-cause the light-sleep hang** (VDD_SDIO / PSRAM / SDIO suspect) before anyone acts on #118.
 4. **Comment on #77** so the root cause is recorded where the next person will look.
 5. **Consider persisting the GPS-absent flag** in `rtc_duty_cycle` if GPS-less units are built often.

@@ -113,5 +113,6 @@ FreeRTOS multi-task layout split across the two ESP32 cores; details in `memory-
 - **Edge Impulse buffers go in PSRAM** (`EI_BUFFER_IN_PSRAM`); WAV and I2S buffers stay in internal SRAM for speed. Don't move them without measuring — PSRAM is noticeably slower and more power-hungry on this part.
 - **Logging**: use `ESP_LOGx(TAG, ...)`; entry-point `ESP_LOGV(TAG, "Func: %s", __func__)` is the house style.
 - **Bluetooth is Classic SPP, not BLE**, for compatibility with the existing ELOC Control Panel Android app. Don't migrate to BLE without coordinating an app change.
+- **The FreeRTOS tick is 100 Hz** (since V1.84, for CPU scaling in recording-only mode; see `README-I2S-Clock-And-LightSleep-Issues.md`). One tick is 10 ms: wait with `pdMS_TO_TICKS()`, never raw tick counts, and note Arduino `delay()` rounds down to whole ticks (`delay(5)` returns at once). New Arduino libraries that time things with `delay()` need checking, as RadioLib did (`ElocRadioHal`).
 - **APLL is unreliable below 16 kHz** on this ESP32; sample rates under 16 kHz fall back to PLL_D2 and are not recommended.
 - **Sample rate, mic volume, and other operational parameters are overridden by the SD/SPIFFS config at runtime** — defaults in `project_config.h` are only the fallback. Don't assume the compiled value is what's running on a given device.

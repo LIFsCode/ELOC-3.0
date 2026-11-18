@@ -180,7 +180,13 @@ void delay(int ms)
 {
     ESP_LOGV(TAG, "Func: %s", __func__);
 
-    vTaskDelay(pdMS_TO_TICKS(ms));
+    // At least one tick for any non-zero delay. pdMS_TO_TICKS() rounds down, so below 1000 Hz a
+    // delay(1) or delay(5) would not block at all, and the callers use them to yield in a loop.
+    TickType_t ticks = pdMS_TO_TICKS(ms);
+    if (ms > 0 && ticks == 0) {
+        ticks = 1;
+    }
+    vTaskDelay(ticks);
 }
 
 void testInput()
@@ -345,8 +351,8 @@ static void configureConsoleUartRefTick()
 /**
  * @brief Keep the CPU frequency profile in sync with the active recording mode:
  *        any AI detection mode (recordOn_detectOn, recordOff_detectOn, recordOnEvent)
- *        runs at a fixed 240 MHz, recording-only (no AI, no LoRa) at a fixed 80 MHz,
- *        otherwise the configured frequencies apply.
+ *        runs at a fixed 240 MHz, recording-only (no AI, no LoRa) scales 10..80 MHz
+ *        (RECORDING_ONLY_DFS), otherwise the configured frequencies apply.
  * @note  ElocSystem defers the actual switch while Bluetooth is up (the PLL relock would
  *        crash the BT radio), so this is re-called every main loop iteration — the request
  *        is a no-op once the profile is applied.
@@ -360,6 +366,32 @@ static void updatePmProfileFromRecordingMode()
         profile = ElocSystem::PmProfile::RECORDING_LOW_POWER;
     }
     ElocSystem::GetInstance().pm_requestProfile(profile);
+}
+
+/**
+ * @brief I2S clock source for the driver that is about to be installed.
+ * @note  Recording-only mode (RECORDING_ONLY_DFS) scales the CPU 10..80 MHz, which only works
+ *        with I2S on the APLL: on the PLL the driver holds an APB-max lock for as long as the
+ *        read task waits in i2s_read(), i.e. always, and the clock never leaves 80 MHz. Stored
+ *        configs have "MicUseAPLL": false (the V1.59 workaround for the 8x-rate fault after a
+ *        deep-sleep wake, since fixed by the clock re-apply in install_and_start()), so the
+ *        saving would never reach a unit without this. Every other mode keeps "MicUseAPLL", so
+ *        AI modes stay on the clock they were field-tested with. Not below 16 kHz: the APLL is
+ *        unreliable there. With LoRa enabled pm_configure() does not scale, so APLL would buy
+ *        nothing and the config value stays too.
+ *        The choice holds until the driver is uninstalled (deep sleep, reboot): a unit switched
+ *        from an AI mode to recording-only over Bluetooth keeps its clock and scales from the
+ *        next duty-cycle wake or boot on.
+ */
+static bool i2sUseApllForCurrentMode()
+{
+#if RECORDING_ONLY_DFS
+    const bool recordingOnly = (wav_writer.get_mode() != WAVFileWriter::Mode::disabled) && !ai_run_enable;
+    if (recordingOnly && !getConfig().loraConfig.loraEnable && getMicInfo().MicSampleRate >= 16000) {
+        return true;
+    }
+#endif
+    return getMicInfo().MicUseAPLL;
 }
 
 
@@ -1587,13 +1619,13 @@ void app_main(void) {
      *  On a duty-cycle timer wake the recording mode from before deep sleep is restored
      *  further down (wav mode + AI enable from RTC memory). Select the matching CPU
      *  frequency profile already here so it is applied while the radios are still down:
-     *  AI modes run at a fixed 240 MHz, recording-only at a fixed 80 MHz.
+     *  AI modes run at a fixed 240 MHz, recording-only scales 10..80 MHz (RECORDING_ONLY_DFS).
      *
      *  Note this runs BEFORE the GPS time-sync wait further down, so whatever is selected here
-     *  governs the clock during that wait. That is why RECORDING_LOW_POWER must not use DFS: the
-     *  wait's deadline is measured with esp_timer, which ran ~41 % fast under the old 10/80 MHz
-     *  profile, silently cutting a nominal 30 s acquisition window to ~21 s of real time (and the
-     *  patient 180 s cold-start window to ~128 s) — below what a cold GNSS fix needs. */
+     *  governs the clock during that wait. Its deadline is measured with esp_timer, which runs
+     *  fast while the CPU scales: ~41 % at the old 1000 Hz tick (a nominal 30 s window became
+     *  ~21 s, the patient 180 s ~128 s, so V1.59 - V1.83 did not scale), ~5.5 % at today's
+     *  100 Hz tick (~28.5 s and ~170 s), which a GNSS fix can live with. */
     bool pmProfileApplied = false;
     if (gIsTimerWake && getDutyCycleConfig().enable && rtc_duty_cycle.magic == DUTY_CYCLE_RTC_MAGIC) {
         if (rtc_duty_cycle.aiEnabled) {
@@ -2063,6 +2095,12 @@ void app_main(void) {
         if ((wav_writer.get_mode() != WAVFileWriter::Mode::disabled || ai_run_enable != false ||
              MicTest::GetInstance().needsI2S()) &&
             input.is_i2s_installed_and_started() == false) {
+            const bool useApll = i2sUseApllForCurrentMode();
+            if (useApll != input.get_use_apll()) {
+                ESP_LOGI(TAG, "I2S clock source: %s (%s)", useApll ? "APLL" : "PLL",
+                         useApll ? "recording-only, CPU scaling" : "config MicUseAPLL");
+            }
+            input.set_use_apll(useApll);
             // Keep trying until successful
             if (input.install_and_start() == ESP_OK) {
                 delay(300);

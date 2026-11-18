@@ -213,7 +213,7 @@ esp_err_t Battery::readRawVoltage(float& voltage) {
         else {
             accum+= mAdc.GetRaw();
         }
-        if (avgIntervalMs) vTaskDelay(avgIntervalMs);
+        if (avgIntervalMs) vTaskDelay(pdMS_TO_TICKS(avgIntervalMs));
     }
     voltage=accum/static_cast<float>(AVG_WINDOW);
 

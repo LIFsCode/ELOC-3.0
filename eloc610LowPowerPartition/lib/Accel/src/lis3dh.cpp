@@ -384,8 +384,10 @@ bool LIS3DH::lis3dh_set_mode (lis3dh_odr_mode_t odr, lis3dh_resolution_t res,
         return false;
 
     // if sensor was in power down mode it takes at least 100 ms to start in another mode
+    // (was vTaskDelay(15), raw ticks: 15 ms at the old 1000 Hz tick, 150 ms at 100 Hz, which is
+    // what the 100 Hz soak ran with and covers the 100 ms above)
     if (old_odr == lis3dh_power_down && odr != lis3dh_power_down)
-        vTaskDelay (15);
+        vTaskDelay (pdMS_TO_TICKS(150));
 
     return false;
 }

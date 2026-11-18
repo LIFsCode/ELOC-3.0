@@ -24,7 +24,7 @@
 
         #define BLUETOOTH_CLASSIC
 
-        #define VERSION "ELOC-P_V1.83"
+        #define VERSION "ELOC-P_V1.84"
 
         #define STATUS_LED          GPIO_NUM_4
         #define BATTERY_LED         GPIO_NUM_4
@@ -345,6 +345,25 @@
  * Whoever root-causes it flips this to 1 to re-test, instead of having to unpick the clamp.
  */
 #define ALLOW_AUTOMATIC_LIGHT_SLEEP 0
+
+/**
+ * @brief CPU frequency scaling (DFS) for recording-only mode (recordOn_detectOff), since V1.84.
+ *
+ * 1 = RECORDING_LOW_POWER scales the CPU 10..80 MHz (20..80 MHz at >= 30 kHz), and I2S runs off
+ *     the APLL in that mode whatever "MicUseAPLL" says, because without APLL the I2S driver holds
+ *     an APB-max lock for as long as the read task sits in i2s_read(), which pins the clock at
+ *     80 MHz. Only without LoRa: with LoRa enabled, pm_configure() keeps min = max as before.
+ * 0 = RECORDING_LOW_POWER is a fixed 80 MHz and I2S follows "MicUseAPLL" (V1.59 - V1.83).
+ *
+ * Measured on ELOC_00190 (2026-11-16): recording baseline ~27 mA at a fixed 80 MHz, ~16 mA
+ * scaling. Every frequency switch leaves esp_timer and the FreeRTOS tick a little fast, which is
+ * why the tick is 100 Hz (sdkconfig.defaults): skew +5.5 % (esp_timer) / +3.2 % (tick) instead of
+ * +45 % / +25 % at 1000 Hz. That makes a nominal 30 s GPS wait about 28.5 s of real time and log
+ * timestamps a few percent fast while recording. Audio, WAV length and file names come from the
+ * APLL and the RTC clock, which scaling does not touch (a 60-minute file held 3600.000 s and the
+ * next name followed 3601 s later).
+ */
+#define RECORDING_ONLY_DFS 1
 
 /////////////////////////////////// Bluetooth Related configurations ///////////////////////////////////
 

@@ -139,7 +139,13 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 #
 # FreeRTOS
 #
-CONFIG_FREERTOS_HZ=1000
+# 100 Hz, not the Arduino default of 1000 (V1.84). Recording-only mode scales the CPU 10..80 MHz,
+# and every frequency switch leaves esp_timer and the tick a little fast; a slower tick means 10x
+# fewer switches, measured 2026-11-16: skew +45 % -> +5.5 %, recording baseline ~22 -> ~16 mA.
+# Arduino's delay() rounds down to whole ticks (10 ms here), which is why
+# tools/skip_arduino_tick_check.py has to switch off the core's 1000 Hz build check. Edit the
+# generated sdkconfig.<env> files too: an existing one keeps its own value.
+CONFIG_FREERTOS_HZ=100
 CONFIG_FREERTOS_WATCHPOINT_END_OF_STACK=y
 CONFIG_FREERTOS_USE_TRACE_FACILITY=y
 CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS=y

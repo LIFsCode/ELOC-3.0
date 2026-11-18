@@ -20,7 +20,7 @@ Before starting any non-trivial task, read the files in `memory-bank/` — they 
 `include/project_config.h` by +0.01 per push, then add a one-line entry there, newest first. It is the
 quick index over the firmware versions; `memory-bank/changelog.md` holds the long-form analysis.
 
-Auxiliary deep-dives also live at the repo root: `README-DutyCycle-and-LoRa-Cooldown.md`, `README-DutyCycle-BugFixes.md`, `README-LoRa Session Persistence.md`, `README-DMM-4026-B-I2S-R.md`, `README-ai.md`, `README-nvs.md`, `README-Config-Restart-Semantics.md` (which `setConfig` fields apply live vs. require a reboot).
+Auxiliary deep-dives also live at the repo root: `README-DutyCycle-and-LoRa-Cooldown.md`, `README-DutyCycle-BugFixes.md`, `README-LoRa Session Persistence.md`, `README-DMM-4026-B-I2S-R.md`, `README-ai.md`, `README-nvs.md`, `README-Config-Restart-Semantics.md` (which `setConfig` fields apply live vs. require a reboot), `README-MicTest-Plan.md` (microphone self-test: `setMicTest` / `getMicTest`, what each result field means, the bench procedure).
 
 ## What this firmware is (load-bearing context)
 

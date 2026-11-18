@@ -198,6 +198,19 @@ map, the app's live readout and measure-here button, wiki pages.
 **First bench items:** confirm `setADR(false)` suppresses the `ADRACKReq` back-off across 64+ unanswered
 uplinks, and that `getMacLinkCheckAns()` returns a sensible margin/gwCnt against a real gateway.
 
+### Microphone self-test — 🔨 Built with a verdict, measurement bench-tested on one unit, verdict PC-verified only (V1.81 2026-11-13, V1.82 and V1.83 2026-11-17, branch `EDsteve/mic-test`)
+- **V1.83 (2026-11-17):** verdict ok / broken / checkPort / suspect / repeat with a reason, a confirming second run when the first finds anything; limits from the bench sessions (7 healthy, 2 broken, tissue, thumb, unplugged) and a forest-noise simulation. Never "broken" for a healthy mic in the PC replays.
+- **V1.82 (2026-11-17):** after the first bench test on ELOC_00247: 350 ms guard after buzzer switch-off (the fading tone counted as crackle), default gap 600 ms, default tones 2700/4000/5400 Hz (1000 Hz was useless), switch marks saved in the SD JSON. Healthy reference: rise ~65 dB at 2700/4000 Hz in a quiet room.
+- **`setMicTest` / `getMicTest`** (Phase 1 of `README-MicTest-Plan.md`): plays buzzer tones after a
+  silent stretch, captures the raw 24-bit samples (before the gain shift) to PSRAM and reports raw
+  numbers - level, DC, clipping, stuck samples, octave spectrum + slope, crackle count / crest /
+  kurtosis / dropouts, and per tone how far the level rose with the buzzer on.
+- **Verdict since V1.83** (README "Verdict"). Each test leaves a 24-bit WAV and a JSON in
+  `/sdcard/mictest/`, so new mics can be re-judged on the PC.
+- **Usable from today's app** through Device Settings -> Advanced -> Command Line.
+- The analysis (`lib/audio_input/src/MicAnalyzer.hpp`) is header-only and covered by
+  `test_generic_mic_analyzer` (34 cases on the PC, 16 of them for the verdict).
+
 ### Hardware Support — ✅ Operational
 - **LIS3DH accelerometer** for intruder detection and double-tap BT wake
 - **PCA9557 IO expander** for expanded GPIO

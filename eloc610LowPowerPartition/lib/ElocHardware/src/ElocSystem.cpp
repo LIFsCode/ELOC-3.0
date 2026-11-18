@@ -598,7 +598,8 @@ esp_err_t ElocSystem::handleSystemStatus(bool btEnabled, bool btConnected) {
         }
         // Not while the siren runs: updateIntruderSiren() drives EasyBuzzer itself, and an
         // update() landing in one of its silence gaps would re-attach the pin and restart the tone.
-        if (!mBuzzerIdle && !mSirenActive) {
+        // Nor while the microphone self-test plays its tones, for the same reason.
+        if (!mBuzzerIdle && !mSirenActive && !mBuzzerTestHold) {
             EasyBuzzer.update();
         }
     }
@@ -920,9 +921,47 @@ void ElocSystem::setBuzzerBeep(unsigned int frequency, unsigned int beeps) {
 }
 
 void ElocSystem::setBuzzerBeep(unsigned int frequency, unsigned int beeps, unsigned int const pauseDuration, unsigned int const sequences) {
+    if (mBuzzerTestHold) {
+        // The microphone self-test is measuring its own tones; a status beep would be measured too.
+        return;
+    }
     mBuzzerIdle = false;
     //ESP_LOGI(TAG, "Beep: freq: %u, beeps %u, pause: %u, ceq: %u", frequency, beeps, pauseDuration, sequences);
     return EasyBuzzer.beep(frequency, 100, 250, beeps, pauseDuration, sequences, BuzzerDone);
+}
+
+bool ElocSystem::acquireBuzzerForTest() {
+    if (mSirenActive || (mIntruderState != IntruderState_t::IDLE)) {
+        return false;
+    }
+    mBuzzerTestHold = true;
+    mBuzzerIdle = false;  // knock + motion guard, as for every other buzzer sound
+    EasyBuzzer.stopBeep();
+    return true;
+}
+
+void ElocSystem::testTone(unsigned int frequencyHz) {
+    if (!mBuzzerTestHold) {
+        return;
+    }
+    if (frequencyHz > 0) {
+        // Starts the tone at once and keeps it on without update() calls: the LEDC timer runs on
+        // its own, and handleSystemStatus() skips update() while the test holds the buzzer.
+        EasyBuzzer.beep(frequencyHz);
+    } else {
+        EasyBuzzer.stopBeep();
+    }
+}
+
+void ElocSystem::releaseBuzzerForTest() {
+    if (!mBuzzerTestHold) {
+        return;
+    }
+    // EasyBuzzer still believes it is playing the last continuous tone and would switch it back
+    // on at its next update(). A zero-length sequence makes it mark itself finished.
+    EasyBuzzer.beep(0, 0, 0, 0, 0, 1);
+    mBuzzerTestHold = false;
+    setBuzzerIdle();
 }
 
 // Motion detection for the intruder alarm. The accelerometer's data registers are high-pass

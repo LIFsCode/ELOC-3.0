@@ -16,9 +16,19 @@
 #include "../../../include/project_config.h"
 #include <driver/i2s.h>
 #include <esp_timer.h>
+#include <atomic>
 
 extern TaskHandle_t i2s_TaskHandler;
 extern TaskHandle_t ei_TaskHandler;
+
+/**
+ * Listener for the raw I2S buffers, see I2SMEMSSampler::set_raw_tap().
+ * @param samples the 32-bit words exactly as read from I2S (24-bit data in the upper bits),
+ *                i.e. before the volume shift. Only valid during the call.
+ * @param count   number of samples
+ * @param ctx     the pointer given to set_raw_tap()
+ */
+typedef void (*i2s_raw_tap_fn_t)(const int32_t *samples, size_t count, void *ctx);
 
 
 class I2SMEMSSampler {
@@ -67,6 +77,14 @@ class I2SMEMSSampler {
    int64_t clip_log_last_us = 0;
    uint32_t clip_accum = 0;
    uint32_t clip_reads = 0;
+
+   /**
+    * Raw sample tap (microphone self-test). Written by another task while the read task runs,
+    * hence atomic. The context is written before the function pointer and never cleared, so the
+    * read task cannot see a function without its context.
+    */
+   std::atomic<i2s_raw_tap_fn_t> raw_tap{nullptr};
+   std::atomic<void *> raw_tap_ctx{nullptr};
 
    /**
     * DC offset removal filter for DMM-4026-B-I2S-R microphone
@@ -156,6 +174,17 @@ class I2SMEMSSampler {
      * @return true success
     */
     virtual bool register_ei_inference(inference_t *ext_inference, int ext_ei_sampling_freq);
+
+    /**
+     * @brief Hand every raw I2S buffer to one listener, in addition to the wav writer and the
+     *        inference buffer. Used by the microphone self-test (lib/Commands/src/MicTest.cpp).
+     * @note The listener runs in the I2S read task (highest application priority), once per
+     *       buffer: it must only copy the samples and return. It may still be called once after
+     *       it has been removed, so its context must stay valid.
+     * @param fn  listener, or nullptr to remove it
+     * @param ctx passed back to the listener unchanged
+     */
+    void set_raw_tap(i2s_raw_tap_fn_t fn, void *ctx);
 
     /**
      *

@@ -49,6 +49,7 @@
 #include "ElocLora.hpp"
 #include "logging.hpp"
 #include "BluetoothServer.hpp"
+#include "MicTest.hpp"
 #include "FirmwareUpdate.hpp"
 #include "PerfMonitor.hpp"
 
@@ -1102,6 +1103,11 @@ void handleSleepCycleStateMachine() {
         return;
     }
 
+    // A microphone self-test takes about 10 s and its result only lives in RAM: let it finish.
+    if (MicTest::GetInstance().isBusy()) {
+        return;
+    }
+
     const dutyCycleConfig_t& dcCfg = getDutyCycleConfig();
     // Calculate how long since duty cycle was activated (not since boot)
     int64_t awakeTimeS = (esp_timer_get_time() - gDutyCycleActivationTimeUS) / 1000000LL;
@@ -1913,6 +1919,7 @@ void app_main(void) {
         testInput();
 
     input.init(I2S_DEFAULT_PORT, i2s_mic_pins, i2s_mic_Config, getMicInfo().MicVolume2_pwr);
+    MicTest::GetInstance().setSampler(&input);
 
     if (sd_card.checkSDCard() == ESP_OK) {
         // create a new wave file wav_writer & make sure sample rate is up to date
@@ -2051,7 +2058,10 @@ void app_main(void) {
 
         // Need to start I2S?
         // Note: Once started continues to run..
-        if ((wav_writer.get_mode() != WAVFileWriter::Mode::disabled || ai_run_enable != false) &&
+        // The microphone self-test (setMicTest) asks for it here too, so this loop stays the only
+        // place that installs the driver.
+        if ((wav_writer.get_mode() != WAVFileWriter::Mode::disabled || ai_run_enable != false ||
+             MicTest::GetInstance().needsI2S()) &&
             input.is_i2s_installed_and_started() == false) {
             // Keep trying until successful
             if (input.install_and_start() == ESP_OK) {

@@ -504,7 +504,7 @@ recordings in "Broken Microphones ICS-43434" could show what broken mics sound l
 |---|---|---|
 | 1 | Firmware measurement, raw numbers, WAV + JSON on SD | V1.81; V1.82 corrects the off guard and the default tones after one healthy-unit test; broken mics pending |
 | 2 | Thresholds and a verdict in the result, from the bench sessions | V1.83: verdict with a confirming second run; PC-verified on the bench and forest data, not yet on a device |
-| 3 | App: "Mic check" screen with the verdict and the numbers | open |
+| 3 | App: "Mic check" screen with the verdict and the numbers | app 5.48 (2026-11-19): "Microphone Test" card on the status page → Mic check screen; works on a device |
 | 4 | Optional: crackle counter during normal recording, mic health in `getStatus` and in the LoRa heartbeat | open |
 | 5 | Optional: send a short clip to the phone to listen | open |
 

@@ -621,7 +621,7 @@ int create_inference_result_file_SD() {
     ei_results_filename = buildInferenceResultFilename();
 
     if (1) {
-        ESP_LOGI(TAG, "EI results filename: %s", ei_results_filename.c_str());
+        ESP_LOGI(TAG, "AI results filename: %s", ei_results_filename.c_str());
     }
 
     FILE *fp_result = fopen(ei_results_filename.c_str(), "wb");
@@ -2135,15 +2135,15 @@ void app_main(void) {
         if (xQueueReceive(rec_ai_evt_queue, &ai_run_enable, pdMS_TO_TICKS(500))) {
             ESP_LOGI(TAG, "Received AI run enable = %d", ai_run_enable);
             auto ei_status = (aiRuntime.get_status() == AiRuntime::Status::running ? "running" : "not running");
-            ESP_LOGI(TAG, "EI current status = %s (%d)", ei_status, static_cast<int>(aiRuntime.get_status()));
+            ESP_LOGI(TAG, "AI current status = %s (%d)", ei_status, static_cast<int>(aiRuntime.get_status()));
 
             if (ai_run_enable == false && (aiRuntime.get_status() == AiRuntime::Status::running)) {
-                ESP_LOGI(TAG, "Stopping EI thread");
+                ESP_LOGI(TAG, "Stopping AI thread");
                 aiRuntime.set_status(AiRuntime::Status::not_running);
             } else if (ai_run_enable == true && (aiRuntime.get_status() == AiRuntime::Status::not_running)) {
-                ESP_LOGI(TAG, "Starting EI thread");
+                ESP_LOGI(TAG, "Starting AI thread");
                 if (aiRuntime.start_ei_thread(ai_callback_func) != ESP_OK) {
-                    ESP_LOGE(TAG, "Failed to start EI thread");
+                    ESP_LOGE(TAG, "Failed to start AI thread");
                     #ifdef ELOC_TFLM_ENABLED
                         // No usable model, or the I2S rate does not fit it (status aiError says
                         // which): report detection as off instead of pretending it runs

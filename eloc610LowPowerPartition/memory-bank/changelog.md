@@ -336,8 +336,9 @@ focused on current work. The two newest/in-flight entries always stay in activeC
     sites; app override covers the rest). This supersedes the older "CSV timestamps stay in BT-set TZ"
     entry below — that mechanism is now just the highest-priority tier of the chain.
   - **Resync gating — GPS is skipped on wakes where the clock is already fresh.** Re-acquiring GPS every
-    2-minute cycle is wasted energy: the ESP32 RTC keeps time through deep sleep and **VBAT is hard-wired
-    to the main LiFePO4 pack** (always ~3.3 V), so the GPS module's RTC/ephemeris never lose power. Added
+    2-minute cycle is wasted energy: the ESP32 RTC keeps time through deep sleep and **GPS VBAT is tied
+    to +3V3** (the LDO output in Li-Ion mode, the pack directly in LiFePO4 mode), so the GPS module's
+    RTC/ephemeris stay powered while the battery switch is on. Added
     `GPS_RESYNC_INTERVAL_S` (project_config.h, default **3600 s**; 0 = every wake). On a timer wake, if the
     last sync was younger than that interval, GPS is **not powered on at all** this cycle. Three new
     `rtc_duty_cycle_t` fields (appended at the end so existing offsets are undisturbed): `lastGpsSyncS`

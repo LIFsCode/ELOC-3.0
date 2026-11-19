@@ -1,6 +1,31 @@
 ED
 
 To Do:
+ -- CHECK FIRST (found 2026-09-25): lorawan.eventCooldownS is NOT enforced
+      Config says 900 s = max one event LoRa msg per 15 min (the wiki says the same), but in the
+      V1.79 TFLM bench run the unit sent an event uplink every ~7 s: 18 in 2 minutes
+      (logs/device-monitor-260925-111235.log). The chainsaw model fires on everything, so every
+      window pushed detectedEvents up, and ElocLora sends on every change of it.
+      Code: eventCooldownS / eventEndTimeoutS are only parsed and saved (ElocConfig.cpp ~l.521/~l.698).
+      rtc_duty_cycle.lastEventLoraTimeS / eventState exist (ElocStatus.hpp ~l.108), but nothing
+      reads them. ElocLora.cpp ~l.521 still calls sendEventMessage() on every new event.
+      README-DutyCycle-and-LoRa-Cooldown.md: "Phase 2 (LoRa Cooldown) pending" - fields were added,
+      logic never was. Affects the EI build too; TFLM only made it visible.
+      Risk: a noisy model exceeds the EU868 1 % duty cycle and TTN fair use within minutes.
+      Check first: reproduce on esp32dev-ei with the same config (expect the same flood). Then
+      implement Phase 2 per the README (EVENT_START / ONGOING / END) and fix the wiki
+      (Settings - Config & Status, lorawan.eventCooldownS / eventEndTimeoutS) in the same pass.
+ -- SD log fix PUSHED as V1.86 (2026-11-19): PASS 2 and PASS 3 seen in the duty-cycle run, PASS 1 and PASS 4 still owed
+      Log died silently on exFAT, created dates showed the build date. See memory-bank/activeContext.md.
+      Test with the card that holds the real damaged file, BEFORE running chkdsk on it:
+        On the PC rename D:\log to D:\log_new and D:\log_Starnge to D:\log. Flash, boot.
+        PASS 1: log\eloc.log.damaged1 appears (the old file), with a new eloc.log beside it that has
+                "could not be written: moved it to" near the top.
+        PASS 2: eloc.log created date is today, set ~5 s after GPS fix or app connect (on the first
+                wake the first log line says "clock not set yet"). Modified date follows the last wake.
+        PASS 3: every wake in the log ends with "Entering deep sleep NOW", not a cut-off line.
+        PASS 4: restart from the app: the last lines before the restart are in the log.
+      Then run chkdsk D: /f on the PC.
  -- Add detecting/recording scheduler 
  -- After removing SD card. ELOC must be restarted otherwise SD card is not recognized
       ALSO: SD card shows green in the app

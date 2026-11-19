@@ -239,7 +239,7 @@ uplinks, and that `getMacLinkCheckAns()` returns a sensible margin/gwCnt against
 - **GPS runs on every boot path** (init moved out of the `!gIsTimerWake` block 2026-06-05).
 - **Time sync on every duty-cycle wake** corrects RTC drift across deep sleep: `ElocGPS::waitForTimeSync()`
   blocks up to `GPS_TIME_SYNC_TIMEOUT_S` (default 30 s) after a timer wake, before the awake timer resets so
-  the inference window isn't shortened. VBAT hard-wired to the LiFePO4 pack (always ~3.3 V) → warm start,
+  the inference window isn't shortened. GPS VBAT is tied to +3V3 (the LDO output in Li-Ion mode, the pack directly in LiFePO4 mode), so it stays powered while the battery switch is on → warm start,
   fix in seconds (only the very first boot after a full power-down is a cold ~30-90 s fix). `gpsTask()` now
   takes the first sync immediately (not on the 30 s log interval), then re-syncs periodically for drift.
 - **Resync gating to save power**: GPS is skipped entirely on a timer wake whose clock is still fresh.

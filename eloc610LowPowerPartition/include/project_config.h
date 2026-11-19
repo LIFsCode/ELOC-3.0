@@ -24,7 +24,7 @@
 
         #define BLUETOOTH_CLASSIC
 
-        #define VERSION "ELOC-P_V1.84"
+        #define VERSION "ELOC-P_V1.85"
 
         #define STATUS_LED          GPIO_NUM_4
         #define BATTERY_LED         GPIO_NUM_4
@@ -177,8 +177,14 @@
 /////////////////////////////////// I2S & Sound Configuration /////////////////////////////
 
 #define NUMBER_OF_MIC_CHANNELS 1
-#define I2S_DMA_BUFFER_COUNT 8
-#define I2S_DMA_BUFFER_LEN   1024
+// 16 x 512 frames = 512 ms of DMA buffering at 16 kHz, the same as the old 8 x 1024.
+// Keep I2S_DMA_BUFFER_LEN a power of two whose buffer fits the driver's 4092-byte limit
+// (512 frames x 4 bytes = 2048). With 1024 frames the IDF 4.4 driver clamped every buffer to
+// 1023 frames (4092 bytes), and the recorder then lost one whole buffer (64 ms) every 2^20
+// frames since I2S start (65.5 s at 16 kHz, ~3.5 s per hour). Fixed in V1.85, bench-verified 2026-11-19:
+// see memory-bank/progress.md, Known Issues. Stereo (8-byte frames) would need 256 here.
+#define I2S_DMA_BUFFER_COUNT 16
+#define I2S_DMA_BUFFER_LEN   512
 // WARNING: This value will be overridden by '.config' on SD card or SPIFFS
 #define I2S_DEFAULT_SAMPLE_RATE 16000
 #define I2S_DEFAULT_CHANNEL_FORMAT_RIGHT         // or I2S_DEFAULT_CHANNEL_FORMAT_RIGHT

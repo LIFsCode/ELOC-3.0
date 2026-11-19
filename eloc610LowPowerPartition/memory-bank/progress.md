@@ -352,6 +352,35 @@ reapply from there to resurrect it. See `activeContext.md` for the removal detai
 - [x] **Buzzer drones for seconds during LoRa uplink** — `EasyBuzzer` is non-blocking and its tone is only switched off by `EasyBuzzer.update()`, pumped once per cycle in `ElocSystem::handleSystemStatus()`. The LoRa loop runs at the tail of that same cycle, and `node.sendReceive()` blocks for the full airtime + RX1/RX2 windows (seconds at AS923 SF10-SF12). A beep started earlier in the cycle (classically the "Bluetooth ready" notification colliding with the immediate first heartbeat) kept sounding in PWM hardware for the whole transmit. Fixed by calling `EasyBuzzer.stopBeep()` at the top of `ElocLora::sendReceiveWithRecovery()` (the single blocking choke point for both heartbeat and event uplinks) so no uplink can leave a tone droning.
 
 ### Known Issues
+- [x] **One I2S DMA buffer (~64 ms) lost every 2^20 frames — FIXED in V1.85, bench-verified
+  2026-11-19 (found 2026-11-18)**. Every recording loses one DMA buffer of audio
+  (1023 frames, 64 ms) once per 2^20 frames counted from I2S start: 65.5 s at 16 kHz, ~3.5 s per hour.
+  That is why hourly WAV files hold exactly 3600.000 s of samples while their names step 3602-3605 s.
+  - Evidence, 26 h recording-only run (ELOC_00190, `V1.81_954a5ea6 Nov 16 19:57`, 16 kHz, session
+    `test_1794922087611`): the rate meter is short by ~1011 samples in one 5 s window per period, the
+    WAV writer is ~70 ms late in the same 5 s and never catches up, the clocks do not jump. A fit over
+    1434 losses gives a period of 1,048,573 +- 3 frames = 2^20, with exactly one buffer lost each time.
+    Every session in the logs loses its first buffer ~65.5 s after "I2S clock configured".
+  - Not tied to the WAV file or the SD card. The loss phase drifts ~1 s per file against the file
+    offset, exactly as a 2^20-frame I2S count predicts. The files are fragmented (the log file takes a
+    cluster every ~22 min) and sit at a different card alignment each, without effect.
+  - Old, not a recent regression: the September logs (V1.74, V1.77) show the same losses in every long
+    session. Short duty-cycle wakes (30 s, V1.79 and the 2026-11-18 run, 678 wakes) never reach 65 s and
+    lose nothing. It is independent of the 100 Hz tick, CPU scaling, APLL vs PLL and the `ff.c` patch.
+    The 2026-10-01 session (ELOC_00247) only looked clean because its RTC ran slow; names are no measure.
+  - Likely cause: `I2S_DMA_BUFFER_LEN` 1024 x 4-byte frames is 4096 bytes, above the driver's 4092-byte
+    DMA limit, so IDF 4.4 clamps each buffer to 1023 frames (log: `datalen=blocksize=4092`) and sets
+    `rx_eof_num` to match. Some hardware count seems to wrap every 2^20 frames, and with 1023-frame
+    buffers that wrap falls inside a buffer, whose end-of-buffer interrupt then never reaches the driver.
+    Not confirmed: no ESP32 erratum or forum report found.
+  - Fix (V1.85): `I2S_DMA_BUFFER_COUNT 16`,
+    `I2S_DMA_BUFFER_LEN 512` in `project_config.h`. 2048-byte buffers divide 2^20 frames evenly, and
+    the 512 ms of buffering stays the same. Bench test 2026-11-19 (ELOC_00190, `V1.84_7e36528f_MODIFIED
+    Nov 19 14:06`, session `test_1795093713198`, 1123 s continuous): log shows `datalen=blocksize=2048,
+    dma_buf_count=16`; all 222 rate windows read 15989-16007 Hz; no WAV writer step runs late after the
+    start. The old buffers would have lost 17 buffers in that time.
+  - Unrelated to the loss: the RTC (INT_8MD256) drifts up to ~0.15 % against the audio clock and only
+    1 of 28 hourly GPS bursts got a fix indoors, so file names also carry +-1-2 s/h of clock drift.
 - [ ] **Bluetooth unconnectable while a recording session is active — OPEN (investigated 2026-08-04/05,
   ELOC_00150)**. After a knock the device is genuinely discoverable — the app clears its list every
   scan and only adds live `ACTION_FOUND` results, so being listed proves inquiry scan responds — but

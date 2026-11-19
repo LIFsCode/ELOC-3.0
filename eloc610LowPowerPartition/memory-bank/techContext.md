@@ -54,7 +54,7 @@ IRAM, so even calling a new heap function (e.g. `heap_caps_aligned_alloc`, +1.5 
 
 ### Pre-build Scripts
 - `tools/skip_arduino_tick_check.py` — Sets `ARDUINO_SKIP_TICK_CHECK`, without which the Arduino core refuses to build at the 100 Hz tick (V1.84+)
-- `tools/patch_fatfs_exfat.py` — Patches `FF_FS_EXFAT 0 → 1` in the packaged IDF FatFs `ffconf.h` to enable exFAT (see below)
+- `tools/patch_fatfs_exfat.py` — Patches the packaged IDF FatFs: `FF_FS_EXFAT 0 → 1` in `ffconf.h` to enable exFAT, and two fixes in `ff.c` (see below)
 - `tools/genVersion.py` — Generates version.h with build timestamp
 - `tools/genNVS.py` — Compiles nvs.csv into nvs.bin for NVS partition
 - `tools/setUploadMonitorPort.py` — Auto-detects serial port for upload/monitor
@@ -82,6 +82,14 @@ future IDF ≥5.1 upgrade, replace the script with `CONFIG_FATFS_USE_EXFAT=y` in
 `sdkconfig.defaults`. The mounted filesystem type is logged after mount in `SDCardSDIO::init()`
 (`Filesystem: FAT32` / `exFAT`). After the very first patch, do one full clean build so no stale
 fatfs objects remain.
+
+The same script fixes two things in `ff.c` (2026-11-05). Both must be re-checked on a FatFs upgrade:
+- `create_chain()`: on exFAT, a file growing into a non-adjacent cluster is linked to it at once but
+  the new cluster's end-of-chain entry was only written at the next `f_sync()`. A deep sleep or reset
+  in between left the chain running through an undefined FAT value, which killed the file for good.
+  The end-of-chain entry now goes first. Full story: `changelog.md`/`activeContext.md`, "SD log file".
+- `f_utime()` also sets the created date, so `utime()` means "set both" in this firmware.
+  `RotateFile` uses it to correct a log file created before the clock was set.
 
 ## Dependencies
 

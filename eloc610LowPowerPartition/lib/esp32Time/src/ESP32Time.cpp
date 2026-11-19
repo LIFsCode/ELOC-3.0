@@ -26,12 +26,21 @@
 #include "time.h"
 #include "esp_app_format.h"
 #include "esp_ota_ops.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include <stdio.h>
 #include <sys/time.h>
 
 static const char* TAG = "ESP32Time";
+
+// In RTC memory because the clock keeps running through deep sleep, so a timer wake must not forget
+// that it was set. initBuildTime() clears it on every other boot.
+static RTC_DATA_ATTR bool rtcClockSet = false;
+
+bool ESP32Time::isClockSet() {
+    return rtcClockSet;
+}
 
 /*!
     @brief  Constructor for ESP32Time
@@ -73,6 +82,7 @@ void ESP32Time::initBuildTime(uint64_t epochBuildDate, int32_t tz_offset) {
     boot_time_unix = build_time_unix;
 
     this->setTime(epochBuildDate, 0);
+    rtcClockSet = false;  // the build date is only a placeholder
     this->setTimeZone(tz_offset);
     String time= getTimeDate(false);
     ESP_LOGI(TAG, "Setting initial time to Unix time: %ld & timezone UTC %+d --> Current Time %s", 
@@ -165,6 +175,7 @@ void ESP32Time::setTime(long epoch, int ms) {
   tv.tv_sec = epoch;  // epoch time (seconds)
   tv.tv_usec = ms;    // microseconds
   settimeofday(&tv, NULL);
+  rtcClockSet = true;
 
   // Advance boot time by change in time
   boot_time_unix += (epoch - old_time);

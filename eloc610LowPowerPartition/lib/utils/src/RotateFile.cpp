@@ -27,16 +27,29 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <utime.h>
 
+#include "esp_attr.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "ffsutils.h"
 #include "ScopeGuard.hpp"
 #include "RotateFile.hpp"
+#include "ESP32Time.h"
 
 /// @brief Timeout for acquiring the Mutex for accessing RotateFile
 static const uint32_t LOCK_TIMEOUT_MS = 10;
 /// @brief Number of Writes to the file after which a fsync() is triggered to flush data to physical storage
 static const uint32_t WRITE_CACHE_CYCLE = 5;
+/// @brief Number of set-aside damaged files after which no further ones are created
+static const int MAX_DAMAGED_FILES = 9;
+/// @brief Wait between the clock being set and correcting the file dates: GPS delivers UTC first and the
+///        time zone derived from its longitude a moment later, and the dates are stored in local time
+static const int64_t CREATION_STAMP_DELAY_US = 5 * 1000 * 1000;
+
+// In RTC memory because the first wake of a duty cycle can create the file long before GPS or the app
+// delivers a time.
+static RTC_DATA_ATTR bool rtcCreationStampPending = false;
 
 // wrapper for xSemaphoreGive: required for ScopeGuards ON_SCOPE_EXIT, which requires a function pointer
 // xSemaphoreGive is only a macro
@@ -44,9 +57,18 @@ static inline BaseType_t SemaphoreGive(SemaphoreHandle_t xSemaphore) {
     return xSemaphoreGive(xSemaphore);
 }
 
+// fsync() alone only commits what stdio has already passed on and leaves up to a buffer's worth behind
+static bool commit(FILE* fp) {
+    if (fflush(fp) != 0) {
+        return false;
+    }
+    return fsync(fileno(fp)) == 0;
+}
+
 RotateFile::RotateFile(const char* filename, uint32_t maxFiles /*=0*/, uint32_t maxFileSize /*=0*/):
     mFilename(filename), mMaxFiles(maxFiles), mMaxFileSize(maxFileSize), mWriteCacheCycle(WRITE_CACHE_CYCLE), 
-    _fp(NULL), mWriteCounter(0), mFatalError(false), mSemaphore(NULL)
+    _fp(NULL), mWriteCounter(0), mFatalError(false), mSemaphore(NULL), mDamageHandled(false),
+    mCreationStampDueUs(0)
 {
     this->mFolder = getDirectory();
     // Semaphore cannot be used before a call to xSemaphoreCreateBinary() or
@@ -135,14 +157,79 @@ bool RotateFile::rotate() {
                 printf("%s() ERROR. failed to delete %s, errno=%d (%s) \n", __FUNCTION__, mFilename.c_str(), errno, strerror(errno));
             }
         }
-        _fp = fopen(mFilename.c_str(), "a+");
-        if (!_fp) {
+        if (!openFile()) {
             printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
             return false;
         }
-        mWriteCounter = 0;
     }
     return true; 
+}
+
+bool RotateFile::openFile() {
+    const bool created = !ffsutil::fileExist(mFilename.c_str());
+    _fp = fopen(mFilename.c_str(), "a+");
+    if (!_fp) {
+        return false;
+    }
+    mWriteCounter = 0;
+    if (created) {
+        // Created on an unset clock this file now carries the firmware build date, see stampCreationTime()
+        rtcCreationStampPending = !ESP32Time::isClockSet();
+        mCreationStampDueUs = 0;
+    }
+    return true;
+}
+
+bool RotateFile::replaceDamagedFile(int err) {
+    // Once per open(): if a new file fails straight away as well, the file is not what is wrong
+    if ((err != EIO) || mDamageHandled) {
+        return false;
+    }
+    mDamageHandled = true;
+
+    if (_fp) {
+        fclose(_fp);
+        _fp = NULL;
+    }
+    // Card gone, or SD access failing altogether: the file itself may be fine, so leave it alone
+    if (!ffsutil::folderExists(mFolder.c_str())) {
+        return false;
+    }
+    std::string aside;
+    for (int i = 1; i <= MAX_DAMAGED_FILES && aside.empty(); i++) {
+        const std::string candidate = mFilename + ".damaged" + std::to_string(i);
+        if (!ffsutil::fileExist(candidate.c_str())) {
+            aside = candidate;
+        }
+    }
+    if (aside.empty() || rename(mFilename.c_str(), aside.c_str()) != 0) {
+        printf("%s() ERROR. failed to move %s out of the way, errno=%d (%s) \n", __FUNCTION__, mFilename.c_str(), errno, strerror(errno));
+        return false;
+    }
+    if (!openFile()) {
+        printf("%s() ABORT. failed to create a new %s, errno=%d (%s) \n", __FUNCTION__, mFilename.c_str(), errno, strerror(errno));
+        return false;
+    }
+    static const char* NOTE = "\n%s could not be written: moved it to %s and started a new log. The SD card needs a disk check.\n";
+    printf(NOTE, mFilename.c_str(), aside.c_str());
+    fprintf(_fp, NOTE, mFilename.c_str(), aside.c_str());
+    return true;
+}
+
+void RotateFile::stampCreationTime() {
+    const int64_t nowUs = esp_timer_get_time();
+    if (mCreationStampDueUs == 0) {
+        mCreationStampDueUs = nowUs + CREATION_STAMP_DELAY_US;
+        return;
+    }
+    if (nowUs < mCreationStampDueUs) {
+        return;
+    }
+    rtcCreationStampPending = false;
+    // Our patched f_utime() sets the created date along with the modified one (tools/patch_fatfs_exfat.py)
+    if (utime(mFilename.c_str(), NULL) != 0) {
+        printf("%s() ERROR. failed to set the dates of %s, errno=%d (%s) \n", __FUNCTION__, mFilename.c_str(), errno, strerror(errno));
+    }
 }
 
 bool RotateFile::_write(const char *data) { 
@@ -184,13 +271,14 @@ bool RotateFile::open() {
     // which is what the 100 Hz soak ran with
     if( xSemaphoreTake( mSemaphore, pdMS_TO_TICKS(100) ) == pdTRUE ) {
         ON_SCOPE_EXIT(SemaphoreGive, mSemaphore);
+        mDamageHandled = false;
         makeDirectory();
-        _fp = fopen(mFilename.c_str(), "a+");
-        if (!_fp) {
-            printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
-            return false;
+        if (!openFile()) {
+            if (!replaceDamagedFile(errno)) {
+                printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
+                return false;
+            }
         }
-        mWriteCounter = 0;
         // always write a empty line after opening to avoid continuing an old deprecated line
         return _write("\n");
     }
@@ -228,6 +316,15 @@ bool RotateFile::abandon(uint32_t lockTimeoutMs) {
     return true;
 }
 
+bool RotateFile::sync(uint32_t lockTimeoutMs) {
+    if( xSemaphoreTake( mSemaphore, pdMS_TO_TICKS(lockTimeoutMs) ) != pdTRUE ) {
+        printf("%s() a writer still holds the log file\n", __FUNCTION__);
+        return false;
+    }
+    ON_SCOPE_EXIT(SemaphoreGive, mSemaphore);
+    return (_fp == NULL) || commit(_fp);
+}
+
 bool RotateFile::write(const char *data) {
     if( xSemaphoreTake( mSemaphore, pdMS_TO_TICKS(LOCK_TIMEOUT_MS) ) == pdTRUE ) {
         ON_SCOPE_EXIT(SemaphoreGive, mSemaphore);
@@ -257,15 +354,25 @@ bool RotateFile::vprintf(const char *fmt, va_list args) {
         // #1 Write to SPIFFS
         int iresult = vfprintf(_fp, fmt, args);
         if (iresult < 0) {
-            printf("%s() ABORT. failed vfprintf() -> disable future vfprintf(_log_remote_fp) \n", __FUNCTION__);
-            return false;
+            const int err = errno;
+            printf("%s() failed vfprintf(), errno=%d (%s) \n", __FUNCTION__, err, strerror(err));
+            return replaceDamagedFile(err);
         }
 
         // #2 Smart commit after x writes
         mWriteCounter++;
         if (mWriteCounter % mWriteCacheCycle == 0) {
             /////printf("%s() fsync'ing log file on SPIFFS (WRITE_CACHE_CYCLE=%u)\n", WRITE_CACHE_CYCLE);
-            fsync(fileno(_fp));
+            if (!commit(_fp)) {
+                const int err = errno;
+                printf("%s() failed to commit the file, errno=%d (%s) \n", __FUNCTION__, err, strerror(err));
+                return replaceDamagedFile(err);
+            }
+        }
+
+        // #3 The clock has been set since this file was created on the build date
+        if (rtcCreationStampPending && ESP32Time::isClockSet()) {
+            stampCreationTime();
         }
     }
     return true; 

@@ -309,6 +309,14 @@ reapply from there to resurrect it. See `activeContext.md` for the removal detai
 ## What's Left to Build / Fix
 
 ### Recently Fixed
+- [x] **SD log died silently on exFAT; created dates showed the build date (V1.86, fixed 2026-11-05;
+  partly hardware-verified 2026-11-19)** — a deep sleep right after the log grew into a new cluster left its
+  chain running through an undefined FAT value, and from then on logging failed on every boot, before
+  the first `fsync`, with nothing reporting it. Fixed by a FatFs patch (end-of-chain before the link),
+  a flush before deep sleep and restart, and replacing a damaged log with a new one
+  (`eloc.log.damaged<n>`). A log created before the clock was set now gets its dates corrected. The
+  PC simulation went from 12/30 runs damaged to 0/30, also with a power cut on every wake. Full story
+  in `activeContext.md`.
 - [x] **Repeat knock now restarts the Bluetooth idle timeout (V1.66, 2026-08-04, hardware-verified)** —
   the knock handler only acted when BT was *off*, and `lastBtConnectionTimeS` was never refreshed, so
   the window always closed N seconds after the **first** knock no matter how often the user tapped.

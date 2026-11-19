@@ -1112,6 +1112,9 @@ void enterCyclicDeepSleep() {
 
     ESP_LOGI(TAG, "Entering deep sleep NOW");
     delay(50); // Allow log to flush
+    // Deep sleep loses all RAM, including what FatFs has not written to the card yet. Left uncommitted, a
+    // log file that just grew into a new cluster ends up damaged on exFAT (tools/patch_fatfs_exfat.py).
+    Logging::flush();
     esp_deep_sleep_start();
     // Never reached
 }

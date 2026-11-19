@@ -40,6 +40,10 @@ esp_err_t esp_log_to_scard(bool enable);
 ///         a writer is still in there - call again next cycle
 bool abandonSdCard(uint32_t lockTimeoutMs = 200);
 
+/// @brief Commit the SD log file to the card. No effect when SD logging is off.
+/// @note Call right before deep sleep, which loses all RAM. A restart does this by itself.
+void flush();
+
 esp_err_t printLogConfig(String& buf);
 esp_err_t updateConfig(const String& buf);
 

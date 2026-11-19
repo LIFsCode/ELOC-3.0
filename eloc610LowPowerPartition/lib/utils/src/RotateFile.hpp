@@ -50,6 +50,8 @@ private:
     bool mFatalError;
     SemaphoreHandle_t mSemaphore;
     StaticSemaphore_t _mSemaphoreBuffer;
+    bool mDamageHandled;
+    int64_t mCreationStampDueUs;
 
 public:
     /// @brief Set the filename of the basic logfile. Only allowed when not opened.
@@ -87,6 +89,15 @@ private:
 
     std::string getDirectory() const;
     bool makeDirectory();
+    /// @brief fopen() the log file and note whether that created it
+    bool openFile();
+    /// @brief Move a file that can no longer be written out of the way and start a new one
+    /// @param err errno of the failure. Only EIO is treated as damage: a full card, for example, says
+    ///        nothing about the file and must not get a healthy log renamed.
+    /// @return True if logging can continue in a new file
+    bool replaceDamagedFile(int err);
+    /// @brief Correct the dates of a file created before the clock was set
+    void stampCreationTime();
     /** private versin of write without any locking */
     bool _write(const char* data);
 public:
@@ -117,6 +128,13 @@ public:
     /// @return true when the handle was released; false means a writer is still in there and the
     ///         filesystem must not be unmounted yet - call again
     bool abandon(uint32_t lockTimeoutMs);
+
+    /// @brief Commit everything written so far to the card
+    /// @note Call before deep sleep or a restart. Those lose all RAM, and an uncommitted file can end
+    ///       up damaged on exFAT (see tools/patch_fatfs_exfat.py), besides losing its last lines.
+    /// @param lockTimeoutMs how long to wait for a writer that is still inside the file
+    /// @return True if the file is committed or not open, false if not
+    bool sync(uint32_t lockTimeoutMs);
 
     /// @brief write a string to RotateFile file
     /// @param data string to write

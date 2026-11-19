@@ -27,6 +27,7 @@
 
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_system.h"
 
 #include "ffsutils.h"
 #include "RotateFile.hpp"
@@ -45,6 +46,9 @@ static const uint32_t LOG_FILE_SIZE = 5*1024;
 
 static const char* LOG_NAME = "/sdcard/log/eloc.log";
 
+/// @brief How long flush() waits for a writer that is still inside the log file
+static const uint32_t FLUSH_LOCK_TIMEOUT_MS = 200;
+
 static RotateFile logFile(LOG_NAME, LOG_NUM_FILES, LOG_FILE_SIZE);
 static bool log_to_scard_enabled = false;
 // This function will be called by the ESP log library every time ESP_LOG needs to be performed.
@@ -62,6 +66,10 @@ static int _log_vprintf(const char *fmt, va_list args) {
     return vprintf(fmt, args);
 }
 
+void flush() {
+    logFile.sync(FLUSH_LOCK_TIMEOUT_MS);
+}
+
 esp_err_t esp_log_to_scard(bool enable) {
 
     if (enable == log_to_scard_enabled) {
@@ -77,7 +85,14 @@ esp_err_t esp_log_to_scard(bool enable) {
             return ESP_ERR_NOT_FOUND;
         }
         esp_log_set_vprintf(&_log_vprintf);
-        ESP_LOGI(TAG, "%s: start logging to sd card", ESP32Time().getTimeDate(false).c_str());
+        ESP_LOGI(TAG, "%s: start logging to sd card%s", ESP32Time().getTimeDate(false).c_str(),
+                 ESP32Time::isClockSet() ? "" : " (clock not set yet, counting from the firmware build date)");
+
+        // esp_restart() runs these. Already registered is fine: this branch runs again after a card swap.
+        esp_err_t err = esp_register_shutdown_handler(&flush);
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG, "Log file will not be committed on restart: %s", esp_err_to_name(err));
+        }
     }
     else {
         ESP_LOGI(TAG, "  ***Redirecting log output BACK to only UART0 (not to the SPIFFS log file anymore)");

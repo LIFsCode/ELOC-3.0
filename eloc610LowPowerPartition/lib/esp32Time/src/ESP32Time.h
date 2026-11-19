@@ -40,6 +40,9 @@ class ESP32Time {
         void setTime(const char* timeStr, const char* format);
         void initBuildTime(uint64_t epochBuildDate, int32_t tz_offset);
         void setBuildTimeOnly(uint64_t epochBuildDate);
+        /// @brief True once GPS or the app has set the clock. Until then it counts from the firmware
+        ///        build date, which is not a real time. Survives deep sleep along with the clock.
+        static bool isClockSet();
         tm getTimeStruct();
         String getTime(String format);
 

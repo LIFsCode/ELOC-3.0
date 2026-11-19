@@ -260,6 +260,89 @@ values checked match the defaults.
 - Fleet context: of the last 500 uploads, 51 of 230 current-app starts/stops had no config. `{}` replies
   never reach Firestore, so how many of those this fixes is unknown.
 
+## SD log file died silently on exFAT, plus wrong file dates: fixed 2026-11-05, V1.86, partly verified on hardware
+
+Reported on a bench unit (V1.79 TFLM, 124 GB exFAT card, 128 KB clusters): after a test, no log file
+carried that day's date. In a fresh `log` folder, `eloc.log` was created 29/09 and modified 05/11.
+
+**Cause 1: the log had been dead since 2026-09-28 03:19, and nothing said so.** Reading the card raw:
+the chain of `eloc.log` ends `116896 -> 116993 -> 375042 -> FAT value 0`, and 375042 is free in the
+bitmap. Windows refuses the file (`0x80070570`). What happens, in FatFs R0.13c on exFAT only:
+1. The log grows into a non-adjacent cluster (always, since WAV files allocate between its clusters).
+   `create_chain()` links the old last cluster to the new one, but the new cluster's own end-of-chain
+   entry waits for the next `f_sync()`.
+2. The next log line's `stat()` (`needsRotate()`) moves FatFs' sector window, which writes that link
+   to the card.
+3. Deep sleep comes before the next `fsync` (every 5 lines; the log was never flushed before sleep).
+   The end-of-chain entry is lost with RAM. On exFAT the FAT entry of a free cluster is undefined.
+4. On the next wake the size on the card is still the old one, so the file runs into the link again
+   and `create_chain()` treats it as "already followed by next cluster". The end-of-chain entry is
+   now never written.
+5. At the end of that cluster the undefined value decides. Here it pointed into free space (375042),
+   whose FAT value 0 then gave `FR_INT_ERR`.
+
+Evidence for step 3: cluster 116896 ends exactly on a wake's last lines and 116993 starts with the
+next boot, at 02:21 on 09-28. From then on every boot opens the file fine, fills the last 128 bytes
+and fails on the next stdio flush, **before the first `fsync`**, so size and date never change.
+`static_fatal_error` then turns SD logging off for that boot, with a message on the UART only. No
+session on this card has a log since. A crossing lands in those last lines roughly once per ~100
+clusters (~13 MB of log): this card reached it at 111 clusters. FAT32 is not affected, because its
+branch of `create_chain()` writes the end marker first. Everything else on the card is fine: of
+13,194 entries this is the only bad one, no cross-links. 902 lost clusters (118 MB), from the same
+kind of reset, are harmless until `chkdsk /f` reclaims them.
+
+**Cause 2: the created date is the firmware build date.** Every boot other than a timer wake sets the
+clock to `__TIME_UNIX__` (`initBuildTime()`). SD logging starts ~4 s in, GPS or the app sets the clock
+about a minute later, and FatFs stamps the created date only once. The modified date comes right at
+the next `fsync`. In that log: created at 15:29:58, the first log line says `15:29:59 Tue, Sep 29`,
+GPS time at 81 s. Explorer shows 16:29 only because Windows converts FAT/exFAT dates with today's UTC
+offset: a summer date viewed in winter shows one hour later. Not a firmware matter.
+
+**The fix:**
+- `tools/patch_fatfs_exfat.py` now also patches `ff.c`: end-of-chain entry before the link, so the
+  chain on the card is valid at every moment, power cuts included.
+- `Logging::flush()` before deep sleep, and registered as a shutdown handler for `esp_restart()`. Also
+  keeps the last lines of a wake, which were always lost.
+- `RotateFile::replaceDamagedFile()`: on `EIO` the file moves to `eloc.log.damaged<n>` and a new log
+  starts, with a note in it. So cards already damaged in the field recover by themselves. Not on
+  `ENOSPC` (a full card must not get a healthy log renamed), not when the folder cannot be read (card
+  gone), once per `open()`.
+- `ESP32Time::isClockSet()` (RTC memory, so it survives deep sleep) and
+  `RotateFile::stampCreationTime()`: a log created on the unset clock gets corrected 5 s after the
+  clock is set, because GPS delivers UTC first and the time zone a moment later. Needs the second `ff.c`
+  patch: `f_utime()` also sets the created date. Nothing else calls `utime()`.
+- `commit()` does `fflush` before `fsync`; a plain `fsync` left up to 128 bytes in stdio.
+- The `start logging to sd card` line says so when the clock is not set yet.
+
+**Verified on the PC**, real `ff.c` (run through the patch script) on a RAM disk, replaying the
+firmware's writes and losing all RAM at each sleep, 30 seeds x 3000 wakes, damage judged by a separate
+checker that parses the disk image:
+
+| FatFs | Flush before sleep | Power cut every wake | Runs with a damaged log |
+|---|---|---|---|
+| stock | no (old firmware) | no | 12/30 |
+| stock | yes | no | 0/30 |
+| patched | no | no | 0/30 |
+| patched | yes | no | 0/30 |
+| stock | yes | yes | 10/30 |
+| patched | yes | yes | 0/30 |
+
+The same setup reproduces this card's state: open OK, 128 bytes OK, then `FR_INT_ERR`, frozen across
+boots; rename + new log work; `utime()` on the open file corrects both dates on exFAT and FAT32 and
+later syncs keep them. Both firmware envs build. The harness is not in the repo.
+
+**On hardware (2026-11-19):** every bench build since 2026-11-05 carried this from the working tree.
+In the 2026-11-18 duty-cycle run (ELOC_00190, 678 wakes on the 128 GB exFAT card), all 677 deep
+sleeps end in the log with `Entering deep sleep NOW`, the log kept rotating at 5 MiB, and each
+`eloc.log<n>` carries a real created date. **Not yet seen:** a damaged log being moved aside
+(`eloc.log.damaged1`, test with the old card's `log_Starnge` folder) and the flush on an app restart;
+steps in `todo.txt`. Also not checked: how
+Windows treats the state a power cut can still leave, a valid chain one cluster longer than the size
+(FatFs carries on and the file grows past it).
+
+**Limit that stays:** without a battery-backed clock, a file whose whole life falls before GPS or the
+app sets the clock keeps the build date.
+
 ## TFLite Micro runtime (Edge Impulse replacement, Phase 1) — implemented 2026-09-24, V1.79, hardware pending
 
 New build env **`esp32dev-tflm`**. It runs the INT8 "device model package" that the web app's ELOC
@@ -999,3 +1082,5 @@ GPS integration + burst power-saving (June 2026), duty-cycle deep sleep + 24h Lo
 - **The buzzer and the LIS3DH share the PCB** — buzzer vibration registers as knocks; any knock/click feature needs the buzzer→knock guard (`C_BUZZER_KNOCK_GUARD_MS`)
 - **The stock BluetoothSerial RX queue is 512 B and silently drops on overflow** — bulk/binary RX must bypass it via `SerialBT.onData()` into a stream buffer
 - **The exFAT patch (`tools/patch_fatfs_exfat.py`) edits the shared PlatformIO package** — a platform reinstall reverts it until the next `pio run` re-applies it
+- **FatFs on exFAT does not survive losing its RAM with a file open** — deep sleep counts. Commit a file that stays open across sleep (`Logging::flush()`), or close it. The FAT entry of a free exFAT cluster is undefined, so an uncommitted chain can run through garbage
+- **A file's created/modified dates come from the clock at that moment** — and after a power-on that is the firmware build date until GPS or the app sets it (`ESP32Time::isClockSet()`)

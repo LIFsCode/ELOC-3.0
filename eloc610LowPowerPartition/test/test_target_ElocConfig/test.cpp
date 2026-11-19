@@ -30,7 +30,10 @@
 #include <esp_heap_caps.h>
 #include <unity.h>
 #include "ElocConfig.hpp"
+#include "SDCardSDIO.h"
 
+// ElocConfig needs this global, which src/main.cpp defines. Test builds do not compile src/.
+SDCardSDIO sd_card;
 
 extern "C" {
 void app_main(void);

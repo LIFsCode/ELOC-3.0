@@ -1,0 +1,7 @@
+{
+    "name": "ElocHardware",
+    "description": "ELOC system, config, status and LoRa. chain+ makes the dependency finder honour the AI #ifdefs in ElocStatus.hpp. In plain chain mode it would pull both AI runtimes into every env, and test builds would then fail compiling tflite-micro, which needs the [tflm] flags.",
+    "build": {
+        "libLDFMode": "chain+"
+    }
+}

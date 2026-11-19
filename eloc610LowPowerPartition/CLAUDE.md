@@ -83,6 +83,10 @@ pio test -e target_tflm_tests
 
 `generic_unit_tests` runs with `lib_ldf_mode = off` and lists its libraries in `lib_deps` (ArduinoJson, Unity, `eloc_ml`, `mock`). Otherwise the dependency finder follows test includes into the ESP-only libraries and the host build fails.
 
+On-device test builds rely on two library manifests. `lib/ElocHardware/library.json` sets `chain+`, so the finder honours the AI `#ifdef`s in `ElocStatus.hpp` and non-AI builds pull in neither runtime. `lib/CPPANALOGIO_Battery/library.json` lists the libraries its headers need, because Battery and ElocHardware depend on each other. These names resolve locally and never reach the package registry, unlike `lib_deps` entries. Test builds do not compile `src/`, so a test that reaches a global defined in `src/main.cpp` has to define it itself (see `sd_card` in `test_target_ElocConfig`).
+
+Every `pio test` recompiles everything (about 3 min), because `BUILD_TIME_UNIX=$UNIX_TIME` changes the flags. Use `-vv` to see test output: `-vvv` crashes while printing the `firmware.bin` step.
+
 To run a different single target test, edit `selected_tests = test_target_<name>` in `platformio.ini` under `[options]`. Tests live under `test/test_target_*` (on-device) and `test/test_generic_*` (native); `test/test_*` (without prefix) builds for both. See `test/README.md`.
 
 ### Pre-build scripts (run automatically by PlatformIO)

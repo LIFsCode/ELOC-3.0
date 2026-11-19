@@ -251,10 +251,11 @@ values checked match the defaults.
 **Still owed:**
 - Bench-tested on ELOC_00247 on 2026-11-05 with app 5.47: the V1.80 upload at 17:21 carried its config.
   That test did not force low heap, so the failure paths themselves have not been exercised on hardware.
-- The new `test_print_config_with_low_internal_heap` has never run: `pio test -e
-  target_unit_selected_tests` fails while compiling `Battery.cpp`, because `config.h` includes
-  `lis3dh_types.h` and that env does not find `lib/Accel`. This is unrelated to this change. The fix
-  needs a `platformio.ini` edit, which forces a full rebuild of every env, so it was left alone.
+- `test_print_config_with_low_internal_heap` builds and links since 2026-11-05, with no
+  `platformio.ini` edit (see Known Issues in `progress.md`), but has still never run on a device.
+  `pio test -e target_unit_selected_tests -vv` flashes over the bench unit's `partition0`, bootloader
+  and `otadata`, and leaves `partition1`, NVS and SPIFFS alone. Restore afterwards with
+  `pio run -e esp32dev-ei -t upload`.
 - `setConfig` can now return `ESP_ERR_FLASH_BASE` on low heap. In-memory values are already applied at
   that point and persist on the next successful write.
 - Fleet context: of the last 500 uploads, 51 of 230 current-app starts/stops had no config. `{}` replies

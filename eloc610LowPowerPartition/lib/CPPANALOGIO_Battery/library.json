@@ -1,0 +1,10 @@
+{
+    "name": "CPPANALOGIO_Battery",
+    "description": "Battery monitor. Battery.cpp includes ElocHardware's config.h and ElocSystem.hpp, which need these libraries' headers. They are declared because Battery and ElocHardware depend on each other, and when the dependency finder reaches ElocHardware first, as test builds do, Battery only inherits ElocHardware's own include folder.",
+    "dependencies": [
+        { "name": "Accel" },
+        { "name": "CPPI2C" },
+        { "name": "IO_expander" },
+        { "name": "wav_file" }
+    ]
+}

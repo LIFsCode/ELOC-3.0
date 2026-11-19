@@ -444,13 +444,25 @@ reapply from there to resurrect it. See `activeContext.md` for the removal detai
   `FirmwareUpdate`'s hardware-dependent sources (`esp_log.h`/FreeRTOS/`esp_partition.h`), which can't
   compile natively. Needs `FwFrameParser` split into its own pure lib, or `FirmwareUpdate.cpp`
   otherwise isolated from the test's LDF resolution.
-- [ ] **`target_unit_selected_tests` build fails at HEAD** — pre-existing LDF chain-mode defect:
-  a project lib only reachable via a *second-hop* include (e.g. `lib/Accel`'s `lis3dh_types.h`, via
-  `lib/ElocHardware/src/config.h`) isn't resolved when the test file (no `src/main.cpp` entry point)
-  is the LDF's only entry point. `esp32dev`/`esp32dev-ei` are unaffected (their entry point is
-  `src/main.cpp`, one hop from every project lib). Discovered while adding the scheduler's target
-  tests (`lib/ElocScheduler` hits the same defect via `lib/edge-impulse`); needs a fix in
-  `lib/Accel`/`lib/CPPANALOGIO_Battery`/`platformio.ini` LDF config.
+- [x] **`target_unit_selected_tests` build failure** — fixed 2026-11-05 without touching
+  `platformio.ini`, so no env's build folder was wiped. There were three separate causes:
+  1. `CPPANALOGIO_Battery` and `ElocHardware` include each other. When a test reaches `ElocHardware`
+     first, the dependency finder treats Battery's link back to it as circular, and Battery only gets
+     `ElocHardware/src` on its include path. `src/main.cpp` reaches Battery first, which is why the
+     real builds never failed. `lib/CPPANALOGIO_Battery/library.json` now lists what its headers need.
+  2. Chain mode ignores `#ifdef`, so `ElocStatus.hpp` pulled both AI runtimes into non-AI builds, and
+     `tflite-micro` cannot compile without the `[tflm]` flags. `lib/ElocHardware/library.json` sets
+     `chain+`, which honours those `#ifdef`s.
+  3. `sd_card` is defined in `src/main.cpp`, which test builds do not compile. The test defines it.
+
+  `esp32dev-ei` output is unchanged: all ELF symbols match, and the `.bin` differs only in the build
+  stamp and image hashes. `esp32dev-tflm`, `esp32dev` and `generic_unit_tests` (21/21) also still work.
+- [ ] **`target_unit_all_tests` problems left open** (found 2026-11-05, builds only, nothing run):
+  8 of 10 test folders build. `test_target_audio_input` calls `I2SMEMSSampler::init` with arguments
+  that no longer match it. `test_target_BluetoothServer` does not link, because it needs seven globals
+  and functions defined in `src/main.cpp`. The env also sets no `board_build.partitions`, so running
+  it replaces the ELOC partition table with IDF's default (1 MB factory app, NVS grown over `otadata`)
+  until the next normal flash. Use `target_unit_selected_tests` on a bench unit.
 
 ### Desired Improvements
 - [ ] **Recording-only power: bring frequency scaling back (~7 mA of ~32)** — made standard as

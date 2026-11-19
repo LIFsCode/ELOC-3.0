@@ -198,7 +198,7 @@ map, the app's live readout and measure-here button, wiki pages.
 **First bench items:** confirm `setADR(false)` suppresses the `ADRACKReq` back-off across 64+ unanswered
 uplinks, and that `getMacLinkCheckAns()` returns a sensible margin/gwCnt against a real gateway.
 
-### Microphone self-test — 🔨 Built with a verdict, measurement bench-tested on one unit, verdict PC-verified only (V1.81 2026-11-13, V1.82 and V1.83 2026-11-17, branch `EDsteve/mic-test`)
+### Microphone self-test — 🔨 Built with a verdict, measurement bench-tested on one unit, verdict PC-verified only (V1.81 2026-11-13, V1.82 and V1.83 2026-11-17, on `EDsteve/Patrol` since 2026-11-18)
 - **V1.83 (2026-11-17):** verdict ok / broken / checkPort / suspect / repeat with a reason, a confirming second run when the first finds anything; limits from the bench sessions (7 healthy, 2 broken, tissue, thumb, unplugged) and a forest-noise simulation. Never "broken" for a healthy mic in the PC replays.
 - **V1.82 (2026-11-17):** after the first bench test on ELOC_00247: 350 ms guard after buzzer switch-off (the fading tone counted as crackle), default gap 600 ms, default tones 2700/4000/5400 Hz (1000 Hz was useless), switch marks saved in the SD JSON. Healthy reference: rise ~65 dB at 2700/4000 Hz in a quiet room.
 - **`setMicTest` / `getMicTest`** (Phase 1 of `README-MicTest-Plan.md`): plays buzzer tones after a

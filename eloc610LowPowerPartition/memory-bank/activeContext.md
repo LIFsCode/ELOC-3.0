@@ -162,7 +162,7 @@ raised before every Bluetooth start. Independent of all this and unmeasured: lar
 less eager log `fsync` (every 5 lines today, and the perf-monitor table is 17 lines every 5 s), and
 `radio.sleep()` for the SX1262, which is never called.
 
-## Microphone self-test (`setMicTest` / `getMicTest`): Phase 1 V1.81 (2026-11-13), corrected V1.82, verdict V1.83 (2026-11-17), branch `EDsteve/mic-test`
+## Microphone self-test (`setMicTest` / `getMicTest`): Phase 1 V1.81 (2026-11-13), corrected V1.82, verdict V1.83 (2026-11-17), on `EDsteve/Patrol` since 2026-11-18 (merged from `EDsteve/mic-test`)
 
 **2026-11-17, V1.83 - verdict (Phase 2).** Two more bench sessions on ELOC_00247 (normal / thumb on the port / unplugged; then 9 mics swapped in and judged blind: #6 and #7 broken with a rise of 7-15 dB against 59-75 dB healthy, #3's crackle was room noise, #9 was tissue on the port) and a forest simulation (the 2022 ELOC8 Sumatran recording mixed into the bench captures; 2022 files are `raw32 >> 11`, i.e. +30.1 dB) gave the limits. `judge()` in `MicAnalyzer.hpp` turns the numbers into ok / broken / checkPort / suspect / repeat, `combineRuns()` merges a confirming second run, `describe()` writes the reason. Decisions: the best tone's rise counts, not the median (forest noise covers some tones; the median false-alarmed 8-38 % in busy minutes); the user is told the test works best in a quiet place instead of being asked where it runs; a loud background is "repeat", never "broken"; the faint-mic (< 45 dB) and crackle checks only count in a quiet background; a fault is only reported if the second run shows it too. PC replay of the real code: the right verdict for all 9 bench mics, and never "broken" for a healthy mic in the forest. Details in the README's "Verdict".
 
@@ -213,8 +213,10 @@ result field and the bench procedure: `README-MicTest-Plan.md`.
 - I2S keeps running after a test on an idle device (as after a stopped recording) - there is no way
   to end the read task yet.
 - A LoRa join beep during a test is not detected and spoils the tone numbers.
-- Wiki: `ELOC-3.0-App-Interface` does not list the two commands yet - held back until the branch is
-  merged and the result format has settled (the verdict is in since V1.83).
+- Wiki: on the wiki since 2026-11-19, after the merge into Patrol: `ELOC-3.0-App-Interface` (two
+  command rows and a "Microphone self-test" section), the test tones on `Status LEDs and Buzzer`, and
+  the `mictest` folder on `Files and Folders`. A change to the verdict or the result fields updates
+  them too.
 - Phases 3-5 in the README: app "Mic check" screen (shows "works best in a quiet place" before
   the test, then the verdict), optional crackle counter
   during recording / mic health over LoRa, optional clip to the phone.

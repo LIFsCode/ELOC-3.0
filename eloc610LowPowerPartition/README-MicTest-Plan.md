@@ -1,6 +1,7 @@
 # Microphone self-test (`setMicTest` / `getMicTest`)
 
-Status: **Phases 1 and 2 on branch `EDsteve/mic-test`.** The measurement came in V1.81 and was
+Status: **Phases 1 and 2 done, on `EDsteve/Patrol` since 2026-11-18** (developed on
+`EDsteve/mic-test`, merged as `048cbad`). The measurement came in V1.81 and was
 corrected in V1.82 after the first bench test. **V1.83 adds the [verdict](#verdict-since-v183)**
 (ok / broken / checkPort / suspect / repeat), with limits from the bench sessions on ELOC_00247
 (seven healthy mics, two broken ones, tissue and a thumb on the port, mic unplugged; see
@@ -509,7 +510,12 @@ recordings in "Broken Microphones ICS-43434" could show what broken mics sound l
 
 ## Wiki
 
-The firmware wiki page `ELOC-3.0-App-Interface` lists every BT command and does **not** have these
-two yet. They are held back on purpose: the wiki describes released firmware, this is a test branch,
-and the result format will change once the thresholds exist. Add both commands to the wiki when the
-branch is merged; the "Commands" section above is written to be pasted.
+Since 2026-11-19, after the merge into `EDsteve/Patrol`, the test is on the firmware wiki:
+
+- `ELOC-3.0-App-Interface`: the two command rows and a "Microphone self-test" section (what you hear,
+  the results and findings, the arguments, the progress and result fields, the SD files, the limits)
+- `Status LEDs and Buzzer`: the test tones
+- `Files and Folders`: the `mictest` folder
+
+The wiki is written for the field and leaves out the bench data. When the verdict rules or the result
+fields change here, change the wiki in the same pass.
